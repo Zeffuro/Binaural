@@ -1,0 +1,55 @@
+import { generatedAsmrSounds, type AsmrSound } from '../asmr-state';
+
+export const ASMR_RATE = 24000;
+export const ASMR_SECONDS = 12;
+const cache = new Map<AsmrSound, Float32Array>();
+
+export function asmrSample(sound: AsmrSound): Float32Array {
+  if (!generatedAsmrSounds.some(item => item.id === sound)) throw new Error('Load the recorded ASMR sound before playing it.');
+  const existing = cache.get(sound); if (existing) return existing;
+  const data = new Float32Array(ASMR_RATE * ASMR_SECONDS);
+  let seed = [...sound].reduce((n, c) => Math.imul(n, 31) + c.charCodeAt(0), 893);
+  const random = () => { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; return (seed >>> 0) / 4294967296; };
+  const noise = new Float32Array(data.length);
+  let low = 0;
+  for (let i = 0; i < noise.length; i++) {
+    low += ((random() * 2 - 1) - low) * .16;
+    noise[i] = low;
+  }
+  if (['brush', 'air', 'scratch', 'cupping'].includes(sound)) {
+    let previous = 0;
+    let warm = 0;
+    for (let i = 0; i < data.length; i++) {
+      const t = i / ASMR_RATE;
+      const stroke = (.5 + .5 * Math.sin(t * Math.PI * 2 * (sound === 'air' ? .25 : .5))) ** 2;
+      const detail = noise[i] - previous; previous = noise[i];
+      warm += (noise[i] - warm) * .035;
+      data[i] = (sound === 'scratch' ? detail * 2.5 : sound === 'cupping' ? warm : noise[i]) * (sound === 'cupping' ? .7 + stroke * .3 : .18 + stroke * .82);
+    }
+  } else {
+    const gap = { wood: .48, glass: .8, paper: .65, water: .7, chimes: 2.1 }[sound as 'wood' | 'glass' | 'paper' | 'water' | 'chimes'];
+    for (let onset = .12; onset < ASMR_SECONDS; onset += gap * (.65 + random() * .7)) {
+      const duration = sound === 'chimes' ? 1.8 : sound === 'paper' ? .45 : sound === 'water' ? .23 : .18;
+      const frequency = (sound === 'wood' ? 220 : sound === 'glass' ? 1300 : sound === 'chimes' ? 560 : 760) * (.8 + random() * .4);
+      const strength = .45 + random() * .45;
+      for (let j = 0; j < duration * ASMR_RATE; j++) {
+        const i = (Math.floor(onset * ASMR_RATE) + j) % data.length;
+        const t = j / ASMR_RATE;
+        const envelope = (1 - Math.exp(-t * 1400)) * Math.exp(-t * (sound === 'chimes' ? 3.5 : sound === 'paper' ? 11 : 32));
+        let value: number;
+        if (sound === 'paper') value = noise[i] * 2.4 * (.3 + .7 * Math.sin(t * 195) ** 6);
+        else if (sound === 'water') value = Math.sin(2 * Math.PI * (frequency * t + 210 * t * t));
+        else value = Math.sin(2 * Math.PI * frequency * t) * .7 + Math.sin(2 * Math.PI * frequency * 2.71 * t) * .2 + noise[i] * (sound === 'wood' ? .7 : .15);
+        data[i] += value * envelope * strength;
+      }
+    }
+  }
+  let peak = .001;
+  for (const value of data) peak = Math.max(peak, Math.abs(value));
+  const seam = ASMR_RATE * .02;
+  for (let i = 0; i < data.length; i++) {
+    const edge = Math.min(1, i / seam, (data.length - 1 - i) / seam);
+    data[i] = data[i] / peak * .7 * Math.sin(edge * Math.PI / 2) ** 2;
+  }
+  cache.set(sound, data); return data;
+}

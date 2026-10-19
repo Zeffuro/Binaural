@@ -21,7 +21,7 @@ export function setupVisualDock(quick: HTMLElement, fullscreen: () => void) {
     motion.hidden = state.mode === 'off';
     title.textContent = lightOnly ? 'Ambient light' : state.label;
     button.disabled = !lightOnly && !state.allowed;
-    const message = lightOnly ? 'Your chosen light color. Movement follows playback.' : !state.allowed ? 'Enable MilkDrop to show this scene.'
+    const message = lightOnly ? 'Your chosen light color. Movement follows playback.' : !state.allowed ? `Enable ${state.mode === 'triggers' ? 'light triggers' : 'MilkDrop'} to show this scene.`
       : state.reduced ? 'Reduced motion is active. The preview stays still.'
         : state.running ? 'Following your audio. Fullscreen keeps the session playing.'
           : state.independent ? 'Animating without audio.' : 'Preview ready. Start listening or enable Animate without audio.';

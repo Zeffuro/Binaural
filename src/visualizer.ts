@@ -3,10 +3,12 @@ import { libraryControls, libraryOptions, setupSceneLibrary } from './scene-libr
 import { type VisualSettings, visualBudget, visualRatio } from './visual-state';
 import type { VisualDock } from './visual-dock';
 import { setupImmersiveControls } from './immersive-controls';
+import { setupTriggerControls } from './trigger-controls';
+import { TriggerRenderer } from './trigger-renderer';
 
 export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | undefined, changed: () => void, dock?: VisualDock, beforeEdit: () => void = () => {}) {
   host.innerHTML = `<div class="scene-heading"><h3>Visualizations</h3><span class="small-muted">For music or a quiet moment</span></div>
-    <label for="scene-mode">Scene</label><select id="scene-mode"><option value="off">Off</option><optgroup label="Music patterns"><option value="spectrum">Spectrum</option><option value="scope">Oscilloscope</option><option value="orbits">Orbital trails</option></optgroup><optgroup label="Moodscapes"><option value="aurora">Aurora</option><option value="water">Quiet water</option><option value="local">Your photo or video</option></optgroup>${libraryOptions}</select>
+    <label for="scene-mode">Scene</label><select id="scene-mode"><option value="off">Off</option><optgroup label="Music patterns"><option value="spectrum">Spectrum</option><option value="scope">Oscilloscope</option><option value="orbits">Orbital trails</option></optgroup><optgroup label="Moodscapes"><option value="aurora">Aurora</option><option value="water">Quiet water</option><option value="local">Your photo or video</option></optgroup><optgroup label="Light triggers"><option value="triggers">Kaleidoscope and light triggers</option></optgroup>${libraryOptions}</select>
     <div id="scene-preview"><div class="scene-viewport" hidden><div class="scene-media"></div><canvas class="scene-drawing" aria-label="Music visualization"></canvas></div></div>${libraryControls}
     <label class="visual-toggle" for="scene-independent"><span>Animate without audio</span><input id="scene-independent" type="checkbox" /></label>
     <div class="scene-actions"><button id="scene-fullscreen" class="secondary-button" disabled>Open visualization ↗</button><button id="scene-export" class="text-button">Save PNG still</button><button id="scene-file-button" class="text-button">Choose photo or video</button><input id="scene-file" type="file" accept="image/*,video/*" hidden /><button id="scene-clear" class="text-button" hidden>Remove file</button><button id="scene-mute-tones" class="text-button">Mute tone layers</button></div>
@@ -26,10 +28,11 @@ export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | un
   const stage = document.createElement('dialog');
   stage.className = 'scene-stage';
   stage.setAttribute('aria-label', 'Immersive visualization');
-  stage.innerHTML = '<div class="scene-stage-tools"><button class="secondary-button scene-previous" aria-label="Previous visual">← Previous</button><button class="secondary-button scene-next" aria-label="Next visual">Next →</button><button class="secondary-button scene-close">Close visualization (Esc)</button></div>';
+  stage.innerHTML = '<div class="scene-stage-tools"><button class="secondary-button scene-previous" aria-label="Previous visual">← Previous</button><button class="secondary-button scene-next" aria-label="Next visual">Next →</button><button class="secondary-button scene-trigger-settings" hidden>Light settings</button><button class="secondary-button scene-close">Close visualization (Esc)</button></div>';
   document.body.append(stage);
   const immersive = setupImmersiveControls(stage, viewport, stage.querySelector('.scene-stage-tools')!, () => { void fullscreen(); }, () => { void close(); });
   let running = false, raf = 0, previous = 0, elapsed = 0, energy = 0, onscreen = true, closing = false;
+  let previousTick = 0, nextDraw = 0;
   let url: string | undefined;
   let video: HTMLVideoElement | undefined;
   let lastFrame: VisualFrame | undefined;
@@ -37,10 +40,16 @@ export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | un
   const bands = new Float32Array(48);
   const library = setupSceneLibrary(host, refresh, message => { status.textContent = message; }, changed);
   const consent = host.querySelector<HTMLInputElement>('#milkdrop-enable')!;
+  const triggers = setupTriggerControls(host, refresh, changed, beforeEdit);
+  const triggerRenderer = new TriggerRenderer();
+  let glassPhase = 0, lightPhase = 0, triggerPreset = '', pan = 0;
+  const allowed = () => (mode.value !== 'milkdrop' || consent.checked) && (mode.value !== 'triggers' || triggers.enabled());
+  stage.querySelector('.scene-trigger-settings')!.addEventListener('click', () => triggers.open());
   if (dock) {
     dock.scenes.append(preview);
     dock.consent.append(host.querySelector('#milkdrop-consent')!);
     dock.motion.append(independent.closest('label')!);
+    dock.consent.append(triggers.consentBox); dock.controls.append(triggers.panel);
     const reveal = document.createElement('button'); reveal.className = 'text-button'; reveal.textContent = 'Show visualization preview ↑';
     reveal.addEventListener('click', () => dock.reveal()); host.querySelector('.scene-heading')!.append(reveal);
   }
@@ -50,15 +59,22 @@ export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | un
     URL.revokeObjectURL(source);
   }
 
-  const active = () => mode.value !== 'off' && (running || independent.checked) && !reduced.matches && !document.hidden && (onscreen || stage.open);
+  const active = () => mode.value !== 'off' && allowed() && (running || independent.checked) && !reduced.matches && !document.hidden && (onscreen || stage.open);
   function render(timestamp = 0): void {
-    if (timestamp && previous && timestamp - previous < 1000 / visualBudget(library.quality()).fps) { raf = requestAnimationFrame(render); return; }
-    const delta = previous && active() ? Math.min((timestamp - previous) / 1000, 0.05) : 0;
+    const cadence = timestamp && previousTick ? timestamp - previousTick : 0;
+    previousTick = timestamp;
+    const effectiveQuality = library.effectiveQuality(), interval = 1000 / visualBudget(effectiveQuality).fps;
+    if (timestamp && nextDraw && timestamp < nextDraw - .1 && active()) { raf = requestAnimationFrame(render); return; }
+    const drawing = active(), drawInterval = previous && timestamp ? timestamp - previous : 0;
+    const measuring = drawing && library.quality() === 'auto' && library.qualityReady(mode.value);
+    const started = measuring ? performance.now() : 0;
+    if (timestamp) nextDraw = nextDraw ? nextDraw + (Math.floor(Math.max(0, timestamp - nextDraw) / interval) + 1) * interval : timestamp + interval;
+    const delta = previous && drawing ? Math.min(drawInterval / 1000, 0.05) : 0;
     elapsed += delta;
     previous = timestamp;
     const bounds = viewport.getBoundingClientRect();
     const width = Math.max(1, bounds.width), height = Math.max(1, bounds.height);
-    const ratio = visualRatio(width, library.quality());
+    const ratio = visualRatio(width, effectiveQuality);
     if (canvas.width !== Math.round(width * ratio) || canvas.height !== Math.round(height * ratio)) {
       canvas.width = Math.round(width * ratio); canvas.height = Math.round(height * ratio);
     }
@@ -73,7 +89,16 @@ export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | un
     const cssHue = getComputedStyle(document.documentElement).getPropertyValue('--light-hue').trim();
     const hue = cssHue ? Number(cssHue) : 140;
     ctx.lineCap = 'round';
-    if (mode.value === 'spectrum') {
+    if (mode.value === 'triggers' && triggers.enabled()) {
+      const settings = triggers.state();
+      if (triggerPreset !== settings.preset && settings.preset !== 'custom') { triggerPreset = settings.preset; glassPhase = lightPhase = 0; triggerRenderer.reset(); }
+      glassPhase += delta * settings.speed; lightPhase += delta * settings.lightSpeed * Math.PI * 2;
+      const rms = (samples?: Uint8Array) => samples ? Math.sqrt(samples.reduce((sum, value) => sum + ((value - 128) / 128) ** 2, 0) / samples.length) : 0;
+      const left = rms(frame?.left), right = rms(frame?.right);
+      pan += ((right - left) / Math.max(.05, left + right) - pan) * .06;
+      triggerRenderer.render(ctx, width, height, settings, { glass: glassPhase, light: lightPhase, energy, pan });
+      canvas.dataset.glass = glassPhase.toFixed(4); canvas.dataset.light = lightPhase.toFixed(4);
+    } else if (mode.value === 'spectrum') {
       const gap = width / bands.length;
       for (let i = 0; i < bands.length; i++) {
         const bin = Math.min(511, Math.floor(Math.pow(i / (bands.length - 1), 2) * 450) + 1);
@@ -125,13 +150,20 @@ export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | un
     }
     canvas.dataset.frame = elapsed.toFixed(3);
     canvas.dataset.energy = energy.toFixed(4);
+    if (measuring && drawInterval && cadence) library.sampleQuality(performance.now() - started, cadence, drawInterval);
     if (active()) raf = requestAnimationFrame(render);
   }
   function refresh(): void {
-    cancelAnimationFrame(raf); previous = 0;
-    viewport.hidden = mode.value === 'off' || (mode.value === 'milkdrop' && !consent.checked); open.disabled = viewport.hidden;
+    cancelAnimationFrame(raf); previous = previousTick = nextDraw = 0;
+    if (!active()) library.pauseQuality();
+    viewport.hidden = mode.value === 'off' || !allowed(); open.disabled = viewport.hidden;
     canvas.hidden = mode.value === 'local' || mode.value === 'milkdrop' || mode.value.startsWith('nature:'); media.hidden = mode.value !== 'local';
     library.select(mode.value);
+    library.effectiveQuality();
+    triggers.select(mode.value);
+    stage.querySelector<HTMLElement>('.scene-trigger-settings')!.hidden = mode.value !== 'triggers';
+    viewport.classList.toggle('trigger-manual', mode.value === 'triggers' && triggers.state().path === 'manual');
+    if (mode.value === 'triggers') status.textContent = triggers.enabled() ? 'Light settings are below the preview. Glass and backlight move independently.' : 'Enable light triggers beside the preview to display this scene.';
     dock?.scene({ mode: mode.value, label: mode.selectedOptions[0].text, allowed: !open.disabled, running, independent: independent.checked, reduced: reduced.matches });
     if (video) {
       const currentVideo = video;
@@ -183,7 +215,7 @@ export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | un
     status.textContent = 'File removed.'; mode.value = 'off'; refresh(); changed();
   });
   async function fullscreen(): Promise<void> {
-    if (mode.value === 'off' || stage.open || closing || (mode.value === 'milkdrop' && !consent.checked)) return;
+    if (mode.value === 'off' || stage.open || closing || !allowed()) return;
     stage.append(viewport); stage.showModal(); refresh(); await immersive.opened();
   }
   open.addEventListener('click', () => { void fullscreen(); });
@@ -197,8 +229,9 @@ export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | un
   function next(direction = 1): void {
     beforeEdit();
     if (mode.value === 'milkdrop') library.next(direction);
+    else if (mode.value === 'triggers') triggers.next(direction);
     else {
-      const options = [...mode.options].filter(option => !['off', 'local', 'milkdrop'].includes(option.value));
+      const options = [...mode.options].filter(option => !['off', 'local', 'milkdrop', 'triggers'].includes(option.value));
       const index = options.findIndex(option => option.value === mode.value);
       const target = index < 0 ? (direction > 0 ? 0 : options.length - 1) : (index + direction + options.length) % options.length;
       mode.value = options[target].value; refresh(); changed();
@@ -212,7 +245,7 @@ export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | un
   });
   let swipe: { id: number; x: number; y: number } | undefined;
   viewport.addEventListener('pointerdown', event => {
-    if (!stage.open || mode.value.startsWith('nature:') || event.pointerType === 'mouse') return;
+    if (!stage.open || mode.value.startsWith('nature:') || (mode.value === 'triggers' && triggers.state().path === 'manual') || event.pointerType === 'mouse') return;
     swipe = { id: event.pointerId, x: event.clientX, y: event.clientY };
   });
   viewport.addEventListener('pointerup', event => {
@@ -221,12 +254,21 @@ export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | un
     if (Math.abs(dx) >= 64 && Math.abs(dx) > Math.abs(dy) * 2) next(dx < 0 ? 1 : -1);
   });
   viewport.addEventListener('pointercancel', () => { swipe = undefined; });
+  let placing: number | undefined;
+  const place = (event: PointerEvent) => { const box = viewport.getBoundingClientRect(); triggers.position((event.clientX - box.left) / box.width * 2 - 1, (event.clientY - box.top) / box.height * 2 - 1); };
+  viewport.addEventListener('pointerdown', event => {
+    if (mode.value !== 'triggers' || !triggers.enabled() || triggers.state().path !== 'manual' || event.button !== 0) return;
+    beforeEdit(); placing = event.pointerId; viewport.setPointerCapture(event.pointerId); place(event);
+  });
+  viewport.addEventListener('pointermove', event => { if (placing === event.pointerId) place(event); });
+  for (const type of ['pointerup', 'pointercancel']) viewport.addEventListener(type, () => { placing = undefined; });
   stage.addEventListener('cancel', event => { event.preventDefault(); event.stopPropagation(); void close(); });
   host.querySelector('#scene-export')!.addEventListener('click', () => {
     if (mode.value === 'off') { status.textContent = 'Choose a scene before saving a still.'; return; }
+    if (mode.value === 'triggers' && !triggers.enabled()) { status.textContent = 'Enable light triggers before saving this scene.'; return; }
     if ((mode.value === 'milkdrop' || mode.value.startsWith('nature:')) && !library.captureReady()) { status.textContent = 'Wait for this scene to load. MilkDrop also requires your flashing-light consent.'; return; }
     try {
-      cancelAnimationFrame(raf); previous = 0; render();
+      cancelAnimationFrame(raf); previous = previousTick = nextDraw = 0; render();
       const image = document.createElement('canvas');
       const source = mode.value === 'local' ? media.firstElementChild as HTMLImageElement | HTMLVideoElement | null
         : mode.value === 'milkdrop' || mode.value.startsWith('nature:') ? library.flat() ?? library.canvas() : canvas;
@@ -243,15 +285,17 @@ export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | un
   });
   refresh();
   return { transport(value: boolean) { if (value !== running) { running = value; refresh(); } },
-    getState() { return { scene: mode.value, ...library.getState() }; },
+    getState() { return { scene: mode.value, ...library.getState(), triggers: triggers.state() }; },
     restore(state: VisualSettings) {
       loading++; const old = media.firstElementChild as HTMLImageElement | HTMLVideoElement | null;
       if (old && url) release(old, url);
       video = undefined; media.replaceChildren(); url = undefined; clear.hidden = true;
-      mode.value = state.scene; independent.checked = false; elapsed = 0; lastFrame = undefined; library.restore(state); refresh();
+      mode.value = state.scene; independent.checked = false; elapsed = 0; lastFrame = undefined; library.restore(state);
+      triggers.restore(state.triggers); glassPhase = lightPhase = pan = 0; triggerPreset = ''; triggerRenderer.reset(); refresh();
       if (mode.value === 'local' && !url) status.textContent = 'Choose your local photo or video again. Local files are excluded from saved experiences.';
     },
     choose(scene: string) { mode.value = scene; refresh(); },
+    applyTrigger(id: string) { mode.value = 'triggers'; triggers.apply(id); refresh(); },
     fullscreen() { void fullscreen(); },
     next,
     toggleIndependent() { independent.checked = !independent.checked; refresh(); changed(); },

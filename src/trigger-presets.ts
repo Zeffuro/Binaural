@@ -1,0 +1,24 @@
+import { defaultTriggerSettings, type TriggerSettings } from './trigger-state';
+
+const preset = (id: string, name: string, description: string, settings: Partial<TriggerSettings>) => ({ id, name, description, settings: { ...defaultTriggerSettings(), ...settings, preset: id } });
+export const triggerPresets = [
+  preset('prism-lantern', 'Prism lantern', 'Cool light travels behind rose glass. The mirrors move slowly while the backlight explores each facet.', {}),
+  preset('rose-glass', 'Rose glass', 'Warm translucent beads with a soft wandering backlight.', { color: '#e96197', accent: '#e8bba0', lampColor: '#ffe1c5', light: .45, lightSpeed: .16, brightness: .48, seed: 73 }),
+  preset('blue-hour', 'Blue hour', 'Blue and violet glass with broad pools of reflected light.', { color: '#709de9', accent: '#c17bef', motif: 'prism', light: .9, lightSpeed: .28, size: .44, softness: .35, seed: 89 }),
+  preset('amber-facets', 'Amber facets', 'Honey-colored glass and warm moving reflections.', { color: '#f1b660', accent: '#e67182', lampColor: '#ffd599', motif: 'prism', lightSpeed: .2, density: 10, brightness: .5, seed: 103 }),
+  preset('mint-prism', 'Mint prism', 'Mint and sea glass with a slow figure-eight backlight.', { color: '#68c8ae', accent: '#8da9ed', path: 'figure-eight', density: 18, size: .4, lightSpeed: .22, seed: 137 }),
+  preset('violet-jewels', 'Violet jewels', 'Small violet beads with deeper shadows and a narrow wandering light.', { color: '#bb7adf', accent: '#e38fba', depth: .8, size: .18, density: 22, zoom: 1.4, seed: 191 }),
+  preset('rose-window', 'Rose window', 'A single radial flower of mirrored petals.', { layout: 'radial', motif: 'petals', symmetry: 10, color: '#e98faf', accent: '#d6a972', zoom: 1.25, lightSpeed: .18, seed: 227 }),
+  preset('crystal-stars', 'Crystal stars', 'Radial blue stars with a cool light moving through the center.', { layout: 'radial', motif: 'stars', symmetry: 8, color: '#8ab9e8', accent: '#c78ddd', light: .9, size: .35, speed: .06, seed: 269 }),
+  preset('red-scan', 'Red scan', 'A soft red light passes across the screen and returns. No hard cuts or strobe.', { style: 'scan', path: 'horizontal', color: '#e34b55', accent: '#b92e65', brightness: .45, size: .18, softness: .7, lightSpeed: .35, trail: .25 }),
+  preset('red-orbit', 'Red orbit', 'A red beam follows a slow circular path.', { style: 'scan', path: 'orbit', color: '#d95b68', accent: '#aa527c', size: .14, brightness: .45, lightSpeed: .2, trail: .45 }),
+  preset('blue-scan', 'Blue scan', 'A cool vertical scan with a broad soft edge.', { style: 'scan', path: 'vertical', color: '#689de2', accent: '#7dbac3', size: .22, brightness: .48, softness: .85, lightSpeed: .26 }),
+  preset('amber-scan', 'Amber scan', 'A warm figure-eight scan with a fading wake.', { style: 'scan', path: 'figure-eight', color: '#e8b35f', accent: '#c88a72', brightness: .42, trail: .6, lightSpeed: .18, size: .2 }),
+  preset('soft-torch', 'Soft torch', 'A softly focused light floats across a dark background.', { style: 'torch', color: '#e8c59f', accent: '#dcb6c4', size: .28, brightness: .4, softness: .85, lightSpeed: .2, trail: .1 }),
+  preset('wandering-light', 'Wandering light', 'Cool and warm halos move in a gentle figure eight.', { style: 'torch', path: 'figure-eight', color: '#8ccbd4', accent: '#eab28b', size: .4, brightness: .45, softness: .9, lightSpeed: .26, trail: .35 }),
+  preset('quiet-focus', 'Quiet focus', 'A still, defocused light. Drag the preview or use the position controls to place it.', { style: 'torch', path: 'manual', color: '#c4b3df', accent: '#a5b9cf', lightSpeed: 0, speed: 0, size: .45, brightness: .35, softness: 1, trail: 0 }),
+  preset('bright-prism', 'Bright prism', 'Bright white light travels through colored glass, with slow, smooth movement.', { lampColor: '#ffffff', brightness: 1.5, light: 1, size: .2, lightSpeed: .18, glow: .45, seed: 307 }),
+  preset('very-bright-prism', 'Very bright prism', 'High exposure and a narrow white backlight create intense highlights between colored facets. Choose a lower intensity whenever you prefer.', { motif: 'prism', lampColor: '#ffffff', brightness: 3, light: .8, size: .15, lightSpeed: .14, glow: .6, seed: 331 }),
+  preset('bright-torch', 'Bright white torch', 'A large white lamp with a bright center and a slow wandering halo.', { style: 'torch', color: '#ffffff', accent: '#e9f5ff', lampColor: '#ffffff', brightness: 2, size: .7, lightSpeed: .16, softness: .45, depth: .1, glow: .5 }),
+  preset('very-bright-torch', 'Very bright white torch', 'A broad, intense white lamp with smooth movement and no strobe.', { style: 'torch', color: '#ffffff', accent: '#ffffff', lampColor: '#ffffff', brightness: 4, size: 1, lightSpeed: .12, softness: .25, depth: 0, glow: .7 }),
+];

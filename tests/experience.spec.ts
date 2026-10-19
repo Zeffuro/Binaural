@@ -58,7 +58,7 @@ test('ambient colors are visible, whole-studio hues apply, and motion freezes on
   await page.goto('/');
   const preview = page.locator('#visual-preview');
   const before = await preview.evaluate(el => getComputedStyle(el).backgroundImage);
-  await page.getByLabel('Color hue').fill('280');
+  await page.getByLabel('Color hue', { exact: true }).fill('280');
   expect(await preview.evaluate(el => getComputedStyle(el).backgroundImage)).not.toBe(before);
   await page.getByRole('switch', { name: 'Ambient light' }).check();
   await page.getByLabel('Color the whole studio').check();

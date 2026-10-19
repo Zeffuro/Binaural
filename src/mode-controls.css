@@ -1,0 +1,4 @@
+.listening-modes { margin-block: 18px; }
+.listening-modes [role=group] { display: flex; flex-wrap: wrap; gap: 8px; }
+.listening-modes button { flex: 1 1 80px; min-height: 44px; }
+.listening-modes [aria-pressed=true] { outline: 2px solid currentColor; outline-offset: -2px; font-weight: 600; }

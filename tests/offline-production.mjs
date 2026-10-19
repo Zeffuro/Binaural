@@ -3,11 +3,12 @@ import { readFile, readdir, stat } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, firefox, expect } from '@playwright/test';
+import { browserLaunchOptions } from '../scripts/browser-options.mjs';
 import AxeBuilder from '@axe-core/playwright';
 import { makeBwgFixture } from './helpers/bwg.ts';
 
 const root = fileURLToPath(new URL('../dist/', import.meta.url));
-const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.txt': 'text/plain' };
+const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.txt': 'text/plain', '.ogg': 'audio/ogg' };
 let mount = '/', revision = '', failAsset = false, disconnected = false;
 const server = createServer(async (request, response) => {
   if (disconnected) { request.socket.destroy(); return; }
@@ -38,7 +39,7 @@ try {
   for (const prefix of ['/', '/Binaural/']) {
     for (const [name, launcher] of [['chromium', chromium], ['firefox', firefox]]) {
       mount = prefix; revision = ''; failAsset = false; disconnected = false;
-      const browser = await launcher.launch();
+      const browser = await launcher.launch(browserLaunchOptions(name));
       try {
         const context = await browser.newContext();
         const page = await context.newPage();
@@ -67,6 +68,29 @@ try {
         })), files);
         expect(offlineAssets.every(Boolean)).toBe(true);
         expect(await page.evaluate(() => fetch('./private-local-file.json').then(() => true, () => false))).toBe(false);
+        await page.locator('[data-listening-mode="asmr"]').click();
+        for (const id of ['glass-lantern', 'red-sweep', 'rose-brushes', 'paper-prism', 'blue-droplets', 'torch-whisper']) {
+          await page.locator('#asmr-preset').selectOption(id); await page.locator('#asmr-pair').click();
+          await expect(page.locator('[data-asmr]')).toHaveCount(2);
+        }
+        await page.locator('#asmr-preset').selectOption('hands-close'); await page.locator('#asmr-load').click();
+        const recording = page.waitForResponse(origin + prefix + 'audio/asmr/hand-rubbing.ogg');
+        await page.locator('#asmr-only').click(); await page.locator('#play').click();
+        const recordedResponse = await recording;
+        expect(recordedResponse.ok()).toBe(true); expect(recordedResponse.headers()['content-type']).toBe('audio/ogg');
+        expect(recordedResponse.fromServiceWorker()).toBe(true);
+        await expect(page.locator('#status')).toHaveText('● Listening');
+        await page.locator('#pause').click(); await expect(page.locator('#status')).toHaveText('Ⅱ Paused');
+        await page.locator('#play').click();
+        await page.locator('[data-visual-quick=triggers]').click();
+        await page.getByLabel('Enable light triggers', { exact: true }).check();
+        for (const id of ['prism-lantern', 'red-scan', 'soft-torch']) {
+          await page.locator('#trigger-preset').selectOption(id); await expect(page.locator('.scene-drawing')).toBeVisible();
+        }
+        await page.getByLabel('Animate without audio', { exact: true }).check();
+        await page.locator('.scene-drawing').scrollIntoViewIfNeeded();
+        await expect.poll(async () => Number(await page.locator('.scene-drawing').getAttribute('data-light'))).toBeGreaterThan(0);
+        await page.getByLabel('Animate without audio', { exact: true }).uncheck();
         for (const id of ['forest-slope', 'mountain-dawn', 'autumn-meadow']) {
           await page.getByLabel('Scene', { exact: true }).selectOption(`nature:${id}`);
           await expect(page.locator('#scene-status')).toContainText('Use Look around');
@@ -143,6 +167,7 @@ try {
         });
         await expect.poll(() => page.evaluate(() => window.offlineFailureObserved)).toBe(true);
         expect(await page.evaluate(async () => !!(await navigator.serviceWorker.getRegistration()).waiting)).toBe(false);
+        await expect.poll(() => page.evaluate(async key => (await caches.keys()).filter(name => name.startsWith(key)), cachePrefix)).toHaveLength(2);
         const names = await page.evaluate(() => caches.keys());
         expect(names.filter(name => name.startsWith(cachePrefix))).toHaveLength(2);
         expect(names.some(name => name.endsWith('-incomplete'))).toBe(false);
@@ -168,7 +193,7 @@ try {
         await page.getByRole('button', { name: 'Stop listening' }).click();
         expect(await page.evaluate(() => caches.has('unrelated-app-cache'))).toBe(true);
         expect(errors).toEqual([]);
-        console.log(`${name} ${prefix}: complete offline assets/scenes/worklet/share, playback-safe intertab update, waiting old-tab retention, failed/successful rollback and cache isolation passed`);
+        console.log(`${name} ${prefix}: complete offline assets/scenes/worklet/share, recorded Ogg playback, playback-safe intertab update, waiting old-tab retention, failed/successful rollback and cache isolation passed`);
       } finally { await browser.close(); }
     }
   }

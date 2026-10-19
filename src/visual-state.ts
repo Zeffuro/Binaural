@@ -1,8 +1,10 @@
 import type { LightColor } from './visual-color';
 import { butterchurnPresets } from './butterchurn-presets';
 import { moodscapes } from './moodscape-catalog';
+import { defaultTriggerSettings, parseTriggerSettings, type TriggerSettings } from './trigger-state';
+import type { VisualQuality } from './adaptive-visual-quality';
 
-export type VisualQuality = 'eco' | 'balanced' | 'high';
+export type { VisualQuality } from './adaptive-visual-quality';
 export interface VisualSettings {
   light: { enabled: boolean; color: LightColor; mode: 'still' | 'breathe' | 'cycle'; speed: number; studio: boolean };
   scene: string;
@@ -12,13 +14,14 @@ export interface VisualSettings {
   autoCycle: boolean;
   cycleSeconds: number;
   blendSeconds: number;
+  triggers: TriggerSettings;
 }
 
-export const sceneModes = ['off', 'spectrum', 'scope', 'orbits', 'aurora', 'water', 'local', 'milkdrop', ...moodscapes.map(item => `nature:${item.id}`)];
+export const sceneModes = ['off', 'spectrum', 'scope', 'orbits', 'aurora', 'water', 'local', 'milkdrop', 'triggers', ...moodscapes.map(item => `nature:${item.id}`)];
 
 export function defaultVisualSettings(): VisualSettings {
   return { light: { enabled: false, color: { hue: 140, saturation: 40, level: 35 }, mode: 'still', speed: 30, studio: false },
-    scene: 'off', milkdropPreset: butterchurnPresets[0].id, natureDirection: 0, quality: 'balanced', autoCycle: false, cycleSeconds: 30, blendSeconds: 2 };
+    scene: 'off', milkdropPreset: butterchurnPresets[0].id, natureDirection: 0, quality: 'balanced', autoCycle: false, cycleSeconds: 30, blendSeconds: 2, triggers: defaultTriggerSettings() };
 }
 
 export function parseVisualSettings(value: unknown): VisualSettings {
@@ -39,12 +42,13 @@ export function parseVisualSettings(value: unknown): VisualSettings {
   return { light: { enabled: boolean(light.enabled), color: { hue: number(color.hue, 0, 360), saturation: number(color.saturation, 0, 100), level: number(color.level, 0, 100) },
     mode: choice(light.mode, ['still', 'breathe', 'cycle']), speed: number(light.speed, 10, 120), studio: boolean(light.studio) },
     scene: choice(state.scene, sceneModes), milkdropPreset: choice(state.milkdropPreset, butterchurnPresets.map(item => item.id)),
-    natureDirection: number(state.natureDirection, 0, 360), quality: choice(state.quality, ['eco', 'balanced', 'high']),
-    autoCycle: boolean(state.autoCycle), cycleSeconds: number(state.cycleSeconds, 10, 300), blendSeconds: number(state.blendSeconds, 0, 10) };
+    natureDirection: number(state.natureDirection, 0, 360), quality: choice(state.quality, ['eco', 'balanced', 'high', 'auto']),
+    autoCycle: boolean(state.autoCycle), cycleSeconds: number(state.cycleSeconds, 10, 300), blendSeconds: number(state.blendSeconds, 0, 10),
+    triggers: state.triggers === undefined ? defaultTriggerSettings() : parseTriggerSettings(state.triggers) };
 }
 
 export function visualBudget(quality: VisualQuality): { fps: number; ratio: number; maxWidth: number } {
-  return quality === 'eco' ? { fps: 30, ratio: 1, maxWidth: 960 } : quality === 'high' ? { fps: 60, ratio: 2, maxWidth: 1920 } : { fps: 45, ratio: 1.5, maxWidth: 1280 };
+  return quality === 'eco' || quality === 'auto' ? { fps: 30, ratio: 1, maxWidth: 960 } : quality === 'high' ? { fps: 60, ratio: 2, maxWidth: 1920 } : { fps: 45, ratio: 1.5, maxWidth: 1280 };
 }
 
 export function visualRatio(width: number, quality: VisualQuality): number {

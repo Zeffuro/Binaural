@@ -5,6 +5,9 @@ import workletUrl from './bwg-worklet.ts?worker&url';
 import { backgroundAssets } from '../background-assets';
 import { generatedBackgrounds, makeGeneratedBackground } from './generated-backgrounds';
 import { VisualAnalysis, type VisualFrame } from './visual-analysis';
+import { AsmrMixer } from './asmr-mixer';
+import { listeningMode, modeGains } from '../listening-mode';
+import { asmrRecordingsReady, prepareAsmrRecordings } from './asmr-assets';
 
 export class AudioEngine {
   private context?: AudioContext;
@@ -25,9 +28,14 @@ export class AudioEngine {
   private isPaused = false;
   private origin = 0;
   private bwgNode?: AudioWorkletNode;
+  private bwgBus?: GainNode;
   private continues = false;
   private analysis?: VisualAnalysis;
   private sequenceEnd?: number;
+  private asmr?: AsmrMixer;
+  private asmrRevision = 0;
+  private asmrPending = false;
+  get loadingAsmr(): boolean { return this.asmrPending; }
   failure?: string;
 
   get holding(): boolean { return this.continues && (this.sequenceEnd ?? Infinity) <= (this.context?.currentTime ?? 0); }
@@ -76,8 +84,13 @@ export class AudioEngine {
       this.musicGain = context.createGain();
       this.musicGain.connect(this.master);
       this.toneBus = context.createGain();
-      this.toneBus.gain.value = session.tonesMuted ? 0 : 1;
+      this.toneBus.gain.value = session.tonesMuted ? 0 : modeGains(listeningMode(session)).tones;
       this.toneBus.connect(this.master);
+      this.asmr = new AsmrMixer(context, this.master, this.endAt);
+      if (modeGains(listeningMode(session)).asmr) {
+        await prepareAsmrRecordings(session.asmr);
+        if (!current()) return;
+      }
       if (bwg) {
         await context.audioWorklet.addModule(workletUrl);
         if (!current()) return;
@@ -86,7 +99,8 @@ export class AudioEngine {
         this.bwgNode = new AudioWorkletNode(context, 'bwg-sequence', { numberOfInputs: 0,
           numberOfOutputs: 1, outputChannelCount: [2], processorOptions: { preset: bwg, background } });
         this.bwgNode.addEventListener('processorerror', () => { this.failure = 'The BWGen audio processor stopped unexpectedly. Playback has been stopped.'; });
-        this.bwgNode.connect(this.master);
+        this.bwgBus = context.createGain(); this.bwgBus.gain.value = session.bwgMuted ? 0 : modeGains(listeningMode(session)).tones;
+        this.bwgNode.connect(this.bwgBus).connect(this.master);
       }
       this.update(session);
       await context.resume();
@@ -103,7 +117,8 @@ export class AudioEngine {
     const context = this.context;
     if (!context || !this.master || !this.musicGain) return;
     smooth(this.master.gain, session.master, context.currentTime);
-    if (this.toneBus) smooth(this.toneBus.gain, session.tonesMuted ? 0 : 1, context.currentTime);
+    const gains = modeGains(listeningMode(session));
+    if (this.toneBus) smooth(this.toneBus.gain, session.tonesMuted ? 0 : gains.tones, context.currentTime);
     // The session gate is downstream, so edits cannot erase its scheduled fade-out.
     smooth(this.musicGain.gain, session.musicLevel * 0.4, context.currentTime);
     for (const [id, voice] of this.voices) {
@@ -113,6 +128,7 @@ export class AudioEngine {
       }
     }
     if (this.bwgNode) this.bwgNode.port.postMessage({ levels: session.layers.map(layer => session.tonesMuted ? 0 : layer.level) });
+    if (this.bwgBus) smooth(this.bwgBus.gain, session.bwgMuted ? 0 : gains.tones, context.currentTime);
     for (const layer of session.bwg ? [] : session.layers) {
       const existing = this.voices.get(layer.id);
       if (existing) existing.update(layer, session.layers.length);
@@ -120,6 +136,18 @@ export class AudioEngine {
     }
     if (this.ambient !== session.ambient) this.changeAmbient(session);
     if (this.noiseGain) smooth(this.noiseGain.gain, session.ambientLevel * 0.22, context.currentTime);
+    const revision = ++this.asmrRevision, mixer = this.asmr;
+    if (!mixer) return;
+    if (!gains.asmr || asmrRecordingsReady(session.asmr)) {
+      this.asmrPending = false; mixer.update(session.asmr, !!gains.asmr); return;
+    }
+    this.asmrPending = true;
+    const settings = structuredClone(session.asmr);
+    mixer.update(settings, false);
+    const current = () => this.context === context && this.asmr === mixer && this.asmrRevision === revision && !this.stopping;
+    void prepareAsmrRecordings(settings).then(() => { if (current()) { this.asmrPending = false; mixer.update(settings, true); } }, error => {
+      if (current()) { this.asmrPending = false; this.failure = error instanceof Error ? error.message : 'The ASMR recording could not load.'; }
+    });
   }
 
   private changeAmbient(session: Session): void {
@@ -240,6 +268,7 @@ export class AudioEngine {
     const context = this.context;
     if (!context || this.stopping) return;
     this.stopping = true;
+    ++this.asmrRevision; this.asmrPending = false;
     if (this.gate && context.state === 'running') {
       hold(this.gate.gain, context.currentTime);
       this.gate.gain.linearRampToValueAtTime(0, context.currentTime + 0.12);
@@ -247,9 +276,11 @@ export class AudioEngine {
     }
     this.detachMusic();
     await context.close();
+    this.asmr?.dispose(); this.asmr = undefined;
     this.voices.clear();
     this.bwgNode?.disconnect();
     this.bwgNode = undefined;
+    this.bwgBus?.disconnect(); this.bwgBus = undefined;
     this.continues = false;
     this.sequenceEnd = undefined;
     this.context = undefined;

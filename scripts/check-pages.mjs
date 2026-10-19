@@ -3,10 +3,11 @@ import { readFile, stat } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, firefox, expect } from '@playwright/test';
+import { browserLaunchOptions } from './browser-options.mjs';
 import { makeBwgFixture } from '../tests/helpers/bwg.ts';
 
 const root = resolve(fileURLToPath(new URL('../dist/', import.meta.url)));
-const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.webp': 'image/webp', '.png': 'image/png', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json', '.txt': 'text/plain' };
+const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.webp': 'image/webp', '.png': 'image/png', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json', '.txt': 'text/plain', '.ogg': 'audio/ogg' };
 let mount = '/Binaural/';
 const server = createServer(async (request, response) => {
   try {
@@ -24,7 +25,7 @@ try {
   for (const prefix of ['/Binaural/', '/']) {
     mount = prefix;
     for (const [name, launcher] of [['chromium', chromium], ['firefox', firefox]]) {
-      const browser = await launcher.launch();
+      const browser = await launcher.launch(browserLaunchOptions(name));
       try {
         const page = await browser.newPage({ colorScheme: 'dark' });
         const errors = [], badResponses = [], outside = [];
@@ -54,8 +55,37 @@ try {
         await page.getByRole('button', { name: 'Apply timeline', exact: true }).click();
         await expect(page.locator('#timeline-info')).toBeVisible();
         await expect(page.locator('#status')).toHaveText('Ready when you are');
+        await page.locator('[data-listening-mode="asmr"]').click();
+        for (const id of ['glass-lantern', 'red-sweep', 'rose-brushes', 'paper-prism', 'blue-droplets', 'torch-whisper']) {
+          await page.locator('#asmr-preset').selectOption(id); await page.locator('#asmr-pair').click();
+          await expect(page.locator('[data-asmr]')).toHaveCount(2);
+          await expect(page.getByLabel('Enable light triggers', { exact: true })).not.toBeChecked();
+        }
+        await page.locator('#asmr-preset').selectOption('hands-close'); await page.locator('#asmr-load').click();
+        const recording = page.waitForResponse(origin + prefix + 'audio/asmr/hand-rubbing.ogg');
+        await page.locator('#asmr-only').click(); await page.locator('#play').click();
+        const recordedResponse = await recording;
+        expect(recordedResponse.ok()).toBe(true); expect(recordedResponse.headers()['content-type']).toBe('audio/ogg');
+        await expect(page.locator('#status')).toHaveText('● Listening');
+        await page.locator('#pause').click(); await expect(page.locator('#status')).toHaveText('Ⅱ Paused');
+        await page.locator('#play').click();
         await page.locator('[data-visual-quick=calm]').click();
         await expect(page.locator('#visual-dock .scene-drawing')).toBeVisible();
+        await page.locator('[data-visual-quick=triggers]').click();
+        await expect(page.locator('#visual-dock-fullscreen')).toBeDisabled();
+        await page.getByLabel('Enable light triggers', { exact: true }).check();
+        const triggerIds = await page.locator('#trigger-preset option:not([disabled])').evaluateAll(nodes => nodes.map(node => node.value));
+        expect(triggerIds).toHaveLength(19);
+        for (const id of triggerIds) {
+          await page.locator('#trigger-preset').selectOption(id);
+          await expect(page.locator('.scene-drawing')).toBeVisible();
+        }
+        await page.locator('#trigger-preset').selectOption('prism-lantern');
+        await page.getByLabel('Animate without audio', { exact: true }).check();
+        await page.locator('.scene-drawing').scrollIntoViewIfNeeded();
+        await expect.poll(async () => Number(await page.locator('.scene-drawing').getAttribute('data-light'))).toBeGreaterThan(0);
+        await page.getByLabel('Animate without audio', { exact: true }).uncheck();
+        await page.locator('[data-visual-quick=calm]').click();
         await page.locator('#visual-dock .scene-drawing').dblclick();
         await expect(page.getByRole('dialog', { name: 'Immersive visualization' })).toBeVisible();
         const immersiveAudio = page.locator('.scene-stage').getByRole('group', { name: 'Audio controls', exact: true });
@@ -119,7 +149,7 @@ try {
         const links = await page.locator('a[href]').evaluateAll(nodes => nodes.map(node => node.href).filter(href => href.startsWith(location.origin)));
         for (const link of links) expect((await page.request.get(link)).status(), link).toBe(200);
         expect(errors).toEqual([]); expect(outside).toEqual([]); expect(badResponses).toEqual([]);
-        console.log(`${name}: ${prefix} timeline, inline/fullscreen workspace, guide, soundscapes, assets, 6 presets, 3 photos, shared session, WAV, worklet, pause and credits passed`);
+        console.log(`${name}: ${prefix} 19 light triggers, 6 generated ASMR mixes and recorded Ogg playback, timeline, inline/fullscreen workspace, guide, soundscapes, assets, 6 MilkDrop presets, 3 photos, shared session, WAV, worklet, pause and credits passed`);
       } finally { await browser.close(); }
     }
   }

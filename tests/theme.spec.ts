@@ -117,7 +117,7 @@ test('dark controls and dialogs stay readable while whole studio color keeps a d
   await assertDarkSurface(page.locator('#preset-name'));
   await assertDarkSurface(page.locator('.frequency-inputs input').first());
   await page.screenshot({ path: `test-results/theme-dark-${test.info().project.name}.png`, fullPage: true });
-  await page.getByLabel('Color hue').fill('280');
+  await page.getByLabel('Color hue', { exact: true }).fill('280');
   const preview = await page.locator('#visual-preview').evaluate(el => getComputedStyle(el).backgroundImage);
   await page.getByRole('switch', { name: 'Ambient light' }).check();
   await page.getByLabel('Color the whole studio').check();

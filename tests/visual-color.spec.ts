@@ -33,13 +33,13 @@ test('color picker preserves full colors, neutral colors, and brightness endpoin
     await expect(page.getByRole('switch', { name: 'Ambient light' })).not.toBeChecked();
   }
   await picker.fill('#ff0000');
-  await page.getByLabel('Color hue').fill('240');
+  await page.getByLabel('Color hue', { exact: true }).fill('240');
   await expect(picker).toHaveValue('#0000ff');
   await picker.fill('#808080');
-  await expect(page.getByLabel('Color hue')).toHaveValue('240');
-  await page.getByLabel('Brightness').fill('0');
+  await expect(page.getByLabel('Color hue', { exact: true })).toHaveValue('240');
+  await page.locator('#visual-controls').getByLabel('Brightness').fill('0');
   await expect(picker).toHaveValue('#000000');
-  await page.getByLabel('Brightness').fill('100');
+  await page.locator('#visual-controls').getByLabel('Brightness').fill('100');
   await expect(picker).toHaveValue('#ffffff');
   await page.getByRole('switch', { name: 'Ambient light' }).check();
   await page.getByLabel('Color the whole studio').check();
@@ -118,14 +118,14 @@ test('in-page palette supports pointer shades, keyboard controls and incomplete 
   await expect(page.locator('input[type=color]')).toHaveCount(0);
   await page.getByRole('button', { name: 'Choose ambient color' }).click();
   await expect(page.locator('#color-palette')).toBeVisible();
-  await page.getByLabel('Color hue').fill('0');
+  await page.getByLabel('Color hue', { exact: true }).fill('0');
   const plane = page.locator('#color-plane');
   const bounds = (await plane.boundingBox())!;
   await plane.click({ position: { x: bounds.width - 1, y: bounds.height / 2 } });
   const color = await page.locator('#visual-color').inputValue();
   expect(parseInt(color.slice(1, 3), 16)).toBeGreaterThan(120);
   expect(parseInt(color.slice(3, 5), 16)).toBeLessThan(3);
-  await page.getByLabel('Saturation').fill('0');
+  await page.locator('#light-picker').getByLabel('Saturation').fill('0');
   expect((await lightState(page)).saturation).toBe(0);
   const before = await lightState(page);
   await page.getByLabel('Ambient light color', { exact: true }).fill('#x');

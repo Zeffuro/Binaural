@@ -33,6 +33,7 @@ export function setupImmersiveControls(stage: HTMLDialogElement, surface: HTMLEl
     event.preventDefault(); stage.open ? close() : open();
   });
   stage.addEventListener('pointermove', wake); stage.addEventListener('pointerdown', wake);
+  stage.addEventListener('focusin', wake);
   stage.addEventListener('keydown', wake); stage.addEventListener('pointerleave', hide);
   const lockScroll = () => document.documentElement.classList.toggle('immersive-open', !!document.querySelector('.immersive-controls[open]'));
   stage.addEventListener('close', () => { hide(); lockScroll(); });

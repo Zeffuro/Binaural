@@ -11,7 +11,9 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "playwright test",
+    "test": "node scripts/test-browser.mjs",
+    "test:full": "node scripts/test-browser.mjs --full",
+    "test:headed": "node scripts/test-browser.mjs --full --allow-headed",
     "check": "npm run build && npm test",
     "check:pages": "node --experimental-strip-types scripts/check-pages.mjs",
     "check:offline": "node --experimental-strip-types tests/offline-production.mjs"

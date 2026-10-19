@@ -24,6 +24,10 @@ import { setupOffline } from './offline';
 import { favoriteFrequencies, frequencyKey, isFrequencyFavoriteStorage, toggleFrequencyFavorite } from './frequency-favorites';
 import { setupTimelineEditor } from './timeline-editor';
 import { setupImmersiveAudio } from './immersive-audio';
+import { setupAsmr } from './asmr-controls';
+import { listeningMode, type ListeningMode } from './listening-mode';
+import { setupListeningMode } from './mode-controls';
+import { asmrPresets } from './asmr-presets';
 
 const $ = <T extends HTMLElement = HTMLElement>(selector: string): T => document.querySelector<T>(selector)!;
 $('#app').innerHTML = layout;
@@ -56,6 +60,26 @@ const backgrounds = setupBackgrounds({ session: () => session, notify: message =
   busy: value => { backgroundBusy = value; renderTransport(); }, source: value => { session.bwgBackgroundSource = value; } });
 setupExplorer(async (preset, play) => { await useSession(preset.session); if (play) await playPause(); });
 setupSessionGuide({ load: useSession, start: playPause });
+const asmr = setupAsmr({ get: () => session.asmr, beforeEdit: checkpoint, busy: () => busy || musicBusy || backgroundBusy,
+  update(value, light) {
+    const previousMode = listeningMode(session);
+    session.asmr = value; session.version = 2;
+    session.mode = previousMode === 'binaural' && value.layers.length ? 'asmr' : previousMode;
+    engine.update(session);
+    if (light) visual.applyTrigger(light);
+    modes.refresh();
+  },
+  isolate() { session.mode = 'asmr'; engine.update(session); renderSession(); },
+  importedMute: () => session.bwg ? !!session.bwgMuted : undefined,
+  muteImported(value) { session.bwgMuted = value; engine.update(session); },
+});
+const modes = setupListeningMode({ get: () => listeningMode(session), change: setListeningMode, busy: () => busy || musicBusy || backgroundBusy });
+function setListeningMode(mode: ListeningMode): void {
+  if (busy || musicBusy || backgroundBusy || mode === listeningMode(session)) return;
+  checkpoint(); session.mode = mode; session.version = 2;
+  if (mode !== 'binaural' && !session.asmr?.layers.length) session.asmr = asmrPresets[0].make();
+  engine.update(session); renderSession();
+}
 $('#frequency-count').textContent = `${frequencies.length} frequencies to explore`;
 
 function notice(message: string, undoable = false): void {
@@ -110,10 +134,13 @@ function renderSession(): void {
   renderLayers();
   renderTransport();
   backgrounds.refresh();
+  asmr.refresh();
 }
 function renderTransport(): void {
   offline.update();
   timeline.update();
+  asmr.transport();
+  modes.refresh();
   const playing = engine.playing;
   $('#play').innerHTML = playing ? '■ <span>Stop listening</span>' : '▶ <span>Start listening</span>';
   $('#play').classList.toggle('is-playing', playing);
@@ -126,7 +153,7 @@ function renderTransport(): void {
   $<HTMLInputElement>('#minutes').disabled = playing || busy || session.timelineDuration !== undefined;
   $<HTMLButtonElement>('#make-static').disabled = playing || busy;
   backgrounds.transport(playing || busy || musicBusy);
-  $('#status').textContent = engine.paused ? 'Ⅱ Paused' : playing ? (engine.state === 'running' ? '● Listening' : 'Audio suspended. Press Resume') : 'Ready when you are';
+  $('#status').textContent = engine.paused ? 'Ⅱ Paused' : playing ? (engine.loadingAsmr ? 'Loading ASMR recording…' : engine.state === 'running' ? '● Listening' : 'Audio suspended. Press Resume') : 'Ready when you are';
   $('#status').classList.toggle('active', playing);
   document.body.classList.toggle('listening', playing && !engine.paused);
   visual.transport(playing && !engine.paused && engine.state === 'running');
@@ -365,7 +392,7 @@ $('#share-session').addEventListener('click', () => {
     const link = sessionLink(snapshot().session);
     const dialog = document.createElement('dialog'); dialog.className = 'explorer-dialog share-dialog'; dialog.setAttribute('aria-label', 'Share session');
     const heading = document.createElement('h2'); heading.textContent = 'Share session';
-    const info = document.createElement('p'); info.textContent = 'This link contains tones and visual settings. Local audio, photos, videos and flash consent are excluded. Opening it never starts playback.';
+    const info = document.createElement('p'); info.textContent = 'This link contains tones, ASMR and visual settings. Local audio, photos, videos and flash consent are excluded. Opening it never starts playback.';
     const field = document.createElement('input'); field.readOnly = true; field.value = link; field.setAttribute('aria-label', 'Session link');
     const copy = document.createElement('button'); copy.className = 'secondary-button'; copy.textContent = 'Copy link';
     const message = document.createElement('p'); message.setAttribute('role', 'status');

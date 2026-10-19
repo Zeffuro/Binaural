@@ -22,7 +22,7 @@ Use headphones for binaural beats and start at low volume.
 For GitHub Pages, select **Settings → Pages → Source → GitHub Actions** and
 push to `main`. The included workflow handles the build and deployment.
 
-Run `npm run check` for tests; `npm run check:pages` and `npm run check:offline` check the built site.
+`npm test` runs quiet headless checks; opt into heavier checks with `npm run test:full`, `npm run check:pages` and `npm run check:offline`.
 Install test browsers first with `npx playwright install chromium firefox`.
 
 ## License

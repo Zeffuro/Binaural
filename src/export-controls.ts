@@ -1,5 +1,6 @@
 import { MAX_EXPORT_SECONDS, renderWav } from './audio/export';
 import { parseSession, type Session } from './model';
+import { listeningMode, modeGains } from './listening-mode';
 
 export function setupAudioExport(options: {
   session: () => Session;
@@ -16,7 +17,7 @@ export function setupAudioExport(options: {
       return;
     }
     const current = options.session();
-    if (current.bwg) {
+    if (current.bwg && modeGains(listeningMode(current)).tones && !current.bwgMuted) {
       options.notify('WAV export currently supports ordinary tone and background sessions. BWGen export is not available yet.');
       return;
     }
@@ -28,7 +29,7 @@ export function setupAudioExport(options: {
     dialog.className = 'explorer-dialog import-dialog';
     dialog.setAttribute('aria-label', 'Export audio');
     dialog.innerHTML = `<h2>Export audio</h2>
-      <p>Stereo WAV, 16-bit, 44.1 kHz. Includes tone layers and background sounds.</p>
+      <p>Stereo WAV, 16-bit, 44.1 kHz. Includes tone layers, ASMR and background sounds.</p>
       <p>Starts at the beginning and follows the session timer fade. Shorter exports are cropped.</p>
       <form id="audio-export-form"><label for="export-seconds">Duration in seconds (up to ${MAX_EXPORT_SECONDS})</label>
         <input id="export-seconds" type="number" min="0.05" max="${MAX_EXPORT_SECONDS}" step="any" required />

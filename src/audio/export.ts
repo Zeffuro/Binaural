@@ -1,6 +1,9 @@
 import { parseSession, type Session } from '../model';
 import { noiseBuffer, smooth, ToneVoice } from './graph';
 import { generatedBackgrounds, makeGeneratedBackground } from './generated-backgrounds';
+import { AsmrMixer } from './asmr-mixer';
+import { listeningMode, modeGains } from '../listening-mode';
+import { prepareAsmrRecordings } from './asmr-assets';
 
 export const WAV_SAMPLE_RATE = 44100;
 export const MAX_EXPORT_SECONDS = 180;
@@ -71,8 +74,11 @@ export async function renderWav(input: Session, seconds: number, signal?: AbortS
   if (!Number.isFinite(seconds) || seconds < 0.05 || seconds > MAX_EXPORT_SECONDS) {
     throw new Error(`Choose an export duration from 0.05 to ${MAX_EXPORT_SECONDS} seconds.`);
   }
-  if (input?.bwg) throw new Error('WAV export currently supports ordinary tone and background sessions. BWGen export is not available yet.');
   const session = parseSession(input);
+  const gains = modeGains(listeningMode(session));
+  if (session.bwg && gains.tones && !session.bwgMuted) throw new Error('WAV export currently supports ordinary tone and background sessions. BWGen export is not available yet.');
+  signal?.throwIfAborted();
+  if (gains.asmr) await prepareAsmrRecordings(session.asmr);
   signal?.throwIfAborted();
   if (typeof OfflineAudioContext === 'undefined') throw new Error('Offline audio rendering is unavailable in this browser.');
   // Limit both the Float32 render and PCM download allocations before creating either.
@@ -96,10 +102,11 @@ export async function renderWav(input: Session, seconds: number, signal?: AbortS
   }
   master.connect(compressor).connect(gate).connect(context.destination);
   const tones = context.createGain();
-  tones.gain.value = session.tonesMuted ? 0 : 1;
+  tones.gain.value = session.tonesMuted ? 0 : gains.tones;
   tones.connect(master);
-  for (const layer of session.layers) new ToneVoice(context, layer, tones, session.layers.length, endAt, 0);
+  if (!session.bwg) for (const layer of session.layers) new ToneVoice(context, layer, tones, session.layers.length, endAt, 0);
   ambience(context, session, master, endAt);
+  new AsmrMixer(context, master, endAt).update(session.asmr, !!gains.asmr);
   const buffer = await context.startRendering();
   signal?.throwIfAborted();
   return encodeWav(buffer);

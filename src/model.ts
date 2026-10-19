@@ -3,6 +3,8 @@ import { validateCurves } from './audio/bwg-curves';
 import { generatedBackgrounds, type GeneratedBackgroundId } from './audio/generated-backgrounds';
 import { backgroundSources, type BackgroundSource } from './import/bwg-background';
 import { parseVisualSettings, type VisualSettings } from './visual-state';
+import { parseAsmr, type AsmrSettings } from './asmr-state';
+import { listeningModes, type ListeningMode } from './listening-mode';
 
 export type Route = 'binaural' | 'mixed' | 'left' | 'right';
 export type Ambient = 'none' | 'white' | 'pink' | 'brown' | 'ocean' | GeneratedBackgroundId;
@@ -33,9 +35,12 @@ export interface Session {
   minutes: number;
   tonesMuted?: boolean;
   visual?: VisualSettings;
+  asmr?: AsmrSettings;
+  mode?: ListeningMode;
   timelineDuration?: number;
   bwg?: BwgProgram;
   bwgBackgroundSource?: BackgroundSource;
+  bwgMuted?: boolean;
   source?: { format: 'bwg'; name: string; description?: string; author?: string };
 }
 
@@ -86,6 +91,8 @@ export function parseSession(value: unknown): Session {
     throw new Error('Invalid preset. Use a Binaural JSON file with 1–10 layers.');
   }
   if (value.tonesMuted !== undefined && typeof value.tonesMuted !== 'boolean') throw new Error('Invalid tone mute state.');
+  if (value.mode !== undefined && !listeningModes.includes(value.mode as ListeningMode)) throw new Error('Invalid listening mode.');
+  if (value.bwgMuted !== undefined && typeof value.bwgMuted !== 'boolean') throw new Error('Invalid imported audio mute state.');
   const duration = value.timelineDuration;
   if (native ? duration !== bwgDuration(native.preset) : duration !== undefined && !number(duration, 0.01, 10800)) {
     throw new Error('Invalid timeline duration.');
@@ -116,7 +123,10 @@ export function parseSession(value: unknown): Session {
     ...(native ? { bwg: native.program } : {}),
     ...(value.bwgBackgroundSource === undefined ? {} : { bwgBackgroundSource: value.bwgBackgroundSource as BackgroundSource }),
     ...(value.tonesMuted === undefined ? {} : { tonesMuted: value.tonesMuted }),
-    ...(value.visual === undefined ? {} : { visual: parseVisualSettings(value.visual) }) };
+    ...(value.bwgMuted === undefined ? {} : { bwgMuted: value.bwgMuted }),
+    ...(value.mode === undefined ? {} : { mode: value.mode as ListeningMode }),
+    ...(value.visual === undefined ? {} : { visual: parseVisualSettings(value.visual) }),
+    ...(value.asmr === undefined ? {} : { asmr: parseAsmr(value.asmr) }) };
 }
 
 export function escapeHtml(text: string): string {

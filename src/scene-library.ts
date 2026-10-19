@@ -3,6 +3,7 @@ import { butterchurnPresets } from './butterchurn-presets';
 import { moodscapes } from './moodscape-catalog';
 import { Milkdrop } from './milkdrop';
 import { Panorama } from './panorama';
+import { AdaptiveVisualQuality } from './adaptive-visual-quality';
 import { type VisualSettings, type VisualQuality, visualBudget } from './visual-state';
 
 export const libraryControls = `
@@ -14,7 +15,8 @@ export const libraryControls = `
     <label for="milkdrop-interval">Change every (seconds)</label><input id="milkdrop-interval" type="number" min="10" max="300" value="30" />
     <label for="milkdrop-blend">Blend duration (seconds)</label><input id="milkdrop-blend" type="number" min="0" max="10" step="0.5" value="2" /></div>
   <div id="nature-controls" hidden><label class="range-heading" for="nature-direction">Look around <output id="nature-angle">0°</output></label><input id="nature-direction" type="range" min="0" max="360" value="0" /></div>
-  <label for="visual-quality">Visual quality</label><select id="visual-quality"><option value="eco">Eco (30 FPS)</option><option value="balanced" selected>Balanced (45 FPS)</option><option value="high">High (60 FPS)</option></select>
+  <label for="visual-quality">Visual quality</label><select id="visual-quality" aria-describedby="visual-quality-status"><option value="auto">Auto (adapts during motion)</option><option value="eco">Eco (30 FPS)</option><option value="balanced" selected>Balanced (45 FPS)</option><option value="high">High (60 FPS)</option></select>
+  <p id="visual-quality-status" class="fine-print"></p>
   <p id="scene-credit" class="fine-print" hidden></p>
   <p class="fine-print"><a href="${import.meta.env.BASE_URL}credits.html" target="_blank" rel="noopener">Visual credits and licenses ↗</a></p>`;
 
@@ -37,19 +39,29 @@ export function setupSceneLibrary(host: HTMLElement, redraw: () => void, report:
   const credit = host.querySelector<HTMLElement>('#scene-credit')!;
   const control = (id: string) => host.querySelector<HTMLInputElement>(id)!;
   const quality = () => control('#visual-quality').value as VisualQuality;
+  const adaptive = new AdaptiveVisualQuality();
+  const qualityStatus = host.querySelector<HTMLElement>('#visual-quality-status')!;
+  function effectiveQuality() {
+    const selectedQuality = quality(), effective = adaptive.quality(selectedQuality), budget = visualBudget(effective);
+    const text = `${selectedQuality === 'auto' ? 'Auto: ' : ''}${effective[0].toUpperCase()}${effective.slice(1)}, up to ${budget.fps} FPS, pixel scale up to ${budget.ratio}×, width up to ${budget.maxWidth}px. ${selectedQuality === 'auto' ? 'Adapts only while visible motion is running.' : ''}`.trim();
+    if (qualityStatus.textContent !== text) qualityStatus.textContent = text;
+    if (qualityStatus.dataset.effective !== effective) qualityStatus.dataset.effective = effective;
+    return effective;
+  }
   const favorite = control('#milkdrop-favorite');
   let favorites: string[] = [];
   try { const saved: unknown = JSON.parse(localStorage.getItem('binaural:visual-favorites') || '[]'); if (Array.isArray(saved)) favorites = saved.filter(id => butterchurnPresets.some(item => item.id === id)); } catch { /* Local preferences are optional. */ }
   const updateFavorite = () => { favorite.setAttribute('aria-pressed', String(favorites.includes(preset.value))); favorite.textContent = favorites.includes(preset.value) ? '★ Favorite' : '☆ Favorite'; };
   updateFavorite();
   let panorama: Panorama | undefined;
-  let selected = '', revision = 0, ready = false, useFlat = false, cycleElapsed = 0;
+  let selected = '', qualityScene = '', revision = 0, ready = false, useFlat = false, cycleElapsed = 0;
   const milk = new Milkdrop(milkCanvas, message => { if (selected.startsWith('milkdrop:')) report(message); });
   function attribution(name: string, author: string, source: string, license: string): void {
     const link = document.createElement('a'); link.href = source; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = `${name} by ${author}`;
     credit.replaceChildren(link, document.createTextNode(` (${license}).`)); credit.hidden = false;
   }
   function select(mode: string): void {
+    if (qualityScene !== mode) { qualityScene = mode; adaptive.reset(); }
     const nature = moodscapes.find(item => mode === `nature:${item.id}`);
     const enabled = mode === 'milkdrop' && consent.checked;
     const key = nature?.id ?? (enabled ? `milkdrop:${preset.value}` : mode === 'milkdrop' ? 'milkdrop-disabled' : '');
@@ -60,7 +72,7 @@ export function setupSceneLibrary(host: HTMLElement, redraw: () => void, report:
     natureCanvas.hidden = !nature || useFlat;
     flat.hidden = !nature || !useFlat;
     if (key === selected) return;
-    selected = key; ready = false; milk.cancel(); const ticket = ++revision;
+    selected = key; ready = false; adaptive.reset(); milk.cancel(); const ticket = ++revision;
     credit.hidden = true;
     if (enabled) {
       const item = butterchurnPresets.find(item => item.id === preset.value)!;
@@ -119,9 +131,16 @@ export function setupSceneLibrary(host: HTMLElement, redraw: () => void, report:
     select,
     next,
     quality,
+    effectiveQuality,
+    qualityReady(mode: string) { return mode !== 'local' && (mode === 'milkdrop' ? ready && consent.checked : mode.startsWith('nature:') ? ready && !useFlat : true); },
+    pauseQuality() { adaptive.pause(); },
+    sampleQuality(costMs: number, cadenceMs: number, elapsedMs: number) {
+      if (adaptive.sample(costMs, cadenceMs, elapsedMs)) effectiveQuality();
+    },
     getState() { return { milkdropPreset: preset.value, natureDirection: Number(direction.value), quality: quality(), autoCycle: control('#milkdrop-auto').checked,
       cycleSeconds: Number(control('#milkdrop-interval').value), blendSeconds: Number(control('#milkdrop-blend').value) }; },
     restore(state: VisualSettings) {
+      adaptive.reset();
       consent.checked = false; cycleElapsed = 0; preset.value = state.milkdropPreset; direction.value = String(state.natureDirection);
       host.querySelector('#nature-angle')!.textContent = `${direction.value}°`; control('#visual-quality').value = state.quality;
       control('#milkdrop-auto').checked = state.autoCycle; control('#milkdrop-interval').value = String(state.cycleSeconds); control('#milkdrop-blend').value = String(state.blendSeconds); updateFavorite();
@@ -132,11 +151,11 @@ export function setupSceneLibrary(host: HTMLElement, redraw: () => void, report:
     render(mode: string, frame: VisualFrame | undefined, seconds: number, elapsed: number) {
       if (!ready) return;
       if (mode === 'milkdrop' && consent.checked) {
-        milk.render(frame, seconds, quality());
+        milk.render(frame, seconds, effectiveQuality());
         cycleElapsed += seconds;
         if (control('#milkdrop-auto').checked && cycleElapsed >= Number(control('#milkdrop-interval').value)) { queueMicrotask(() => next(1, false, false)); cycleElapsed = 0; }
       }
-      if (mode.startsWith('nature:') && !useFlat) panorama?.render(Number(direction.value) * Math.PI / 180 + (visualBudget(quality()).fps > 30 ? elapsed * 0.012 : 0), quality());
+      if (mode.startsWith('nature:') && !useFlat) panorama?.render(Number(direction.value) * Math.PI / 180 + (visualBudget(effectiveQuality()).fps > 30 ? elapsed * 0.012 : 0), effectiveQuality());
     },
   };
 }
