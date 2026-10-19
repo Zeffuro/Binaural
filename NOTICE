@@ -1,0 +1,12 @@
+Binaural
+Copyright (C) 2026 Binaural contributors
+Licensed under GPL-3.0-only. See LICENSE.
+
+Butterchurn and the selected presets are MIT licensed. Preset authors:
+Geiss, martin and Flexi. Full notices are in public/presets/.
+The math-extensions polyfill notice is in public/licenses/.
+
+Poly Haven photographs by Andreas Mischok, Greg Zaal and Sergej Majboroda
+are CC0. Credits, source files and license details: public/moodscapes/.
+
+See public/credits.html for all bundled asset credits and licenses.

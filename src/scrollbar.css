@@ -1,0 +1,12 @@
+:root { --scrollbar-thumb: #798c78; --scrollbar-track: #e8eddf; --scrollbar-hover: #536e55; }
+.sidebar { --scrollbar-thumb: #809c88; --scrollbar-track: #172b29; --scrollbar-hover: #bdd0b6; }
+* { scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track); scrollbar-width: auto; }
+*::-webkit-scrollbar { width: 12px; height: 12px; }
+*::-webkit-scrollbar-track { background: var(--scrollbar-track); }
+*::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border: 2px solid var(--scrollbar-track); border-radius: 8px; }
+*::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-hover); }
+*::-webkit-scrollbar-corner { background: var(--scrollbar-track); }
+@media (forced-colors: active) {
+  * { scrollbar-color: auto; }
+  *::-webkit-scrollbar-track, *::-webkit-scrollbar-thumb, *::-webkit-scrollbar-corner { background: revert; border-color: revert; }
+}

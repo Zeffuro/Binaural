@@ -1,0 +1,96 @@
+{
+  "version": 1,
+  "curatedOn": "2026-10-19",
+  "provider": "Poly Haven",
+  "license": "CC0-1.0",
+  "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "providerLicense": "https://polyhaven.com/license",
+  "credits": "credits.html",
+  "conversion": {
+    "tool": "FFmpeg 9.0.2",
+    "input": "Official downloadable 2K Radiance HDR files, not website thumbnails or example renders",
+    "filter": "format=gbrpf32le,tonemap=tonemap=reinhard:param=0.5:desat=0:peak=10,zscale=transferin=linear:transfer=iec61966-2-1:primariesin=bt709:primaries=bt709:matrixin=gbr:matrix=gbr,format=rgb24",
+    "encoding": "libwebp quality 78, compression_level 6, single frame",
+    "notes": "Tone-mapped from linear HDR to sRGB; original panorama dimensions and projection retained."
+  },
+  "assets": [
+    {
+      "id": "forest-slope",
+      "name": "Forest slope",
+      "originalTitle": "Forest Slope",
+      "authors": {
+        "Andreas Mischok": "All"
+      },
+      "sourcePage": "https://polyhaven.com/a/forest_slope",
+      "license": "CC0-1.0",
+      "sourceAsset": {
+        "format": "Radiance HDR",
+        "url": "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/forest_slope_2k.hdr",
+        "bytes": 7562873,
+        "md5": "fa517358699ed72ba8bfc602f192ab5d",
+        "sha256": "aa76871c301a2ea5977043e48036b53bb3f26eff0d96fa833789a7738569c279"
+      },
+      "derivative": {
+        "file": "forest-slope.webp",
+        "format": "WebP",
+        "width": 2048,
+        "height": 1024,
+        "projection": "equirectangular",
+        "bytes": 471910,
+        "sha256": "32b767cf00f90f0702bdb6135e0764bf301dc29a6ff55a27386673e6d8c8b687"
+      }
+    },
+    {
+      "id": "mountain-dawn",
+      "name": "Mountain dawn",
+      "originalTitle": "Kiara 1 Dawn",
+      "authors": {
+        "Greg Zaal": "All"
+      },
+      "sourcePage": "https://polyhaven.com/a/kiara_1_dawn",
+      "license": "CC0-1.0",
+      "sourceAsset": {
+        "format": "Radiance HDR",
+        "url": "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/kiara_1_dawn_2k.hdr",
+        "bytes": 6149550,
+        "md5": "c3b5f496629ab4707c6554e4761cc7cf",
+        "sha256": "7261c613b35a9b760ed5c7846ec8182532b90d89f6a8385c42bb743883159a66"
+      },
+      "derivative": {
+        "file": "kiara-dawn.webp",
+        "format": "WebP",
+        "width": 2048,
+        "height": 1024,
+        "projection": "equirectangular",
+        "bytes": 162626,
+        "sha256": "1b612206939620ec9f8c626fc3136c220742acba478d856602912990473d7271"
+      }
+    },
+    {
+      "id": "autumn-meadow",
+      "name": "Autumn meadow",
+      "originalTitle": "Autumn Field",
+      "authors": {
+        "Sergej Majboroda": "All"
+      },
+      "sourcePage": "https://polyhaven.com/a/autumn_field",
+      "license": "CC0-1.0",
+      "sourceAsset": {
+        "format": "Radiance HDR",
+        "url": "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/autumn_field_2k.hdr",
+        "bytes": 6350515,
+        "md5": "27bf67d379deb0ab5c1e55d1a932763d",
+        "sha256": "7b3131ae32bce6f1aa6ebbef2dfce377236c41d787e91960160bfd6a17bd9671"
+      },
+      "derivative": {
+        "file": "autumn-field.webp",
+        "format": "WebP",
+        "width": 2048,
+        "height": 1024,
+        "projection": "equirectangular",
+        "bytes": 206912,
+        "sha256": "bbb3fb7fc77145bdcfc47e6b8be2dc9283174b12a274cca38b22350daa6420c3"
+      }
+    }
+  ]
+}
