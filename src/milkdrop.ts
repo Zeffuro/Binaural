@@ -1,5 +1,6 @@
 import type { VisualFrame } from './audio/visual-analysis';
 import { butterchurnPresets } from './butterchurn-presets';
+import { type VisualQuality, visualRatio } from './visual-state';
 
 type Engine = ReturnType<typeof import('butterchurn').default.createVisualizer>;
 
@@ -23,7 +24,7 @@ export class Milkdrop {
     });
   }
 
-  async load(id: string): Promise<boolean> {
+  async load(id: string, blendSeconds = 0): Promise<boolean> {
     if (id === this.selected && this.engine) return !this.lost;
     const preset = butterchurnPresets.find(item => item.id === id);
     if (!preset) return false;
@@ -40,7 +41,7 @@ export class Milkdrop {
         this.engine = factory.createVisualizer(null, this.canvas,
           { width: 320, height: 200, pixelRatio: 1, meshWidth: 32, meshHeight: 24 });
       }
-      this.engine.loadPreset(data, 0);
+      this.engine.loadPreset(data, this.selected ? blendSeconds : 0);
       this.selected = id; this.size = ''; this.frames = 0;
       this.canvas.dataset.preset = id;
       this.report(`${preset.name} by ${preset.author}.`);
@@ -53,10 +54,10 @@ export class Milkdrop {
 
   cancel(): void { this.revision++; }
 
-  render(frame: VisualFrame | undefined, seconds: number): void {
+  render(frame: VisualFrame | undefined, seconds: number, quality: VisualQuality = 'balanced'): void {
     if (!this.engine || this.lost) return;
     const bounds = this.canvas.getBoundingClientRect();
-    const ratio = Math.min(devicePixelRatio || 1, 1.5, 1280 / Math.max(bounds.width, 1));
+    const ratio = visualRatio(bounds.width, quality);
     const width = Math.max(1, Math.round(bounds.width * ratio)), height = Math.max(1, Math.round(bounds.height * ratio));
     const size = `${width}x${height}`;
     if (size !== this.size) { this.canvas.width = width; this.canvas.height = height; this.engine.setRendererSize(width, height); this.size = size; }

@@ -1,3 +1,5 @@
+import { type VisualQuality, visualRatio } from './visual-state';
+
 export class Panorama {
   private gl: WebGLRenderingContext;
   private program: WebGLProgram;
@@ -48,10 +50,10 @@ export class Panorama {
     this.ready = true;
   }
 
-  render(yaw: number): void {
+  render(yaw: number, quality: VisualQuality = 'balanced'): void {
     if (!this.ready) return;
     const bounds = this.canvas.getBoundingClientRect();
-    const ratio = Math.min(devicePixelRatio || 1, 1.5, 1600 / Math.max(bounds.width, 1));
+    const ratio = visualRatio(bounds.width, quality);
     const width = Math.max(1, Math.round(bounds.width * ratio)), height = Math.max(1, Math.round(bounds.height * ratio));
     if (this.canvas.width !== width || this.canvas.height !== height) { this.canvas.width = width; this.canvas.height = height; }
     const gl = this.gl; gl.viewport(0, 0, width, height); gl.useProgram(this.program);

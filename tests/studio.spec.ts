@@ -80,14 +80,14 @@ test('local WAV music can join the session and be removed', async ({ page }) => 
   await page.getByRole('button', { name: 'Stop listening' }).click();
 });
 
-test('motion is opt-in, respects reduced motion, and Escape stops everything', async ({ page }) => {
+test('motion is opt-in, respects reduced motion, and Shift Escape stops everything', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/');
   await expect(page.getByRole('switch', { name: /Ambient light/ })).not.toBeChecked();
   await page.getByRole('switch', { name: /Ambient light/ }).check();
   await page.getByRole('button', { name: 'Start listening' }).click();
   expect(await page.locator('.orb').evaluate(el => getComputedStyle(el).animationName)).toBe('none');
-  await page.keyboard.press('Escape');
+  await page.keyboard.press('Shift+Escape');
   await expect(page.getByRole('switch', { name: /Ambient light/ })).not.toBeChecked();
   await expect(page.locator('#status')).toHaveText('Ready when you are');
 });

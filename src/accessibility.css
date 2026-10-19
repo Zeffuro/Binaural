@@ -1,0 +1,42 @@
+.skip-links { position: absolute; inset: 12px auto auto 12px; z-index: 30; display: flex; flex-wrap: wrap; gap: 8px; max-width: calc(100% - 24px); pointer-events: none; }
+.skip-links a { position: absolute; transform: translateY(-200%); padding: 12px 16px; background: #172b29; color: #fff; border: 2px solid currentColor; border-radius: 5px; white-space: nowrap; pointer-events: auto; }
+.skip-links a:focus { position: static; transform: none; }
+:is(#transport, #tone-controls, #atmosphere, #visual-controls) { scroll-margin-block: 20px; }
+:is(#transport, #tone-controls, #atmosphere, #visual-controls):focus { outline: 3px solid #b08a4f; outline-offset: 5px; }
+button, select, input:not([type=hidden]), summary { min-height: 24px; }
+button, input[type=checkbox] { min-width: 24px; }
+input[type=checkbox] { height: 24px; width: 24px; flex-shrink: 0; }
+.remove-layer, .delete-preset { min-height: 32px; min-width: 32px; }
+.visual-toggle { min-height: 44px; }
+.fine-print, .small-muted, .listening-note, .search-label, .scene-heading span,
+.inspector-column :is(label:not(.visual-toggle):not(.file-button), select, .visual-toggle strong, .visual-toggle small, .music-box strong, .duration-field span),
+#music-name, #preset-name { font-size: 13px; }
+.fine-print, .listening-note, .visual-toggle small { line-height: 1.7; }
+
+:root:not([data-theme=dark]) :is(.topbar, .local-badge, .intro > p:last-of-type, .orb-caption, .status, .timer-caption, .master-row label, output, .listening-note, .count, .layer-number, .frequency-inputs label, .frequency-inputs label > span, .beat-readout strong, .beat-readout span, .layer-level, select, .text-button, .frequency-chips span, .frequency-chips small, .frequency-group h3 span, .evidence, .evidence summary, .fine-print, .small-muted, .duration-field span, .visual-toggle small, .side-note, .page-footer, .file-button, .save-button, .recipe-tones b) { color: #52674b; }
+:root:not([data-theme=dark]) .inspector-column label:not(.visual-toggle):not(.file-button) { color: #52674b; }
+:root:not([data-theme=dark]) .transport .eyebrow { color: #52674b; }
+:root:not([data-theme=dark]) #music-name { color: #52674b; }
+:root:not([data-theme=dark]) .sidebar :is(.sidebar-label, .sidebar-heading, .preset-card small, .empty-library, .sidebar-footer p, .version) { color: #a9bba7; }
+
+@media (max-width: 720px) {
+  .orb-caption { display: none; }
+  button, select, input:not([type=checkbox]):not([type=hidden]), summary { min-height: 44px; }
+  button { min-width: 44px; }
+  .remove-layer, .delete-preset, .visual-quick button { min-width: 44px; min-height: 44px; }
+  .layer-heading { gap: 5px; }
+  .color-presets button { width: 44px; height: 44px; }
+  .appearance-control select { min-height: 44px; }
+  :is(#transport, #tone-controls, #atmosphere, #visual-controls) { scroll-margin-bottom: 110px; }
+}
+
+@media (forced-colors: active) {
+  :root { --green: LinkText; --line: ButtonBorder; }
+  :is(button, input, select, summary, a):focus-visible,
+  :is(#transport, #tone-controls, #atmosphere, #visual-controls):focus { outline-color: Highlight; }
+  :is(.panel, .tone-layer, .frequency-chips button, .explore-card, .preset-card, dialog, .notice) { border: 1px solid ButtonBorder; }
+  :is(.preset-card.selected, button[aria-pressed=true]) { outline: 2px solid Highlight; outline-offset: -3px; }
+  input[type=range] { forced-color-adjust: auto; }
+  .orb-scene, .light-field { display: none; }
+  :is(.skip-links a, .skip-links a:focus) { background: Canvas; color: LinkText; border-color: LinkText; }
+}

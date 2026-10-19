@@ -2,6 +2,8 @@ import './style.css';
 import './experience.css';
 import './scrollbar.css';
 import './theme.css';
+import './studio-controls.css';
+import './accessibility.css';
 import { setupTheme } from './theme';
 import { AudioEngine } from './audio/engine';
 import { frequencies, presets } from './catalog';
@@ -12,33 +14,53 @@ import { setupExplorer, frequencyDetail } from './explorer';
 import { setupVisuals } from './visuals';
 import { readBwg } from './import-review';
 import { setupBackgrounds } from './background-controls';
+import { EditHistory } from './edit-history';
+import { setupStudioControls } from './studio-controls';
+import { chooseSaveAction, copyName, favoritePreset, libraryPreferences, rememberPreset } from './session-library';
+import { readSharedSession, sessionLink } from './share';
+import { setupAudioExport } from './export-controls';
+import { setupSessionGuide } from './session-guide';
+import { setupOffline } from './offline';
+import { favoriteFrequencies, frequencyKey, isFrequencyFavoriteStorage, toggleFrequencyFavorite } from './frequency-favorites';
+import { setupTimelineEditor } from './timeline-editor';
+import { setupImmersiveAudio } from './immersive-audio';
 
 const $ = <T extends HTMLElement = HTMLElement>(selector: string): T => document.querySelector<T>(selector)!;
 $('#app').innerHTML = layout;
 setupTheme();
 $('#builtins').innerHTML = builtinView();
-$('#frequencies').innerHTML = frequencyView();
+$('#frequencies').innerHTML = frequencyView('', favoriteFrequencies());
 let session = initialSession();
 let saved: Session[] = [];
 let busy = false;
+let stopping: Promise<void> | undefined;
+let transportRevision = 0;
 let musicBusy = false;
 let backgroundBusy = false;
 let noticeTimer: ReturnType<typeof setTimeout>;
 const engine = new AudioEngine();
-const visual = setupVisuals(() => engine.visualFrame());
-$('#scene-mute-tones').addEventListener('click', () => {
-  session.layers.forEach(layer => { layer.level = 0; });
-  engine.update(session);
-  renderLayers();
-  notice('Tone layers muted. Background sounds and your soundtrack keep their own levels.');
+const history = new EditHistory<{ session: Session; saved: Session[] }>();
+const visual = setupVisuals(() => engine.visualFrame(), () => { session.visual = visual.getState(); session.version = 2; }, checkpoint);
+const controls = setupStudioControls({
+  playPause: () => { void playPause().catch(report); }, stop: () => { void stop().catch(report); }, mute: toggleMute,
+  visual: () => { checkpoint(); visual.toggle(); }, fullscreen: () => { checkpoint(); visual.fullscreen(); }, next: direction => { checkpoint(); visual.next(direction); },
+  undo: () => { void undoEdit(false); }, redo: () => { void undoEdit(true); },
+  emergency: () => { visual.stop(); document.querySelectorAll<HTMLDialogElement>('dialog[open]').forEach(dialog => dialog.close()); void stop().catch(report); },
 });
+const immersiveAudio = setupImmersiveAudio({ playPause: () => { void playPause().catch(report); }, stop: () => { void stop().catch(report); }, mute: toggleMute, volume: setMaster });
+const offline = setupOffline({ isPlaying: () => busy || engine.playing });
+const timeline = setupTimelineEditor({ session: () => snapshot().session, apply: applyTimeline, isBusy: () => busy || engine.playing || musicBusy || backgroundBusy });
+$('#scene-mute-tones').addEventListener('click', toggleMute);
+setupAudioExport({ session: () => snapshot().session, hasMusic: () => !$('#remove-music').hidden, notify: message => notice(message) });
 const backgrounds = setupBackgrounds({ session: () => session, notify: message => notice(message),
   busy: value => { backgroundBusy = value; renderTransport(); }, source: value => { session.bwgBackgroundSource = value; } });
-setupExplorer(async preset => { await useSession(preset.session); });
+setupExplorer(async (preset, play) => { await useSession(preset.session); if (play) await playPause(); });
+setupSessionGuide({ load: useSession, start: playPause });
 $('#frequency-count').textContent = `${frequencies.length} frequencies to explore`;
 
-function notice(message: string): void {
+function notice(message: string, undoable = false): void {
   $('#notice').textContent = message;
+  if (undoable) { const button = document.createElement('button'); button.className = 'secondary-button'; button.textContent = 'Undo'; button.onclick = () => { void undoEdit(false); }; $('#notice').append(' ', button); }
   $('#notice').hidden = false;
   clearTimeout(noticeTimer);
   noticeTimer = setTimeout(() => { $('#notice').hidden = true; }, 6500);
@@ -47,7 +69,7 @@ const report = (error: unknown): void => notice(error instanceof Error ? error.m
 try { saved = loadPresets(); } catch { notice('Saved presets could not be read. You can still import a JSON backup.'); }
 
 function renderSaved(): void {
-  $('#saved').innerHTML = savedView(saved);
+  $('#saved').innerHTML = savedView(saved, libraryPreferences(), $<HTMLSelectElement>('#saved-filter').value);
   $('#saved-count').textContent = String(saved.length);
 }
 function renderLayers(): void {
@@ -56,7 +78,7 @@ function renderLayers(): void {
     const container = document.querySelector(`[data-layer="${layer.id}"]`)!;
     container.querySelectorAll<HTMLInputElement>('[data-field=left], [data-field=right], [data-field=route]').forEach(input => {
       input.disabled = true;
-      input.title = 'This value follows the imported timeline. Make a static copy to edit it.';
+      input.title = session.bwg ? 'This value follows the BWGen sequence. Make a static copy to edit its starting tones.' : 'This value follows the tone timeline. Use Edit tone timeline or make a static copy.';
     });
   }
   $('#layer-count').textContent = `${session.layers.length} / ${MAX_LAYERS}`;
@@ -67,7 +89,7 @@ function renderLayers(): void {
   }
   $('#timeline-info').hidden = !session.timelineDuration;
   if (session.timelineDuration) {
-    $('#timeline-label').textContent = `Imported timeline: ${Number((session.timelineDuration / 60).toFixed(2))} min. Tone values show the start of the sequence.`;
+    $('#timeline-label').textContent = `${session.bwg ? 'Imported BWGen timeline' : 'Tone timeline'}: ${Number((session.timelineDuration / 60).toFixed(2))} min. Tone values show the start of the sequence.`;
   }
 }
 function setName(name: string): void {
@@ -80,7 +102,7 @@ function renderSession(): void {
   $<HTMLInputElement>('#preset-name').value = session.name;
   for (const [selector, value] of [
     ['#master', session.master], ['#ambient-level', session.ambientLevel],
-    ['#music-level', session.musicLevel], ['#minutes', session.minutes], ['#ambient', session.ambient],
+    ['#music-level', session.musicLevel], ['#minutes', session.timelineDuration === undefined ? session.minutes : session.timelineDuration / 60], ['#ambient', session.ambient],
   ] as const) $<HTMLInputElement>(selector).value = String(value);
   $('#master-value').textContent = `${Math.round(session.master * 100)}%`;
   $('#ambient-value').textContent = `${Math.round(session.ambientLevel * 100)}%`;
@@ -90,6 +112,8 @@ function renderSession(): void {
   backgrounds.refresh();
 }
 function renderTransport(): void {
+  offline.update();
+  timeline.update();
   const playing = engine.playing;
   $('#play').innerHTML = playing ? '■ <span>Stop listening</span>' : '▶ <span>Start listening</span>';
   $('#play').classList.toggle('is-playing', playing);
@@ -108,22 +132,69 @@ function renderTransport(): void {
   visual.transport(playing && !engine.paused && engine.state === 'running');
   const seconds = engine.remaining ?? session.timelineDuration ?? (session.minutes ? session.minutes * 60 : undefined);
   $('#clock').textContent = engine.holding ? '∞ holding final values' : seconds === undefined ? '∞' : `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
+  $('#scene-mute-tones').textContent = session.tonesMuted ? 'Unmute tone layers' : 'Mute tone layers';
+  $('#scene-mute-tones').setAttribute('aria-pressed', String(!!session.tonesMuted));
+  controls.update({ playing, paused: engine.paused || engine.state === 'suspended', busy, muted: !!session.tonesMuted,
+    clock: $('#clock').textContent!, name: session.name, undo: history.canUndo, redo: history.canRedo });
+  immersiveAudio.update({ playing, paused: engine.paused || engine.state === 'suspended', busy: busy || musicBusy || backgroundBusy,
+    muted: !!session.tonesMuted, clock: $('#clock').textContent!, name: session.name, volume: session.master });
 }
-async function stop(): Promise<void> {
+function setMaster(value: number): void {
+  if (busy || musicBusy || backgroundBusy || !Number.isFinite(value)) { $<HTMLInputElement>('#master').value = String(session.master); return; }
+  session.master = Math.max(0, Math.min(1, value));
+  $<HTMLInputElement>('#master').value = String(session.master); $('#master-value').textContent = `${Math.round(session.master * 100)}%`;
+  engine.update(session); renderTransport();
+}
+function snapshot(): { session: Session; saved: Session[] } { return structuredClone({ session: { ...session, version: 2 as const, visual: visual.getState() }, saved }); }
+async function applyTimeline(next: Session): Promise<void> {
+  if (busy || engine.playing || musicBusy || backgroundBusy) throw new Error('Stop listening before applying a timeline.');
+  const parsed = parseSession(next); checkpoint(); await stop(); session = parsed; renderSession();
+  notice('Timeline updated. Start listening when ready.');
+}
+function checkpoint(): void { history.record(snapshot()); }
+function toggleMute(): void {
+  if (busy) return; checkpoint(); session.tonesMuted = !session.tonesMuted;
+  engine.update(session); renderTransport();
+}
+async function undoEdit(redo: boolean): Promise<void> {
+  if (busy) return;
+  const current = snapshot(); const next = redo ? history.redo(current) : history.undo(current); if (!next) return;
+  try {
+    if (JSON.stringify(saved) !== JSON.stringify(next.saved)) storePresets(next.saved);
+    const visualsChanged = JSON.stringify(current.session.visual) !== JSON.stringify(next.session.visual);
+    await stop(); session = next.session; saved = next.saved; if (visualsChanged) visual.restore(session.visual); renderSaved(); renderSession(); notice(redo ? 'Edit restored.' : 'Edit undone.');
+  } catch (error) { redo ? history.undo(next) : history.redo(next); report(error); }
+}
+async function playPause(): Promise<void> {
+  if (busy || musicBusy || backgroundBusy) return;
+  const ticket = ++transportRevision;
+  busy = true; renderTransport();
+  try {
+    if (!engine.playing) { await engine.start(session); rememberPreset(session.name); renderSaved(); }
+    else if (engine.paused || engine.state === 'suspended') await engine.resume();
+    else await engine.pause();
+  } finally { if (ticket === transportRevision) busy = !!stopping; renderTransport(); }
+}
+function stop(): Promise<void> {
+  if (stopping) return stopping;
+  ++transportRevision;
   busy = true;
   renderTransport();
-  try { await engine.stop(); } finally { busy = false; renderTransport(); }
+  stopping = engine.stop().finally(() => { stopping = undefined; busy = false; renderTransport(); });
+  return stopping;
 }
 async function useSession(next: Session): Promise<void> {
   if (busy) throw new Error('Playback is still changing. Wait a moment, then load this preset again.');
+  const parsed = parseSession(next); checkpoint();
   await stop();
-  session = parseSession(next);
+  session = parsed;
+  visual.restore(session.visual);
   renderSession();
   notice('Preset loaded. Press Start listening when you’re ready.');
 }
 function addLayer(layer: Layer): void {
   if (session.layers.length >= MAX_LAYERS) { notice(`Up to ${MAX_LAYERS} layers fit in a session.`); return; }
-  session.layers.push(layer);
+  checkpoint(); session.layers.push(layer);
   renderLayers();
   engine.update(session);
 }
@@ -131,24 +202,14 @@ function addLayer(layer: Layer): void {
 $('#play').addEventListener('click', async () => {
   if (busy) return;
   if (engine.playing) { await stop(); return; }
-  busy = true;
-  renderTransport();
-  try { await engine.start(session); } catch (error) { report(error); }
-  finally { busy = false; renderTransport(); }
+  try { await playPause(); } catch (error) { report(error); }
 });
-$('#pause').addEventListener('click', async () => {
-  if (busy || musicBusy) return;
-  busy = true;
-  renderTransport();
-  try {
-    if (engine.paused || engine.state === 'suspended') await engine.resume();
-    else await engine.pause();
-  } catch (error) { report(error); }
-  finally { busy = false; renderTransport(); }
-});
+$('#pause').addEventListener('click', () => { void playPause().catch(report); });
 $('#add-layer').addEventListener('click', () => addLayer(makeLayer()));
 $('#make-static').addEventListener('click', () => {
   if (engine.playing || busy) return;
+  checkpoint();
+  const minutes = session.timelineDuration === undefined ? session.minutes : session.timelineDuration / 60;
   for (const layer of session.layers) delete layer.automation;
   delete session.bwg;
   delete session.bwgBackgroundSource;
@@ -157,16 +218,18 @@ $('#make-static').addEventListener('click', () => {
     layer.right = Math.min(2000, Math.max(20, layer.right));
   }
   delete session.timelineDuration;
-  session.minutes = Math.min(180, Math.max(1, Math.round(session.minutes)));
+  session.minutes = Math.min(180, Math.max(1, Math.round(minutes)));
   renderSession();
   notice('Static copy created from the starting tones. The original timeline is no longer active.');
 });
 $('#layers').addEventListener('click', event => {
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-remove]');
   if (!button || session.layers.length === 1) return;
+  checkpoint();
   session.layers = session.layers.filter(layer => layer.id !== button.dataset.remove);
   renderLayers();
   engine.update(session);
+  notice('Tone layer removed.', true);
 });
 $('#layers').addEventListener('input', event => {
   const input = event.target as HTMLInputElement;
@@ -200,8 +263,23 @@ $('#frequencies').addEventListener('click', event => {
   $('#frequency-detail').hidden = false;
   if (frequency.kind === 'carrier') notice(`${frequency.hz} Hz carrier added equally to both ears. Edit Left / Right to add a beat difference.`);
 });
-$('#frequency-search').addEventListener('input', event => {
-  $('#frequencies').innerHTML = frequencyView((event.target as HTMLInputElement).value);
+function renderFrequencies(): void {
+  $('#frequencies').innerHTML = frequencyView($<HTMLInputElement>('#frequency-search').value, favoriteFrequencies(), $<HTMLSelectElement>('#frequency-filter').value === 'favorites');
+}
+$('#frequency-search').addEventListener('input', renderFrequencies);
+$('#frequency-filter').addEventListener('change', renderFrequencies);
+$('#frequency-detail').addEventListener('click', event => {
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-favorite-frequency]');
+  if (!button) return;
+  try { button.setAttribute('aria-pressed', String(toggleFrequencyFavorite(Number(button.dataset.favoriteFrequency)))); renderFrequencies(); }
+  catch (error) { report(error); }
+});
+window.addEventListener('storage', event => {
+  if (!isFrequencyFavoriteStorage(event.key)) return;
+  renderFrequencies();
+  const button = document.querySelector<HTMLButtonElement>('[data-favorite-frequency]');
+  const frequency = button && frequencies[Number(button.dataset.favoriteFrequency)];
+  if (frequency) button!.setAttribute('aria-pressed', String(favoriteFrequencies().has(frequencyKey(frequency))));
 });
 $('#builtins').addEventListener('click', event => {
   const button = (event.target as HTMLElement).closest<HTMLElement>('[data-preset]');
@@ -214,21 +292,36 @@ $('#saved').addEventListener('click', event => {
   const target = event.target as HTMLElement;
   const load = target.closest<HTMLElement>('[data-saved]');
   if (load) { void useSession(saved[Number(load.dataset.saved)]).catch(report); return; }
+  const favorite = target.closest<HTMLElement>('[data-favorite]');
+  if (favorite) { try { favoritePreset(saved[Number(favorite.dataset.favorite)].name); renderSaved(); } catch (error) { report(error); } return; }
+  const duplicate = target.closest<HTMLElement>('[data-duplicate]');
+  if (duplicate) {
+    try {
+      const copy = parseSession(saved[Number(duplicate.dataset.duplicate)]); copy.name = copyName(copy.name, saved);
+      const next = [...saved, copy]; storePresets(next); checkpoint(); saved = next; renderSaved(); notice('Preset duplicated.', true);
+    } catch (error) { report(error); } return;
+  }
   const remove = target.closest<HTMLElement>('[data-delete]');
   if (!remove) return;
   try {
     const next = saved.filter((_, i) => i !== Number(remove.dataset.delete));
     storePresets(next);
+    checkpoint();
     saved = next;
     renderSaved();
-    notice('Preset removed from this browser.');
+    notice('Preset removed from this browser.', true);
   } catch (error) { report(error); }
+});
+$('#saved-filter').addEventListener('change', renderSaved);
+document.addEventListener('focusin', event => {
+  if ((event.target as HTMLElement).closest('#layers, #master, #ambient, #ambient-level, #music-level, #minutes, #preset-name, #visual-controls, #visual-quick, #visual-dock, .immersive-volume input')) checkpoint();
 });
 for (const [selector, field, output] of [
   ['#master', 'master', '#master-value'], ['#ambient-level', 'ambientLevel', '#ambient-value'],
   ['#music-level', 'musicLevel', '#music-value'],
 ] as const) {
   $(selector).addEventListener('input', event => {
+    if (field === 'master') { setMaster(Number((event.target as HTMLInputElement).value)); return; }
     session[field] = Number((event.target as HTMLInputElement).value);
     $(output).textContent = `${Math.round(session[field] * 100)}%`;
     engine.update(session);
@@ -249,19 +342,42 @@ $('#preset-name').addEventListener('change', event => {
   setName(input.value.trim() || 'Untitled session');
   input.value = session.name;
 });
-$('#save-preset').addEventListener('click', () => {
+$('#save-preset').addEventListener('click', async () => {
   try {
-    const snapshot = parseSession(session);
-    const index = saved.findIndex(item => item.name === snapshot.name);
+    const value = parseSession(snapshot().session);
+    let index = saved.findIndex(item => item.name === value.name);
+    if (index >= 0) {
+      const action = await chooseSaveAction(value.name); if (!action) return;
+      if (action === 'copy') { value.name = copyName(value.name, saved); index = -1; }
+    }
     const next = [...saved];
-    if (index < 0) next.push(snapshot); else next[index] = snapshot;
+    if (index < 0) next.push(value); else next[index] = value;
     storePresets(next);
+    checkpoint();
     saved = next;
     renderSaved();
-    notice(index < 0 ? 'Preset saved in this browser. Export JSON for a portable backup.' : 'Preset updated in this browser.');
+    notice(index < 0 ? 'Preset saved in this browser.' : 'Preset updated in this browser.', true);
   } catch (error) { report(error); }
 });
-$('#export').addEventListener('click', () => downloadPreset(session));
+$('#export').addEventListener('click', () => downloadPreset(snapshot().session));
+$('#share-session').addEventListener('click', () => {
+  try {
+    const link = sessionLink(snapshot().session);
+    const dialog = document.createElement('dialog'); dialog.className = 'explorer-dialog share-dialog'; dialog.setAttribute('aria-label', 'Share session');
+    const heading = document.createElement('h2'); heading.textContent = 'Share session';
+    const info = document.createElement('p'); info.textContent = 'This link contains tones and visual settings. Local audio, photos, videos and flash consent are excluded. Opening it never starts playback.';
+    const field = document.createElement('input'); field.readOnly = true; field.value = link; field.setAttribute('aria-label', 'Session link');
+    const copy = document.createElement('button'); copy.className = 'secondary-button'; copy.textContent = 'Copy link';
+    const message = document.createElement('p'); message.setAttribute('role', 'status');
+    copy.onclick = () => {
+      const manual = () => { field.select(); message.textContent = 'Select and copy the link above.'; };
+      if (!navigator.clipboard) { manual(); return; }
+      void navigator.clipboard.writeText(link).then(() => { message.textContent = 'Link copied.'; }).catch(manual);
+    };
+    const close = document.createElement('button'); close.className = 'secondary-button'; close.textContent = 'Close share'; close.onclick = () => dialog.close();
+    dialog.append(heading, info, field, copy, close, message); dialog.addEventListener('close', () => dialog.remove(), { once: true }); document.body.append(dialog); dialog.showModal();
+  } catch (error) { report(error); }
+});
 $('#import-button').addEventListener('click', () => $<HTMLInputElement>('#import-file').click());
 $('#import-file').addEventListener('change', async event => {
   const input = event.target as HTMLInputElement;
@@ -299,12 +415,11 @@ $('#remove-music').addEventListener('click', async () => {
   $('#music-name').textContent = 'Bring a little of your world.';
   $('#remove-music').hidden = true;
 });
-document.addEventListener('keydown', event => {
-  if (event.key === 'Escape') {
-    visual.stop();
-    void stop().catch(report);
-  }
-});
+function loadLink(): void {
+  try { const shared = readSharedSession(); if (shared) void useSession(shared).then(() => notice('Shared session loaded. Start listening when ready.')).catch(report); }
+  catch (error) { report(error); }
+}
+window.addEventListener('hashchange', loadLink);
 setInterval(() => {
   if (busy) return;
   if (engine.playing && engine.failure) {
@@ -318,3 +433,4 @@ setInterval(() => {
 }, 500);
 renderSaved();
 renderSession();
+loadLink();

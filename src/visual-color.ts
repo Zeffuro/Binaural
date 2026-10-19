@@ -12,7 +12,7 @@ export function fromHex(hex: string, previousHue: number): LightColor {
     const sector = high === red ? (green - blue) / delta : high === green ? (blue - red) / delta + 2 : (red - green) / delta + 4;
     hue = ((sector * 60) + 360) % 360;
   }
-  return { hue, saturation: delta ? delta / (1 - Math.abs(2 * level - 1)) * 100 : 0, level: level * 100 };
+  return { hue, saturation: delta ? Math.min(100, delta / (1 - Math.abs(2 * level - 1)) * 100) : 0, level: level * 100 };
 }
 
 export function toHex({ hue, saturation, level }: LightColor): string {

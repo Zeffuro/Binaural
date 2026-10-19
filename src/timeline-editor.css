@@ -1,0 +1,27 @@
+#tone-controls > .section-heading { flex-wrap: wrap; gap: 12px; }
+.timeline-editor { max-width: 760px; font-size: 14px; line-height: 1.6; overflow-x: hidden; }
+.timeline-editor h2 { margin-top: 0; }
+.timeline-editor p { overflow-wrap: anywhere; }
+.timeline-fields { border: 0; margin: 0; padding: 0; min-width: 0; }
+.timeline-selectors { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.timeline-editor label { display: flex; flex-direction: column; gap: 5px; min-width: 0; font-size: 13px; }
+.timeline-editor :is(input, select) { width: 100%; min-width: 0; min-height: 44px; font-size: 14px; padding: 8px; background: var(--surface-input, #fcfcf6); color: inherit; border: 1px solid var(--edge, #ccd7c5); border-radius: 4px; }
+.timeline-plot { display: block; width: 100%; height: auto; margin: 20px 0 8px; color: #426747; overflow: visible; }
+.timeline-axis { fill: none; stroke: currentColor; stroke-opacity: .45; }
+.timeline-curve { fill: none; stroke: currentColor; stroke-width: 2; }
+.timeline-plot circle { fill: currentColor; }
+.timeline-plot text { fill: currentColor; font: 12px sans-serif; }
+.timeline-point { display: grid; grid-template-columns: 55px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) auto; gap: 10px; align-items: end; padding: 12px 0; border-bottom: 1px solid var(--edge, #d7dfce); }
+.timeline-point-name { align-self: center; font-size: 13px; }
+.timeline-editor button { min-height: 44px; font-size: 13px; }
+.timeline-add, .timeline-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin-top: 20px; }
+.timeline-add > label { max-width: 190px; }
+.timeline-actions .save-button { width: auto; margin: 0; padding: 12px 20px; }
+:root[data-theme=dark] .timeline-plot { color: #b4d2ab; }
+@media (max-width: 600px) {
+  .timeline-selectors { grid-template-columns: minmax(0, 1fr); }
+  .timeline-point { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .timeline-point-name { grid-column: 1 / -1; }
+  .timeline-point > button { align-self: end; }
+}
+@media (forced-colors: active) { .timeline-plot { color: CanvasText; } }

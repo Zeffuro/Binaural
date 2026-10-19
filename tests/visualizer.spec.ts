@@ -44,7 +44,8 @@ test('music alone drives the output analyzer and pause freezes the scene', async
   await page.goto('/');
   await page.getByLabel('Background sound', { exact: true }).selectOption('none');
   await page.getByRole('button', { name: 'Mute tone layers' }).click();
-  await expect(page.locator('[data-field=level]')).toHaveValue('0');
+  await expect(page.locator('[data-field=level]')).toHaveValue('0.6');
+  await expect(page.getByRole('button', { name: 'Unmute tone layers' })).toHaveAttribute('aria-pressed', 'true');
   await page.locator('#music-file').setInputFiles({ name: 'music.wav', mimeType: 'audio/wav', buffer: musicWave() });
   await expect(page.locator('#music-name')).toHaveText('music.wav');
   await page.getByLabel('Music level').fill('1');
@@ -52,6 +53,7 @@ test('music alone drives the output analyzer and pause freezes the scene', async
   await page.getByLabel('Scene', { exact: true }).selectOption('spectrum');
   await page.getByRole('button', { name: 'Start listening' }).click();
   const canvas = page.locator('.scene-drawing');
+  await canvas.scrollIntoViewIfNeeded();
   await expect.poll(async () => Number(await canvas.getAttribute('data-energy'))).toBeGreaterThan(0.05);
   await page.getByRole('button', { name: 'Pause', exact: false }).click();
   await expect(page.locator('#status')).toHaveText('Ⅱ Paused');
@@ -59,8 +61,10 @@ test('music alone drives the output analyzer and pause freezes the scene', async
   await page.waitForTimeout(250);
   await expect(canvas).toHaveAttribute('data-frame', frozen!);
   await page.getByRole('button', { name: 'Resume' }).click();
+  await canvas.scrollIntoViewIfNeeded();
   await expect.poll(() => canvas.getAttribute('data-frame')).not.toBe(frozen);
   await page.getByLabel('Master volume').fill('0');
+  await canvas.scrollIntoViewIfNeeded();
   await expect.poll(async () => Number(await canvas.getAttribute('data-energy'))).toBeLessThan(0.001);
   await page.getByRole('button', { name: 'Stop listening' }).click();
   await expect(page.locator('#status')).toHaveText('Ready when you are');
@@ -86,7 +90,7 @@ test('local moodscape images stay local, survive a bad replacement and can be re
   await expect(page.getByRole('link', { name: "Browse BWGen's library" })).toHaveAttribute('href', 'https://www.bwgen.com/presets.html');
 });
 
-test('reduced motion and Escape freeze standalone scenes', async ({ page }) => {
+test('reduced motion freezes scenes and Escape preserves standalone animation', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/');
   await page.getByLabel('Scene', { exact: true }).selectOption('aurora');
@@ -98,6 +102,8 @@ test('reduced motion and Escape freeze standalone scenes', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await expect.poll(() => canvas.getAttribute('data-frame')).not.toBe(before);
   await page.keyboard.press('Escape');
+  await expect(page.getByLabel('Animate without audio')).toBeChecked();
+  await page.keyboard.press('Shift+Escape');
   await expect(page.getByLabel('Animate without audio')).not.toBeChecked();
   const stopped = await canvas.getAttribute('data-frame');
   await page.waitForTimeout(150);

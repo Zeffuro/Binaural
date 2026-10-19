@@ -1,4 +1,5 @@
 import { initialSession, makeLayer, type Session } from './model';
+import { experienceRecipes } from './experience-recipes';
 
 export const catalogSources = {
   beats: 'https://mynoise.net/NoiseMachines/binauralBrainwaveGenerator.php',
@@ -84,6 +85,7 @@ export interface Preset {
   aliases: string[];
   sources: string[];
   evidence: string;
+  visualLabel?: string;
 }
 
 type Tone = [left: number, difference: number, level?: number];
@@ -166,4 +168,5 @@ export const presets: Preset[] = [
   recipe('octaves', 'Octave lanterns', 'EXPLORE',
     'Steady 128, 256 and 512 Hz mixed tones, spaced by octaves. A plain synthesis texture without a beat target.',
     [[128, 0, 0.4], [256, 0, 0.3], [512, 0, 0.2]], 'none', 15, ['octaves', 'mixed', 'reference', 'layers'], []),
+  ...experienceRecipes,
 ];

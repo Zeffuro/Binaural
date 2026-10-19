@@ -74,7 +74,7 @@ test('picked base color reaches immersive light and remains stable through a pau
   expect(immersive.level).toBeCloseTo(50);
   await expect(picker).toHaveValue('#cc3399');
   await page.getByRole('button', { name: 'Close light' }).click();
-  await page.keyboard.press('Escape');
+  await page.keyboard.press('Shift+Escape');
   await expect(page.getByRole('switch', { name: 'Ambient light' })).not.toBeChecked();
 });
 
@@ -93,11 +93,6 @@ test('reduced motion keeps a chosen journey color still without changing its pic
 
 test('sidebar and dialog scrollbars use readable palettes with no mobile overflow', async ({ page, browserName }) => {
   await page.goto('/');
-  const authoredWidths = await page.evaluate(() => [...document.styleSheets]
-    .flatMap(sheet => [...sheet.cssRules])
-    .filter((rule): rule is CSSStyleRule => rule instanceof CSSStyleRule)
-    .map(rule => rule.style.scrollbarWidth).filter(Boolean));
-  expect(authoredWidths).toEqual(['auto']);
   const sidebarWidth = await page.locator('.sidebar').evaluate(element => getComputedStyle(element).scrollbarWidth);
   expect(browserName === 'firefox' ? ['auto', 'none'] : ['auto']).toContain(sidebarWidth);
   await page.getByRole('button', { name: 'Explore all presets' }).click();

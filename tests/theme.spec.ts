@@ -128,7 +128,7 @@ test('dark controls and dialogs stay readable while whole studio color keeps a d
   await page.getByRole('button', { name: 'Explore all presets' }).click();
   await assertDarkSurface(page.locator('#preset-explorer'));
   await assertDarkSurface(page.locator('.explore-card').first());
-  await page.keyboard.press('Escape');
+  await page.keyboard.press('Shift+Escape');
   await page.getByLabel('Appearance', { exact: true }).selectOption('light');
   expect(await page.locator('#visual-preview').evaluate(el => getComputedStyle(el).backgroundImage)).toBe(preview);
   await page.getByLabel('Appearance', { exact: true }).selectOption('dark');

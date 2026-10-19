@@ -80,13 +80,13 @@ export class ToneVoice {
   }
 }
 
-export function noiseBuffer(context: BaseAudioContext, type: Exclude<Ambient, 'none'>): AudioBuffer {
+export function noiseBuffer(context: BaseAudioContext, type: Exclude<Ambient, 'none'>, random: () => number = Math.random): AudioBuffer {
   const buffer = context.createBuffer(2, context.sampleRate * 8, context.sampleRate);
   for (let channel = 0; channel < 2; channel++) {
     const data = buffer.getChannelData(channel);
     let brown = 0, p0 = 0, p1 = 0, p2 = 0;
     for (let i = 0; i < data.length; i++) {
-      const white = Math.random() * 2 - 1;
+      const white = random() * 2 - 1;
       brown = (brown + white * 0.02) / 1.02;
       p0 = 0.99765 * p0 + white * 0.099046;
       p1 = 0.963 * p1 + white * 0.2965164;

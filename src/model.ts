@@ -2,6 +2,7 @@ import { bwgDuration, decodeBwg, type BwgProgram } from './import/bwg-program';
 import { validateCurves } from './audio/bwg-curves';
 import { generatedBackgrounds, type GeneratedBackgroundId } from './audio/generated-backgrounds';
 import { backgroundSources, type BackgroundSource } from './import/bwg-background';
+import { parseVisualSettings, type VisualSettings } from './visual-state';
 
 export type Route = 'binaural' | 'mixed' | 'left' | 'right';
 export type Ambient = 'none' | 'white' | 'pink' | 'brown' | 'ocean' | GeneratedBackgroundId;
@@ -22,7 +23,7 @@ export interface Layer {
   automation?: LayerAutomation;
 }
 export interface Session {
-  version: 1;
+  version: 1 | 2;
   name: string;
   layers: Layer[];
   ambient: Ambient;
@@ -30,6 +31,8 @@ export interface Session {
   musicLevel: number;
   master: number;
   minutes: number;
+  tonesMuted?: boolean;
+  visual?: VisualSettings;
   timelineDuration?: number;
   bwg?: BwgProgram;
   bwgBackgroundSource?: BackgroundSource;
@@ -76,12 +79,13 @@ export function parseSession(value: unknown): Session {
   if (native) validateCurves(native.preset);
   if (record(value) && value.bwgBackgroundSource !== undefined &&
       !backgroundSources.includes(value.bwgBackgroundSource as BackgroundSource)) throw new Error('Invalid background source preference.');
-  if (!record(value) || value.version !== 1 || !name(value.name) ||
+  if (!record(value) || (value.version !== 1 && value.version !== 2) || !name(value.name) ||
       !Array.isArray(value.layers) || value.layers.length < 1 || value.layers.length > MAX_LAYERS ||
       !ambients.includes(value.ambient as Ambient) || !number(value.ambientLevel, 0, 1) ||
       !number(value.musicLevel, 0, 1) || !number(value.master, 0, 1) || !number(value.minutes, 0, native ? 360000000 : 180)) {
-    throw new Error('Invalid preset. Use a Binaural v1 JSON file with 1–10 layers.');
+    throw new Error('Invalid preset. Use a Binaural JSON file with 1–10 layers.');
   }
+  if (value.tonesMuted !== undefined && typeof value.tonesMuted !== 'boolean') throw new Error('Invalid tone mute state.');
   const duration = value.timelineDuration;
   if (native ? duration !== bwgDuration(native.preset) : duration !== undefined && !number(duration, 0.01, 10800)) {
     throw new Error('Invalid timeline duration.');
@@ -106,11 +110,13 @@ export function parseSession(value: unknown): Session {
         (input.author !== undefined && !name(input.author))) throw new Error('Invalid preset provenance.');
     source = { format: 'bwg', name: input.name, description: input.description as string | undefined, author: input.author as string | undefined };
   }
-  return { version: 1, name: value.name.trim(), layers, ambient: value.ambient as Ambient,
+  return { version: value.version, name: value.name.trim(), layers, ambient: value.ambient as Ambient,
     ambientLevel: value.ambientLevel, musicLevel: value.musicLevel, master: value.master, minutes: value.minutes,
     ...(duration === undefined ? {} : { timelineDuration: duration as number }), ...(source ? { source } : {}),
     ...(native ? { bwg: native.program } : {}),
-    ...(value.bwgBackgroundSource === undefined ? {} : { bwgBackgroundSource: value.bwgBackgroundSource as BackgroundSource }) };
+    ...(value.bwgBackgroundSource === undefined ? {} : { bwgBackgroundSource: value.bwgBackgroundSource as BackgroundSource }),
+    ...(value.tonesMuted === undefined ? {} : { tonesMuted: value.tonesMuted }),
+    ...(value.visual === undefined ? {} : { visual: parseVisualSettings(value.visual) }) };
 }
 
 export function escapeHtml(text: string): string {

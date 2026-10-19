@@ -1,0 +1,46 @@
+.visual-quick { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; width: 100%; }
+.visual-quick > span { font-size: .8rem; font-weight: 600; margin-right: .3rem; }
+.visual-quick button { min-height: 36px; padding: .4rem .65rem; font-size: .8rem; }
+.scene-navigation { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; margin: .7rem 0; }
+.scene-navigation button { min-width: 0; white-space: normal; overflow-wrap: anywhere; padding: .65rem .5rem; font-size: 13px; }
+.visual-toggle { gap: 12px; }
+.visual-toggle > span { min-width: 0; overflow-wrap: anywhere; }
+.visual-toggle input { flex-shrink: 0; }
+.visual-quick button[aria-pressed=true] { outline: 2px solid var(--green); outline-offset: 1px; font-weight: 600; }
+.visual-dock { margin-top: 20px; border-top: 1px solid var(--line); padding-top: 16px; scroll-margin-top: 16px; }
+.visual-dock-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; justify-content: space-between; }
+.visual-dock-toolbar strong { font-size: 15px; }
+.visual-dock .secondary-button { white-space: normal; font-size: 13px; }
+.visual-dock .scene-viewport { aspect-ratio: 16 / 9; }
+.visual-dock .visual-toggle { margin-top: 14px; font-size: 13px; display: flex; justify-content: space-between; align-items: center; }
+.visual-dock .fine-print { font-size: 13px; }
+.visual-dock-light { margin-top: 12px; aspect-ratio: 16 / 9; border-radius: 7px; background: hsl(var(--light-hue) var(--light-saturation) var(--light-level)); }
+.scene-stage-tools { position: absolute; inset: 16px 16px auto; z-index: 1; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.scene-stage .scene-close { position: static; }
+.scene-stage-tools button { white-space: normal; font-size: 13px; }
+.scene-stage .scene-viewport { touch-action: pan-y; }
+html.immersive-open, html.immersive-open body { overflow: hidden; scrollbar-gutter: auto; }
+.immersive-controls { overflow: hidden; overscroll-behavior: none; scrollbar-width: none; }
+.immersive-controls::-webkit-scrollbar { display: none; }
+.immersive-audio { position: absolute; z-index: 2; inset: auto 16px 16px; width: min(650px, calc(100% - 32px)); margin-inline: auto; padding: 14px; border: 1px solid #647563; border-radius: 8px; background: #172b29f2; color: #eef2e3; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; }
+.immersive-track { display: flex; justify-content: space-between; gap: 16px; width: 100%; font-size: 14px; }
+.immersive-track strong { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.immersive-clock { flex-shrink: 0; }
+.immersive-playback { display: flex; flex-wrap: wrap; gap: 8px; }
+.immersive-audio button { font-size: 13px; min-height: 44px; color: #eef2e3; background: #354a38; border-color: #819375; }
+.immersive-volume { display: flex; align-items: center; gap: 10px; flex: 1 1 220px; min-width: 0; font-size: 13px; }
+.immersive-volume input { width: 100%; min-width: 0; accent-color: #bdd0a1; }
+.immersive-volume output { min-width: 4ch; color: #eef2e3 !important; }
+.light-overlay > span { padding: 8px 10px; border-radius: 4px; background: #172b29f2; color: #eef2e3; }
+.immersive-controls.controls-auto-hide .immersive-toolbar { opacity: 0; pointer-events: none; transition: opacity .18s; }
+.immersive-controls.controls-auto-hide.controls-awake .immersive-toolbar,
+.immersive-controls.controls-auto-hide .immersive-toolbar:hover,
+.immersive-controls.controls-auto-hide .immersive-toolbar:has(:focus-visible) { opacity: 1; pointer-events: auto; }
+@media (hover: none), (pointer: coarse) { .immersive-controls.controls-auto-hide .immersive-toolbar { opacity: 1; pointer-events: auto; } }
+@media (prefers-reduced-motion: reduce) { .immersive-controls.controls-auto-hide .immersive-toolbar { transition: none; } }
+.scene-panorama { touch-action: pan-y; cursor: grab; }
+.scene-panorama:active { cursor: grabbing; }
+.scene-panorama:focus-visible { outline: 3px solid var(--accent, #358569); outline-offset: -4px; }
+#milkdrop-controls input[type="number"] { width: 100%; padding: .55rem; margin-bottom: .7rem; }
+@media (max-width: 720px) { .visual-quick button { min-height: 44px; } }
+@media (max-width: 600px) { .visual-quick { justify-content: center; } .visual-quick > span { width: 100%; text-align: center; } }

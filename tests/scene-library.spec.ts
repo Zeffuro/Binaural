@@ -8,6 +8,7 @@ test('MilkDrop is opt-in, all six presets render, and pause/reduced motion freez
   await page.getByLabel('Scene', { exact: true }).selectOption('milkdrop');
   await expect(page.locator('#scene-status')).toContainText('Enable MilkDrop');
   const canvas = page.locator('.scene-milkdrop');
+  const settleLayout = () => canvas.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   await expect(canvas).not.toBeVisible();
   await expect(canvas).not.toHaveAttribute('data-frames');
   await page.getByLabel('Enable MilkDrop visuals').check();
@@ -19,25 +20,30 @@ test('MilkDrop is opt-in, all six presets render, and pause/reduced motion freez
   for (const id of ids) {
     await page.getByLabel('MilkDrop preset').selectOption(id);
     await expect(canvas).toHaveAttribute('data-preset', id);
+    await canvas.scrollIntoViewIfNeeded();
     await expect.poll(async () => Number(await canvas.getAttribute('data-frames'))).toBeGreaterThan(4);
     await canvas.scrollIntoViewIfNeeded();
     await canvas.screenshot({ path: `test-results/milkdrop-${id}-${test.info().project.name}.png` });
     await expect(page.locator('#scene-credit')).toContainText('MIT');
   }
   await page.getByLabel('Animate without audio').uncheck();
+  await settleLayout();
   const frozen = await canvas.getAttribute('data-frames');
   await page.waitForTimeout(150);
   await expect(canvas).toHaveAttribute('data-frames', frozen!);
   await page.getByRole('button', { name: 'Start listening' }).click();
+  await canvas.scrollIntoViewIfNeeded();
   await expect.poll(() => canvas.getAttribute('data-frames')).not.toBe(frozen);
   await expect(canvas).toHaveAttribute('data-audio', 'mix');
   await page.getByRole('button', { name: 'Pause', exact: false }).click();
   await expect(page.locator('#status')).toHaveText('Ⅱ Paused');
+  await settleLayout();
   const paused = await canvas.getAttribute('data-frames');
   await page.waitForTimeout(150);
   await expect(canvas).toHaveAttribute('data-frames', paused!);
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.getByLabel('Animate without audio').check();
+  await settleLayout();
   const reduced = await canvas.getAttribute('data-frames');
   await page.waitForTimeout(150);
   await expect(canvas).toHaveAttribute('data-frames', reduced!);

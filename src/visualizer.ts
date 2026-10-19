@@ -1,12 +1,15 @@
 import type { VisualFrame } from './audio/visual-analysis';
 import { libraryControls, libraryOptions, setupSceneLibrary } from './scene-library';
+import { type VisualSettings, visualBudget, visualRatio } from './visual-state';
+import type { VisualDock } from './visual-dock';
+import { setupImmersiveControls } from './immersive-controls';
 
-export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | undefined) {
+export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | undefined, changed: () => void, dock?: VisualDock, beforeEdit: () => void = () => {}) {
   host.innerHTML = `<div class="scene-heading"><h3>Visualizations</h3><span class="small-muted">For music or a quiet moment</span></div>
     <label for="scene-mode">Scene</label><select id="scene-mode"><option value="off">Off</option><optgroup label="Music patterns"><option value="spectrum">Spectrum</option><option value="scope">Oscilloscope</option><option value="orbits">Orbital trails</option></optgroup><optgroup label="Moodscapes"><option value="aurora">Aurora</option><option value="water">Quiet water</option><option value="local">Your photo or video</option></optgroup>${libraryOptions}</select>
     <div id="scene-preview"><div class="scene-viewport" hidden><div class="scene-media"></div><canvas class="scene-drawing" aria-label="Music visualization"></canvas></div></div>${libraryControls}
     <label class="visual-toggle" for="scene-independent"><span>Animate without audio</span><input id="scene-independent" type="checkbox" /></label>
-    <div class="scene-actions"><button id="scene-fullscreen" class="secondary-button" disabled>Open visualization ↗</button><button id="scene-file-button" class="text-button">Choose photo or video</button><input id="scene-file" type="file" accept="image/*,video/*" hidden /><button id="scene-clear" class="text-button" hidden>Remove file</button><button id="scene-mute-tones" class="text-button">Mute tone layers</button></div>
+    <div class="scene-actions"><button id="scene-fullscreen" class="secondary-button" disabled>Open visualization ↗</button><button id="scene-export" class="text-button">Save PNG still</button><button id="scene-file-button" class="text-button">Choose photo or video</button><input id="scene-file" type="file" accept="image/*,video/*" hidden /><button id="scene-clear" class="text-button" hidden>Remove file</button><button id="scene-mute-tones" class="text-button">Mute tone layers</button></div>
     <p id="scene-status" class="fine-print" role="status">Files stay on your device. Motion follows playback.</p>`;
   const mode = host.querySelector<HTMLSelectElement>('#scene-mode')!;
   const independent = host.querySelector<HTMLInputElement>('#scene-independent')!;
@@ -23,36 +26,46 @@ export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | un
   const stage = document.createElement('dialog');
   stage.className = 'scene-stage';
   stage.setAttribute('aria-label', 'Immersive visualization');
-  stage.innerHTML = '<button class="secondary-button scene-close">Close visualization (Esc)</button>';
+  stage.innerHTML = '<div class="scene-stage-tools"><button class="secondary-button scene-previous" aria-label="Previous visual">← Previous</button><button class="secondary-button scene-next" aria-label="Next visual">Next →</button><button class="secondary-button scene-close">Close visualization (Esc)</button></div>';
   document.body.append(stage);
-  let running = false, raf = 0, previous = 0, elapsed = 0, energy = 0;
+  const immersive = setupImmersiveControls(stage, viewport, stage.querySelector('.scene-stage-tools')!, () => { void fullscreen(); }, () => { void close(); });
+  let running = false, raf = 0, previous = 0, elapsed = 0, energy = 0, onscreen = true, closing = false;
   let url: string | undefined;
   let video: HTMLVideoElement | undefined;
   let lastFrame: VisualFrame | undefined;
   let loading = 0;
   const bands = new Float32Array(48);
-  const library = setupSceneLibrary(host, refresh, message => { status.textContent = message; });
+  const library = setupSceneLibrary(host, refresh, message => { status.textContent = message; }, changed);
+  const consent = host.querySelector<HTMLInputElement>('#milkdrop-enable')!;
+  if (dock) {
+    dock.scenes.append(preview);
+    dock.consent.append(host.querySelector('#milkdrop-consent')!);
+    dock.motion.append(independent.closest('label')!);
+    const reveal = document.createElement('button'); reveal.className = 'text-button'; reveal.textContent = 'Show visualization preview ↑';
+    reveal.addEventListener('click', () => dock.reveal()); host.querySelector('.scene-heading')!.append(reveal);
+  }
   function release(element: HTMLImageElement | HTMLVideoElement, source: string): void {
     if (element instanceof HTMLVideoElement) { element.pause(); element.removeAttribute('src'); element.load(); }
     else element.removeAttribute('src');
     URL.revokeObjectURL(source);
   }
 
-  const active = () => mode.value !== 'off' && (running || independent.checked) && !reduced.matches && !document.hidden;
+  const active = () => mode.value !== 'off' && (running || independent.checked) && !reduced.matches && !document.hidden && (onscreen || stage.open);
   function render(timestamp = 0): void {
+    if (timestamp && previous && timestamp - previous < 1000 / visualBudget(library.quality()).fps) { raf = requestAnimationFrame(render); return; }
     const delta = previous && active() ? Math.min((timestamp - previous) / 1000, 0.05) : 0;
     elapsed += delta;
     previous = timestamp;
     const bounds = viewport.getBoundingClientRect();
     const width = Math.max(1, bounds.width), height = Math.max(1, bounds.height);
-    const ratio = Math.min(devicePixelRatio || 1, 1.5);
+    const ratio = visualRatio(width, library.quality());
     if (canvas.width !== Math.round(width * ratio) || canvas.height !== Math.round(height * ratio)) {
       canvas.width = Math.round(width * ratio); canvas.height = Math.round(height * ratio);
     }
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     if (running && !reduced.matches) lastFrame = audio();
     const frame = reduced.matches ? undefined : lastFrame;
-    library.render(mode.value, frame, delta || 1 / 30, elapsed);
+    library.render(mode.value, frame, delta, elapsed);
     const waveform = frame?.waveform;
     const rms = waveform ? Math.sqrt(waveform.reduce((sum, n) => sum + ((n - 128) / 128) ** 2, 0) / waveform.length) : 0;
     energy += (Math.min(1, rms * 4) - energy) * 0.08;
@@ -116,9 +129,10 @@ export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | un
   }
   function refresh(): void {
     cancelAnimationFrame(raf); previous = 0;
-    viewport.hidden = mode.value === 'off'; open.disabled = viewport.hidden;
+    viewport.hidden = mode.value === 'off' || (mode.value === 'milkdrop' && !consent.checked); open.disabled = viewport.hidden;
     canvas.hidden = mode.value === 'local' || mode.value === 'milkdrop' || mode.value.startsWith('nature:'); media.hidden = mode.value !== 'local';
     library.select(mode.value);
+    dock?.scene({ mode: mode.value, label: mode.selectedOptions[0].text, allowed: !open.disabled, running, independent: independent.checked, reduced: reduced.matches });
     if (video) {
       const currentVideo = video;
       if (active() && mode.value === 'local') void currentVideo.play().catch(error => {
@@ -128,9 +142,16 @@ export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | un
     }
     if (!viewport.hidden) render();
   }
-  mode.addEventListener('change', refresh); independent.addEventListener('change', refresh);
+  mode.addEventListener('change', refresh); independent.addEventListener('change', () => { refresh(); changed(); });
+  host.addEventListener('change', event => {
+    const target = event.target as HTMLInputElement;
+    if (target === fileInput) return;
+    if (target.type === 'number') target.value = String(Math.min(Number(target.max), Math.max(Number(target.min), Number(target.value) || Number(target.min))));
+    refresh(); changed();
+  });
   reduced.addEventListener('change', refresh); document.addEventListener('visibilitychange', refresh);
   new ResizeObserver(() => { if (!active()) refresh(); }).observe(preview);
+  new IntersectionObserver(entries => { const visible = entries[0].isIntersecting; if (visible !== onscreen) { onscreen = visible; refresh(); } }).observe(preview);
   host.querySelector('#scene-file-button')!.addEventListener('click', () => fileInput.click());
   fileInput.addEventListener('change', async () => {
     const file = fileInput.files?.[0]; fileInput.value = ''; if (!file) return;
@@ -152,26 +173,87 @@ export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | un
       if (old && url) release(old, url);
       url = nextUrl; video = element instanceof HTMLVideoElement ? element : undefined;
       media.replaceChildren(element); mode.value = 'local'; clear.hidden = false;
-      status.textContent = `${file.name}. Local files are not saved with presets. Use still images if you prefer less motion.`; refresh();
+      status.textContent = `${file.name}. Local files are not saved with presets. Use still images if you prefer less motion.`; refresh(); changed();
     } catch (error) { release(element, nextUrl); if (ticket === loading) status.textContent = (error as Error).message; }
   });
   clear.addEventListener('click', () => {
     loading++; const old = media.firstElementChild as HTMLImageElement | HTMLVideoElement | null;
     if (old && url) release(old, url);
     video = undefined; media.replaceChildren(); url = undefined; clear.hidden = true;
-    status.textContent = 'File removed.'; mode.value = 'off'; refresh();
+    status.textContent = 'File removed.'; mode.value = 'off'; refresh(); changed();
   });
-  open.addEventListener('click', async () => {
-    stage.append(viewport); stage.showModal(); refresh();
-    try { await stage.requestFullscreen?.(); } catch { /* The dialog also works without fullscreen. */ }
-  });
-  async function close(): Promise<void> {
-    try { if (document.fullscreenElement === stage) await document.exitFullscreen(); } catch { /* Escape may have already exited fullscreen. */ }
-    preview.append(viewport); stage.close(); refresh();
+  async function fullscreen(): Promise<void> {
+    if (mode.value === 'off' || stage.open || closing || (mode.value === 'milkdrop' && !consent.checked)) return;
+    stage.append(viewport); stage.showModal(); refresh(); await immersive.opened();
   }
-  stage.querySelector('button')!.addEventListener('click', () => { void close(); });
-  stage.addEventListener('cancel', event => { event.preventDefault(); void close(); });
+  open.addEventListener('click', () => { void fullscreen(); });
+  async function close(): Promise<void> {
+    if (closing) return;
+    closing = true;
+    try { await immersive.exit(); }
+    finally { preview.append(viewport); stage.close(); closing = false; refresh(); }
+  }
+  stage.querySelector('.scene-close')!.addEventListener('click', () => { void close(); });
+  function next(direction = 1): void {
+    beforeEdit();
+    if (mode.value === 'milkdrop') library.next(direction);
+    else {
+      const options = [...mode.options].filter(option => !['off', 'local', 'milkdrop'].includes(option.value));
+      const index = options.findIndex(option => option.value === mode.value);
+      const target = index < 0 ? (direction > 0 ? 0 : options.length - 1) : (index + direction + options.length) % options.length;
+      mode.value = options[target].value; refresh(); changed();
+    }
+  }
+  stage.querySelector('.scene-previous')!.addEventListener('click', () => next(-1));
+  stage.querySelector('.scene-next')!.addEventListener('click', () => next());
+  stage.addEventListener('keydown', event => {
+    if (!['[', ']'].includes(event.key) || (event.target as HTMLElement).closest('input, select, textarea')) return;
+    event.preventDefault(); event.stopPropagation(); next(event.key === '[' ? -1 : 1);
+  });
+  let swipe: { id: number; x: number; y: number } | undefined;
+  viewport.addEventListener('pointerdown', event => {
+    if (!stage.open || mode.value.startsWith('nature:') || event.pointerType === 'mouse') return;
+    swipe = { id: event.pointerId, x: event.clientX, y: event.clientY };
+  });
+  viewport.addEventListener('pointerup', event => {
+    if (swipe?.id !== event.pointerId) return;
+    const dx = event.clientX - swipe.x, dy = event.clientY - swipe.y; swipe = undefined;
+    if (Math.abs(dx) >= 64 && Math.abs(dx) > Math.abs(dy) * 2) next(dx < 0 ? 1 : -1);
+  });
+  viewport.addEventListener('pointercancel', () => { swipe = undefined; });
+  stage.addEventListener('cancel', event => { event.preventDefault(); event.stopPropagation(); void close(); });
+  host.querySelector('#scene-export')!.addEventListener('click', () => {
+    if (mode.value === 'off') { status.textContent = 'Choose a scene before saving a still.'; return; }
+    if ((mode.value === 'milkdrop' || mode.value.startsWith('nature:')) && !library.captureReady()) { status.textContent = 'Wait for this scene to load. MilkDrop also requires your flashing-light consent.'; return; }
+    try {
+      cancelAnimationFrame(raf); previous = 0; render();
+      const image = document.createElement('canvas');
+      const source = mode.value === 'local' ? media.firstElementChild as HTMLImageElement | HTMLVideoElement | null
+        : mode.value === 'milkdrop' || mode.value.startsWith('nature:') ? library.flat() ?? library.canvas() : canvas;
+      if (!source) throw new Error('Choose your local photo or video again to save a still.');
+      image.width = canvas.width; image.height = canvas.height;
+      image.getContext('2d')!.drawImage(source, 0, 0, image.width, image.height);
+      image.toBlob(blob => {
+        if (!blob) { status.textContent = 'This browser could not capture the scene. Try a music pattern or photo.'; return; }
+        const link = document.createElement('a'), sourceUrl = URL.createObjectURL(blob);
+        link.href = sourceUrl; link.download = 'binaural-scene.png'; link.click(); setTimeout(() => URL.revokeObjectURL(sourceUrl), 1000);
+        status.textContent = 'PNG still saved.';
+      }, 'image/png');
+    } catch (error) { status.textContent = error instanceof Error ? error.message : 'This scene cannot be captured. Try a music pattern or photo.'; }
+  });
   refresh();
   return { transport(value: boolean) { if (value !== running) { running = value; refresh(); } },
+    getState() { return { scene: mode.value, ...library.getState() }; },
+    restore(state: VisualSettings) {
+      loading++; const old = media.firstElementChild as HTMLImageElement | HTMLVideoElement | null;
+      if (old && url) release(old, url);
+      video = undefined; media.replaceChildren(); url = undefined; clear.hidden = true;
+      mode.value = state.scene; independent.checked = false; elapsed = 0; lastFrame = undefined; library.restore(state); refresh();
+      if (mode.value === 'local' && !url) status.textContent = 'Choose your local photo or video again. Local files are excluded from saved experiences.';
+    },
+    choose(scene: string) { mode.value = scene; refresh(); },
+    fullscreen() { void fullscreen(); },
+    next,
+    toggleIndependent() { independent.checked = !independent.checked; refresh(); changed(); },
     stop() { running = false; independent.checked = false; refresh(); if (stage.open) void close(); } };
 }

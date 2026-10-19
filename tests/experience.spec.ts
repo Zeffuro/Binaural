@@ -31,7 +31,7 @@ test('pause freezes audio timer, resumes, and can stop while paused', async ({ p
 test('explorer filters sourced recipes and loads without autoplay', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Explore all presets' }).click();
-  await expect(page.locator('.explore-card')).toHaveCount(24);
+  await expect(page.locator('.explore-card')).toHaveCount(30);
   await page.screenshot({ path: `test-results/preset-explorer-${test.info().project.name}.png` });
   await page.getByRole('searchbox', { name: 'Search', exact: true }).fill('432 theta');
   await expect(page.locator('.explore-card')).toHaveCount(1);
@@ -77,7 +77,7 @@ test('ambient colors are visible, whole-studio hues apply, and motion freezes on
   await expect(page.getByRole('dialog', { name: 'Immersive ambient light' })).toBeVisible();
   await page.screenshot({ path: `test-results/immersive-light-${test.info().project.name}.png` });
   await page.getByRole('button', { name: 'Close light' }).click();
-  await page.keyboard.press('Escape');
+  await page.keyboard.press('Shift+Escape');
   await expect(page.locator('body')).not.toHaveClass(/color-studio/);
 });
 
@@ -91,6 +91,6 @@ test('every catalog recipe validates and the expanded collection is fully presen
     for (const preset of presets) parseSession(preset.session);
     return { presets: presets.length, frequencies: frequencies.length, distinct: new Set(presets.map((p: { id: string }) => p.id)).size };
   });
-  expect(result).toEqual({ presets: 24, frequencies: 36, distinct: 24 });
+  expect(result).toEqual({ presets: 30, frequencies: 36, distinct: 30 });
   await expect(page.locator('#frequencies button')).toHaveCount(36);
 });

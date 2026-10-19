@@ -1,0 +1,7 @@
+.offline-tools { margin-top: 24px; border-top: 1px solid var(--line); padding-top: 18px; font-size: 13px; line-height: 1.6; }
+.offline-tools summary { cursor: pointer; min-height: 28px; font-weight: 500; }
+.offline-tools p { max-width: 70ch; margin: 10px 0; }
+.offline-tools .offline-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.offline-tools button { min-height: 32px; padding: 6px 12px; font-size: 13px; }
+.offline-tools button:disabled { opacity: .7; cursor: default; }
+@media (max-width: 720px) { .offline-tools summary, .offline-tools button { min-height: 44px; } }

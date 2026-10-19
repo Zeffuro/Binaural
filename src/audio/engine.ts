@@ -12,6 +12,7 @@ export class AudioEngine {
   private gate?: GainNode;
   private transport?: GainNode;
   private musicGain?: GainNode;
+  private toneBus?: GainNode;
   private voices = new Map<string, ToneVoice>();
   private noise?: AudioBufferSourceNode;
   private noiseGain?: GainNode;
@@ -43,9 +44,11 @@ export class AudioEngine {
     if (this.context) return;
     const context = new AudioContext({ latencyHint: 'playback' });
     this.context = context;
+    const current = () => this.context === context && !this.stopping;
     this.failure = undefined;
     try {
       await context.suspend();
+      if (!current()) return;
       this.origin = context.currentTime;
       this.master = context.createGain();
       this.gate = context.createGain();
@@ -72,9 +75,14 @@ export class AudioEngine {
       }
       this.musicGain = context.createGain();
       this.musicGain.connect(this.master);
+      this.toneBus = context.createGain();
+      this.toneBus.gain.value = session.tonesMuted ? 0 : 1;
+      this.toneBus.connect(this.master);
       if (bwg) {
         await context.audioWorklet.addModule(workletUrl);
+        if (!current()) return;
         const background = await backgroundAssets.resolve(bwg, session.bwgBackgroundSource);
+        if (!current()) return;
         this.bwgNode = new AudioWorkletNode(context, 'bwg-sequence', { numberOfInputs: 0,
           numberOfOutputs: 1, outputChannelCount: [2], processorOptions: { preset: bwg, background } });
         this.bwgNode.addEventListener('processorerror', () => { this.failure = 'The BWGen audio processor stopped unexpectedly. Playback has been stopped.'; });
@@ -82,8 +90,10 @@ export class AudioEngine {
       }
       this.update(session);
       await context.resume();
+      if (!current()) return;
       if (this.musicUrl) await this.attachMusic(this.musicUrl);
     } catch (error) {
+      if (!current()) return;
       await this.stop();
       throw error;
     }
@@ -93,6 +103,7 @@ export class AudioEngine {
     const context = this.context;
     if (!context || !this.master || !this.musicGain) return;
     smooth(this.master.gain, session.master, context.currentTime);
+    if (this.toneBus) smooth(this.toneBus.gain, session.tonesMuted ? 0 : 1, context.currentTime);
     // The session gate is downstream, so edits cannot erase its scheduled fade-out.
     smooth(this.musicGain.gain, session.musicLevel * 0.4, context.currentTime);
     for (const [id, voice] of this.voices) {
@@ -101,11 +112,11 @@ export class AudioEngine {
         this.voices.delete(id);
       }
     }
-    if (this.bwgNode) this.bwgNode.port.postMessage({ levels: session.layers.map(layer => layer.level) });
-    for (const layer of this.bwgNode ? [] : session.layers) {
+    if (this.bwgNode) this.bwgNode.port.postMessage({ levels: session.layers.map(layer => session.tonesMuted ? 0 : layer.level) });
+    for (const layer of session.bwg ? [] : session.layers) {
       const existing = this.voices.get(layer.id);
       if (existing) existing.update(layer, session.layers.length);
-      else this.voices.set(layer.id, new ToneVoice(context, layer, this.master, session.layers.length, this.endAt, this.origin));
+      else this.voices.set(layer.id, new ToneVoice(context, layer, this.toneBus!, session.layers.length, this.endAt, this.origin));
     }
     if (this.ambient !== session.ambient) this.changeAmbient(session);
     if (this.noiseGain) smooth(this.noiseGain.gain, session.ambientLevel * 0.22, context.currentTime);
@@ -249,6 +260,7 @@ export class AudioEngine {
     this.noise = undefined;
     this.noiseGain = undefined;
     this.musicGain = undefined;
+    this.toneBus = undefined;
     this.ambient = undefined;
     this.endAt = undefined;
     this.stopping = false;

@@ -1,0 +1,29 @@
+.studio-tools, .preset-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 16px; }
+.studio-tools .secondary-button { padding: 8px 12px; }
+.shortcuts-dialog { width: min(500px, calc(100vw - 32px)); }
+.shortcuts-dialog dl { display: grid; grid-template-columns: minmax(110px, 1fr) 2fr; gap: 12px 16px; font-size: 14px; }
+.shortcuts-dialog dd { margin: 0; }
+.save-dialog { width: min(500px, calc(100vw - 32px)); }
+.save-dialog button { margin: 8px 8px 0 0; }
+.mini-player { display: none; }
+.sidebar > * { flex-shrink: 0; }
+.saved-row { display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, 28px); gap: 3px; align-items: center; }
+.saved-row .saved-preset { min-width: 0; overflow-wrap: anywhere; }
+.preset-small-button { border: 0; background: transparent; color: inherit; padding: 2px; }
+.sidebar #saved-filter { width: 100%; margin: 0 0 12px; padding: 8px; background: #243a36; color: #e3ebce; border: 1px solid #61725e; border-radius: 5px; }
+.share-dialog { width: min(620px, calc(100vw - 32px)); }
+.share-dialog input { width: 100%; padding: 12px; color: inherit; background: var(--surface-input, #f7f9ef); border: 1px solid var(--line); }
+@media (max-width: 720px) {
+  .saved-row { grid-template-columns: minmax(0, 1fr) repeat(3, 44px); }
+  .mini-player { display: block; position: fixed; inset: auto 0 0; padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); background: var(--surface, #f5f6ef); color: inherit; border-top: 1px solid var(--line); box-shadow: 0 -4px 18px #0002; z-index: 10; }
+  .has-mini-player { padding-bottom: calc(170px + env(safe-area-inset-bottom)); }
+  .mini-description { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
+  .mini-description strong { white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+  .mini-actions { display: grid; grid-template-columns: 44px 44px 1fr 1fr; gap: 8px; margin-top: 8px; }
+  .mini-actions button { min-height: 44px; background: var(--surface-input, #e6eddd); color: inherit; border: 1px solid var(--line); border-radius: 5px; }
+  .mini-player nav { display: flex; justify-content: space-between; gap: 8px; margin-top: 6px; }
+  .mini-player a { display: flex; align-items: center; min-height: 28px; color: inherit; font-size: 12px; }
+  .preset-list { scroll-snap-type: x proximity; }
+  .preset-card { scroll-snap-align: start; }
+  [id] { scroll-margin-top: 20px; scroll-margin-bottom: 180px; }
+}

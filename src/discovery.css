@@ -1,0 +1,10 @@
+.session-guide { width: min(540px, calc(100vw - 32px)); }
+.session-guide p { font-size: 14px; line-height: 1.7; }
+.session-guide label { display: block; margin: 20px 0 8px; font-size: 14px; }
+.session-guide select { width: 100%; min-height: 44px; font-size: 14px; padding: 10px; }
+.experience-label { font-size: 13px !important; color: inherit; border-left: 3px solid var(--green); padding-left: 10px; }
+.experience-filter { margin: 16px 0; display: flex; gap: 10px; align-items: center; font-size: 14px; }
+.experience-filter input { margin: 0; }
+.frequency-filter { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 16px; font-size: 13px; }
+.frequency-filter select { font-size: 13px; }
+.frequency-chips .favorite-mark { display: inline; margin: 0 0 0 6px; color: inherit; font-size: 13px; }
