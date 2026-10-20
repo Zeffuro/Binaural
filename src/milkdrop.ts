@@ -12,10 +12,13 @@ export class Milkdrop {
   private size = '';
   private lost = false;
   private frames = 0;
+  private snapshot = document.createElement('canvas');
+  private snapshotContext = this.snapshot.getContext('2d')!;
 
   constructor(readonly canvas: HTMLCanvasElement, private report: (message: string) => void) {
+    this.snapshot.className = canvas.className; this.clearFrame();
     canvas.addEventListener('webglcontextlost', event => {
-      event.preventDefault(); this.lost = true;
+      event.preventDefault(); this.lost = true; this.clearFrame();
       this.report('Graphics were interrupted. Choose another scene or reload to retry MilkDrop.');
     });
     canvas.addEventListener('webglcontextrestored', () => {
@@ -42,7 +45,7 @@ export class Milkdrop {
           { width: 320, height: 200, pixelRatio: 1, meshWidth: 32, meshHeight: 24 });
       }
       this.engine.loadPreset(data, this.selected ? blendSeconds : 0);
-      this.selected = id; this.size = ''; this.frames = 0;
+      this.selected = id; this.size = ''; this.clearFrame();
       this.canvas.dataset.preset = id;
       this.report(`${preset.name} by ${preset.author}.`);
       return true;
@@ -52,11 +55,19 @@ export class Milkdrop {
     }
   }
 
-  cancel(): void { this.revision++; }
+  private clearFrame(): void {
+    this.frames = 0; this.snapshot.width = this.snapshot.height = 1; delete this.canvas.dataset.frames;
+  }
 
-  render(frame: VisualFrame | undefined, seconds: number, quality: VisualQuality = 'balanced'): void {
-    if (!this.engine || this.lost) return;
-    const bounds = this.canvas.getBoundingClientRect();
+  cancel(): void { this.revision++; this.clearFrame(); }
+
+  captureReady(): boolean { return !!this.engine && !!this.selected && !this.lost && this.frames > 0; }
+
+  captureFrame(): HTMLCanvasElement { return this.snapshot; }
+
+  render(frame: VisualFrame | undefined, seconds: number, quality: VisualQuality = 'balanced', captureSize?: { width: number; height: number }, moving = true): void {
+    if (!this.engine || this.lost || (!moving && this.frames > 0)) return;
+    const bounds = captureSize ?? this.canvas.getBoundingClientRect();
     const ratio = visualRatio(bounds.width, quality);
     const width = Math.max(1, Math.round(bounds.width * ratio)), height = Math.max(1, Math.round(bounds.height * ratio));
     const size = `${width}x${height}`;
@@ -66,6 +77,9 @@ export class Milkdrop {
       timeByteArrayL: frame?.left ?? this.silent,
       timeByteArrayR: frame?.right ?? this.silent,
     } });
+    // Retain the fresh WebGL frame so paused captures never advance the renderer.
+    if (this.snapshot.width !== width || this.snapshot.height !== height) { this.snapshot.width = width; this.snapshot.height = height; }
+    this.snapshotContext.drawImage(this.canvas, 0, 0);
     this.canvas.dataset.frames = String(++this.frames);
     this.canvas.dataset.audio = frame ? 'mix' : 'silence';
   }

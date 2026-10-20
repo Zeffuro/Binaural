@@ -9,6 +9,13 @@ import { AsmrMixer } from './asmr-mixer';
 import { listeningMode, modeGains } from '../listening-mode';
 import { asmrRecordingsReady, prepareAsmrRecordings } from './asmr-assets';
 
+export interface AudioCaptureLease {
+  stream: MediaStream;
+  time(): number;
+  state(): 'playing' | 'paused' | 'stopped';
+  dispose(): void;
+}
+
 export class AudioEngine {
   private context?: AudioContext;
   private master?: GainNode;
@@ -24,6 +31,8 @@ export class AudioEngine {
   private endAt?: number;
   private music?: HTMLAudioElement;
   private musicUrl?: string;
+  private musicFile?: File;
+  private musicRevision = 0;
   private stopping = false;
   private isPaused = false;
   private origin = 0;
@@ -35,6 +44,7 @@ export class AudioEngine {
   private asmr?: AsmrMixer;
   private asmrRevision = 0;
   private asmrPending = false;
+  private captures = new Set<AudioCaptureLease>();
   get loadingAsmr(): boolean { return this.asmrPending; }
   failure?: string;
 
@@ -43,7 +53,36 @@ export class AudioEngine {
   get playing(): boolean { return !!this.context && !this.stopping; }
   get state(): string { return this.context?.state ?? 'stopped'; }
   get paused(): boolean { return this.isPaused; }
+  get selectedMusicFile(): File | undefined { return this.musicFile; }
   visualFrame(): VisualFrame | undefined { return this.analysis?.read(); }
+  captureAudio(): AudioCaptureLease {
+    const context = this.context, transport = this.transport;
+    if (!context || !transport || this.stopping || this.isPaused || context.state !== 'running') {
+      throw new Error('Start playback before recording video.');
+    }
+    const destination = context.createMediaStreamDestination();
+    destination.channelCount = 2;
+    destination.channelCountMode = 'explicit';
+    destination.channelInterpretation = 'speakers';
+    let disposed = false;
+    const lease: AudioCaptureLease = {
+      stream: destination.stream,
+      time: () => context.currentTime,
+      state: () => disposed || this.context !== context || context.state === 'closed' ? 'stopped'
+        : this.isPaused || context.state !== 'running' ? 'paused' : 'playing',
+      dispose: () => {
+        if (disposed) return;
+        disposed = true;
+        transport.disconnect(destination);
+        destination.disconnect();
+        destination.stream.getTracks().forEach(track => track.stop());
+        this.captures.delete(lease);
+      },
+    };
+    transport.connect(destination);
+    this.captures.add(lease);
+    return lease;
+  }
   get remaining(): number | undefined {
     return this.sequenceEnd === undefined ? undefined : Math.max(0, this.sequenceEnd - (this.context?.currentTime ?? 0));
   }
@@ -197,12 +236,15 @@ export class AudioEngine {
   }
 
   async setMusic(file?: File): Promise<void> {
+    const revision = ++this.musicRevision;
     this.detachMusic();
     if (this.musicUrl) URL.revokeObjectURL(this.musicUrl);
     this.musicUrl = undefined;
+    this.musicFile = undefined;
     if (!file) return;
     const url = URL.createObjectURL(file);
     const probe = new Audio();
+    let adopted = false;
     try {
       await new Promise<void>((resolve, reject) => {
         const cleanup = () => { clearTimeout(timer); probe.onloadeddata = null; probe.onerror = null; };
@@ -212,26 +254,37 @@ export class AudioEngine {
         probe.preload = 'auto';
         probe.src = url;
       });
+      if (this.musicRevision !== revision) return;
       this.musicUrl = url;
+      this.musicFile = file;
+      adopted = true;
       if (this.playing) await this.attachMusic(url);
     } catch (error) {
+      if (this.musicRevision !== revision) return;
       this.detachMusic();
-      URL.revokeObjectURL(url);
       this.musicUrl = undefined;
+      this.musicFile = undefined;
+      adopted = false;
       throw error;
     } finally {
+      if (!adopted) URL.revokeObjectURL(url);
       probe.removeAttribute('src');
       probe.load();
     }
   }
 
   private async attachMusic(url: string): Promise<void> {
+    const context = this.context, gain = this.musicGain;
+    if (!context || !gain || this.stopping || this.musicUrl !== url) return;
     this.detachMusic();
     const music = new Audio(url);
     music.loop = true;
     this.music = music;
-    this.context!.createMediaElementSource(music).connect(this.musicGain!);
-    if (!this.isPaused) await music.play();
+    context.createMediaElementSource(music).connect(gain);
+    if (!this.isPaused) {
+      try { await music.play(); }
+      catch (error) { if (this.music === music && this.context === context && !this.stopping) throw error; }
+    }
   }
 
   private detachMusic(): void {
@@ -275,6 +328,7 @@ export class AudioEngine {
       await new Promise(resolve => setTimeout(resolve, 150));
     }
     this.detachMusic();
+    for (const capture of this.captures) capture.dispose();
     await context.close();
     this.asmr?.dispose(); this.asmr = undefined;
     this.voices.clear();

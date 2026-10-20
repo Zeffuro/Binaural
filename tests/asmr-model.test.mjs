@@ -27,7 +27,7 @@ test('legacy ASMR layers migrate to zero cupping while new parameters stay bound
     assert.throws(() => parseAsmr({ level: .6, layers: [{ ...value, [field]: invalid }] }));
   }
   assert.equal(parseAsmr({ level: 1, layers: [{ ...value, pressure: 1, pressurePhase: 360 }] }).layers[0].pressure, 1);
-  assert.equal(generatedAsmrSounds.length, 9); assert.equal(recordedAsmrSounds.length, 5);
+  assert.equal(generatedAsmrSounds.length, 15); assert.equal(recordedAsmrSounds.length, 5);
 });
 
 test('cupping never creates negative gain or cutoff, boosts volume, or adds oscillator DC', () => {

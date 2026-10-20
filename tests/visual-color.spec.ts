@@ -58,8 +58,8 @@ test('picked base color reaches immersive light and remains stable through a pau
   await expect(page.locator('body')).toHaveClass(/color-studio/);
   await page.getByLabel('Light style').selectOption('cycle');
   await page.getByRole('button', { name: 'Start listening' }).click();
-  await page.waitForTimeout(200);
-  expect((await lightState(page)).hue).toBeGreaterThan(320);
+  await expect(page.locator('#status')).toHaveText('● Listening');
+  await expect.poll(async () => (await lightState(page)).hue).toBeGreaterThan(320);
   await expect(picker).toHaveValue('#cc3399');
   await page.getByRole('button', { name: 'Pause', exact: false }).click();
   await expect(page.locator('#status')).toHaveText('Ⅱ Paused');

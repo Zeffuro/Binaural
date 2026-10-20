@@ -145,17 +145,17 @@ export function setupSceneLibrary(host: HTMLElement, redraw: () => void, report:
       host.querySelector('#nature-angle')!.textContent = `${direction.value}°`; control('#visual-quality').value = state.quality;
       control('#milkdrop-auto').checked = state.autoCycle; control('#milkdrop-interval').value = String(state.cycleSeconds); control('#milkdrop-blend').value = String(state.blendSeconds); updateFavorite();
     },
-    canvas() { return selected.startsWith('milkdrop:') ? milkCanvas : natureCanvas; },
-    captureReady() { return ready && (!selected.startsWith('milkdrop') || consent.checked); },
+    canvas() { return selected.startsWith('milkdrop:') ? milk.captureFrame() : natureCanvas; },
+    captureReady() { return ready && (!selected.startsWith('milkdrop') || (consent.checked && milk.captureReady())); },
     flat() { return ready && useFlat && moodscapes.some(item => item.id === selected) ? flat : undefined; },
-    render(mode: string, frame: VisualFrame | undefined, seconds: number, elapsed: number) {
+    render(mode: string, frame: VisualFrame | undefined, seconds: number, elapsed: number, captureSize?: { width: number; height: number }, moving = true) {
       if (!ready) return;
       if (mode === 'milkdrop' && consent.checked) {
-        milk.render(frame, seconds, effectiveQuality());
+        milk.render(frame, seconds, effectiveQuality(), captureSize, moving);
         cycleElapsed += seconds;
         if (control('#milkdrop-auto').checked && cycleElapsed >= Number(control('#milkdrop-interval').value)) { queueMicrotask(() => next(1, false, false)); cycleElapsed = 0; }
       }
-      if (mode.startsWith('nature:') && !useFlat) panorama?.render(Number(direction.value) * Math.PI / 180 + (visualBudget(effectiveQuality()).fps > 30 ? elapsed * 0.012 : 0), effectiveQuality());
+      if (mode.startsWith('nature:') && !useFlat) panorama?.render(Number(direction.value) * Math.PI / 180 + (visualBudget(effectiveQuality()).fps > 30 ? elapsed * 0.012 : 0), effectiveQuality(), captureSize);
     },
   };
 }

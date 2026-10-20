@@ -65,9 +65,8 @@ test('ambient colors are visible, whole-studio hues apply, and motion freezes on
   await expect(page.locator('body')).toHaveClass(/color-studio/);
   await page.getByLabel('Light style').selectOption('cycle');
   await page.getByRole('button', { name: 'Start listening' }).click();
-  await page.waitForTimeout(250);
-  const hue = await page.evaluate(() => document.documentElement.style.getPropertyValue('--light-hue'));
-  expect(Number(hue)).toBeGreaterThan(280);
+  await expect(page.locator('#status')).toHaveText('● Listening');
+  await expect.poll(() => page.evaluate(() => Number(document.documentElement.style.getPropertyValue('--light-hue')))).toBeGreaterThan(280);
   await page.getByRole('button', { name: 'Pause', exact: false }).click();
   await expect(page.locator('#status')).toHaveText('Ⅱ Paused');
   const pausedHue = await page.evaluate(() => document.documentElement.style.getPropertyValue('--light-hue'));

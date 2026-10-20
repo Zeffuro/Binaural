@@ -5,8 +5,9 @@ for (const fails of [false, true]) {
   test(`a cancelled native start cannot affect replacement playback when worklet loading ${fails ? 'fails' : 'finishes'}`, async ({ page }) => {
     await page.goto('/'); await page.locator('h1').click();
     const result = await page.evaluate(async ({ data, fails }) => {
-      const enginePath = '/src/audio/engine.ts', modelPath = '/src/model.ts', importPath = '/src/import/bwg.ts';
+      const enginePath = '/src/audio/engine.ts', modelPath = '/src/model.ts', importPath = '/src/import/bwg.ts', clockPath = '/tests/helpers/audio-clock.ts';
       const { AudioEngine } = await import(enginePath), { initialSession } = await import(modelPath);
+      const { waitForAudioTime } = await import(clockPath);
       const { importBwg } = await import(importPath);
       let entered!: () => void, release!: () => void;
       const loading = new Promise<void>(resolve => { entered = resolve; }), gate = new Promise<void>(resolve => { release = resolve; });
@@ -22,7 +23,7 @@ for (const fails of [false, true]) {
         await Promise.race([loading, first.then(() => { throw new Error('Native start settled before loading'); })]);
         await engine.stop(); await engine.start(initialSession());
         release(); await first;
-        await new Promise(resolve => setTimeout(resolve, 400));
+        await waitForAudioTime(engine.context, .75);
         const samples = engine.visualFrame()?.left;
         return { playing: engine.playing, state: engine.state, range: samples ? Math.max(...samples) - Math.min(...samples) : 0 };
       } finally { Worklet.prototype.addModule = original; await engine.stop(); }

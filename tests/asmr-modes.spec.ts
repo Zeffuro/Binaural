@@ -1,9 +1,10 @@
 import { expect, test } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
 import { makeBwgFixture } from './helpers/bwg';
 
 test('listening modes preserve the mix, expose the right controls and never autoplay', async ({ page }) => {
   await page.goto('/');
-  const mode = (name: string) => page.locator(`[data-listening-mode=${name}]`);
+  const mode = (name: string) => page.locator(`button[data-listening-mode=${name}]`);
   await expect(mode('binaural')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#asmr-controls')).toBeHidden();
   await mode('asmr').click();
@@ -13,8 +14,8 @@ test('listening modes preserve the mix, expose the right controls and never auto
   await expect(page.getByRole('link', { name: 'Skip to ASMR', exact: true })).toHaveAttribute('href', '#asmr-controls');
   await page.locator('[data-asmr-preset=ear-cupping]').click();
   await expect(page.getByLabel('Sound 1 ear cupping', { exact: true })).toHaveValue('0.85');
-  await expect(page.locator('#asmr-preset option')).toHaveCount(16);
-  await expect(page.getByLabel('Sound 1 trigger', { exact: true }).locator('option')).toHaveCount(14);
+  await expect(page.locator('#asmr-preset option')).toHaveCount(28);
+  await expect(page.getByLabel('Sound 1 trigger', { exact: true }).locator('option')).toHaveCount(20);
   for (const selected of ['mixed', 'binaural', 'asmr']) {
     await mode(selected).click();
     await expect(mode(selected)).toHaveAttribute('aria-pressed', 'true');
@@ -70,9 +71,9 @@ test('legacy ASMR links keep Mixed mode when cleared and unknown modes are rejec
     return { link: sessionLink(session), rejected };
   });
   expect(result.rejected).toBe(true); await page.goto(result.link);
-  await expect(page.locator('[data-listening-mode=mixed]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('button[data-listening-mode=mixed]')).toHaveAttribute('aria-pressed', 'true');
   await page.locator('#asmr-clear').click();
-  await expect(page.locator('[data-listening-mode=mixed]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('button[data-listening-mode=mixed]')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#asmr-controls')).toBeVisible();
 });
 
@@ -100,7 +101,7 @@ test('ASMR starts with ordinary and native BWGen buses silent before the audio c
   expect(gains).toEqual([{ tone: 0 }, { tone: 0, native: 0 }]);
 });
 
-test('all bundled recordings decode to bounded stereo PCM and export through the actual mixer', async ({ page }) => {
+test('all bundled recordings retain their channel layout, bounded PCM and actual mixer export', async ({ page }) => {
   await page.goto('/');
   const requests: string[] = [];
   page.on('request', request => { if (request.url().includes('/audio/asmr/')) requests.push(request.url()); });
@@ -120,22 +121,68 @@ test('all bundled recordings decode to bounded stereo PCM and export through the
         peak = Math.max(peak, combined);
         if (channels.length === 2) difference += Math.abs(channels[0][i] - channels[1][i]);
       }
+      // Starting a source may detach getChannelData views; inspect them before export.
+      const edges = channels.every(data => data[0] === 0 && data.at(-1) === 0);
       const session = initialSession(); session.mode = 'asmr'; session.master = 1; session.ambient = 'none'; session.asmr = { level: 1, layers: [layer] };
       const view = new DataView(await (await renderWav(session, 3)).arrayBuffer()), energy = [0, 0];
       for (let i = 44 + 22050 * 4; i < view.byteLength; i += 4) for (let ear = 0; ear < 2; ear++) energy[ear] += Math.abs(view.getInt16(i + ear * 2, true));
-      results.push({ id: sound.id, channels: channels.length, duration: buffer.duration, peak, finite, difference, energy,
-        edges: channels.every(data => data[0] === 0 && data.at(-1) === 0) });
+      results.push({ id: sound.id, file: sound.file, channels: channels.length, duration: buffer.duration, peak, finite, difference, energy, edges });
     }
     return results;
   });
-  expect(results).toHaveLength(5); expect(requests).toHaveLength(5);
+  const { clips } = JSON.parse(await readFile('public/audio/asmr/credits.json', 'utf8'));
+  expect(results).toHaveLength(clips.length); expect(requests).toHaveLength(clips.length);
   for (const result of results) {
-    expect(result.finite).toBe(true); expect(result.edges).toBe(true);
-    expect(result.peak).toBeGreaterThan(.001); expect(result.peak).toBeLessThanOrEqual(.700001);
-    expect(result.duration).toBeGreaterThan(8); expect(result.duration).toBeLessThanOrEqual(20.01);
-    expect(result.energy[0]).toBeGreaterThan(1000); expect(result.energy[1]).toBe(0);
-    if (result.channels === 2) expect(result.difference).toBeGreaterThan(.1);
+    const clip = clips.find((clip: { file: string }) => clip.file === result.file);
+    expect(clip, result.id).toBeDefined(); expect(result.channels, result.id).toBe(clip.channels);
+    expect(result.finite, result.id).toBe(true); expect(result.edges, result.id).toBe(true);
+    expect(result.peak, result.id).toBeGreaterThan(.001); expect(result.peak, result.id).toBeLessThanOrEqual(.700001);
+    expect(Math.abs(result.duration - clip.durationSeconds), result.id).toBeLessThan(.01);
+    expect(result.energy[0], result.id).toBeGreaterThan(1000); expect(result.energy[1], result.id).toBe(0);
+    if (result.channels === 2 && result.id !== 'recorded-grass') expect(result.difference, result.id).toBeGreaterThan(.1);
+    else expect(result.difference, result.id).toBe(0);
   }
+});
+
+test('recorded mono and distinct stereo fixtures keep their channels through decoding and mixing', async ({ page }) => {
+  for (const channels of [1, 2]) {
+    const frames = 48000, bytes = frames * channels * 2, wav = Buffer.alloc(44 + bytes);
+    wav.write('RIFF'); wav.writeUInt32LE(36 + bytes, 4); wav.write('WAVEfmt ', 8);
+    wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(channels, 22);
+    wav.writeUInt32LE(48000, 24); wav.writeUInt32LE(48000 * channels * 2, 28);
+    wav.writeUInt16LE(channels * 2, 32); wav.writeUInt16LE(16, 34); wav.write('data', 36); wav.writeUInt32LE(bytes, 40);
+    for (let frame = 0; frame < frames; frame++) for (let ear = 0; ear < channels; ear++) {
+      wav.writeInt16LE(Math.round((ear ? .25 : .5) * Math.sin(2 * Math.PI * (ear ? 880 : 440) * frame / 48000) * 32767), 44 + (frame * channels + ear) * 2);
+    }
+    const file = channels === 1 ? 'hand-rubbing.ogg' : 'metal-tapping.ogg';
+    await page.route(`**/audio/asmr/${file}`, route => route.fulfill({ contentType: 'audio/wav', body: wav }));
+  }
+  await page.goto('/');
+  const results = await page.evaluate(async () => {
+    const assets = '/src/audio/asmr-assets.ts', mixerPath = '/src/audio/asmr-mixer.ts', state = '/src/asmr-state.ts';
+    const { prepareAsmrRecordings, recordedAsmrBuffer } = await import(assets), { AsmrMixer } = await import(mixerPath), { makeAsmrLayer } = await import(state);
+    const results = [];
+    for (const sound of ['recorded-hands', 'recorded-metal']) {
+      const settings = { level: 1, layers: [{ ...makeAsmrLayer(sound), level: 1, pan: 0, motion: 'still', tone: 1 }] };
+      await prepareAsmrRecordings(settings);
+      const channels = recordedAsmrBuffer(sound).numberOfChannels, context = new OfflineAudioContext(2, 44100, 44100);
+      new AsmrMixer(context, context.destination).update(settings);
+      const buffer = await context.startRendering(), left = buffer.getChannelData(0), right = buffer.getChannelData(1);
+      const magnitude = (data: Float32Array, frequency: number) => {
+        let real = 0, imaginary = 0;
+        for (let i = 11025; i < 33075; i++) { const phase = 2 * Math.PI * frequency * i / 44100; real += data[i] * Math.cos(phase); imaginary += data[i] * Math.sin(phase); }
+        return Math.hypot(real, imaginary) / 22050;
+      };
+      let difference = 0;
+      for (let i = 11025; i < 33075; i++) difference = Math.max(difference, Math.abs(left[i] - right[i]));
+      results.push({ channels, difference, left: [magnitude(left, 440), magnitude(left, 880)], right: [magnitude(right, 440), magnitude(right, 880)] });
+    }
+    return results;
+  });
+  expect(results.map(result => result.channels)).toEqual([1, 2]);
+  expect(results[0].difference).toBeLessThan(.000001);
+  for (const ear of [results[0].left, results[0].right, results[1].left]) { expect(ear[0]).toBeGreaterThan(.001); expect(ear[0]).toBeGreaterThan(ear[1] * 100); }
+  expect(results[1].right[1]).toBeGreaterThan(.001); expect(results[1].right[1]).toBeGreaterThan(results[1].right[0] * 100);
 });
 
 test('opposite cupping phases alternate warmth independently and ear-focus recipes stay in their own ear', async ({ page }) => {
@@ -176,8 +223,9 @@ for (const action of ['mode', 'restart']) test(`pending recording edits fall sil
   await page.route('**/audio/asmr/hand-rubbing.ogg', async route => { requested = true; await pending; await route.continue(); });
   try {
     const before = await page.evaluate(async () => {
-      const enginePath = '/src/audio/engine.ts', statePath = '/src/asmr-state.ts', modelPath = '/src/model.ts';
+      const enginePath = '/src/audio/engine.ts', statePath = '/src/asmr-state.ts', modelPath = '/src/model.ts', clockPath = '/tests/helpers/audio-clock.ts';
       const { AudioEngine } = await import(enginePath), { makeAsmrLayer } = await import(statePath), { initialSession } = await import(modelPath);
+      const { waitForAudioTime } = await import(clockPath);
       const engine = new AudioEngine(), session = initialSession();
       session.mode = 'asmr'; session.tonesMuted = true; session.master = 1; session.ambient = 'none';
       session.asmr = { level: 1, layers: [{ ...makeAsmrLayer('air'), level: 1 }] };
@@ -186,16 +234,16 @@ for (const action of ['mode', 'restart']) test(`pending recording edits fall sil
         const analyzer: AnalyserNode = engine.context.createAnalyser(); analyzer.fftSize = 2048; engine.transport.connect(analyzer);
         return { analyzer, peak: () => { const samples = new Float32Array(2048); analyzer.getFloatTimeDomainData(samples); return Math.max(...samples.map(Math.abs)); } };
       };
-      const signal = read(); await new Promise(resolve => setTimeout(resolve, 350));
+      const signal = read(); await waitForAudioTime(engine.context, engine.context.currentTime + .65);
       const peak = signal.peak(); session.asmr.layers[0].sound = 'recorded-hands'; engine.update(session);
-      Object.assign(window, { asmrRace: { engine, session, signal, read, makeAsmrLayer } }); return peak;
+      Object.assign(window, { asmrRace: { engine, session, signal, read, makeAsmrLayer, waitForAudioTime } }); return peak;
     });
     expect(before).toBeGreaterThan(.001);
     await expect.poll(() => requested).toBe(true);
     const silent = await page.evaluate(async () => {
-      const { engine, session, signal } = (window as any).asmrRace;
+      const { engine, session, signal, waitForAudioTime } = (window as any).asmrRace;
       session.asmr.level = 0; session.asmr.layers[0].muted = true; engine.update(session);
-      await new Promise(resolve => setTimeout(resolve, 550));
+      await waitForAudioTime(engine.context, engine.context.currentTime + .55);
       return { peak: signal.peak(), loading: engine.loadingAsmr };
     });
     expect(silent.loading).toBe(true); expect(silent.peak).toBeLessThan(.00001);
@@ -213,8 +261,8 @@ for (const action of ['mode', 'restart']) test(`pending recording edits fall sil
       const assets = '/src/audio/asmr-assets.ts', statePath = '/src/asmr-state.ts';
       const { prepareAsmrRecordings } = await import(assets), { makeAsmrLayer } = await import(statePath);
       await prepareAsmrRecordings({ level: 1, layers: [makeAsmrLayer('recorded-hands')] });
-      await new Promise(resolve => setTimeout(resolve, 550));
-      const { engine, signal } = (window as any).asmrRace;
+      const { engine, signal, waitForAudioTime } = (window as any).asmrRace;
+      await waitForAudioTime(engine.context, engine.context.currentTime + .55);
       const result = { peak: signal.peak(), loading: engine.loadingAsmr, sounds: [...engine.asmr.voices.values()].map((voice: any) => voice.sound) };
       await engine.stop(); return result;
     });

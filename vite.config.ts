@@ -3,5 +3,6 @@ import { offlineBuild } from './scripts/build-offline.mjs';
 
 export default defineConfig({
   base: './',
+  worker: { format: 'es' },
   plugins: [offlineBuild()],
 });

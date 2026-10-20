@@ -9,6 +9,19 @@ import { makeBwgFixture } from './helpers/bwg.ts';
 
 const root = fileURLToPath(new URL('../dist/', import.meta.url));
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.txt': 'text/plain', '.ogg': 'audio/ogg' };
+function expectShortWav(wav) {
+  expect(wav.length).toBe(176444);
+  expect(wav.toString('ascii', 0, 4)).toBe('RIFF');
+  expect(wav.readUInt32LE(4)).toBe(wav.length - 8);
+  expect(wav.toString('ascii', 8, 16)).toBe('WAVEfmt ');
+  expect(wav.readUInt32LE(16)).toBe(16);
+  expect(wav.readUInt16LE(20)).toBe(1); expect(wav.readUInt16LE(22)).toBe(2);
+  expect(wav.readUInt32LE(24)).toBe(44100); expect(wav.readUInt32LE(28)).toBe(176400);
+  expect(wav.readUInt16LE(32)).toBe(4); expect(wav.readUInt16LE(34)).toBe(16);
+  expect(wav.toString('ascii', 36, 40)).toBe('data');
+  expect(wav.readUInt32LE(40)).toBe(wav.length - 44);
+  expect(wav.subarray(44).some(value => value !== 0)).toBe(true);
+}
 let mount = '/', revision = '', failAsset = false, disconnected = false;
 const server = createServer(async (request, response) => {
   if (disconnected) { request.socket.destroy(); return; }
@@ -68,7 +81,7 @@ try {
         })), files);
         expect(offlineAssets.every(Boolean)).toBe(true);
         expect(await page.evaluate(() => fetch('./private-local-file.json').then(() => true, () => false))).toBe(false);
-        await page.locator('[data-listening-mode="asmr"]').click();
+        await page.locator('button[data-listening-mode="asmr"]').click();
         for (const id of ['glass-lantern', 'red-sweep', 'rose-brushes', 'paper-prism', 'blue-droplets', 'torch-whisper']) {
           await page.locator('#asmr-preset').selectOption(id); await page.locator('#asmr-pair').click();
           await expect(page.locator('[data-asmr]')).toHaveCount(2);
@@ -110,6 +123,65 @@ try {
         await expect(page.locator('#status')).toHaveText('Ready when you are');
         await page.locator('#import-file').setInputFiles({ name: 'synthetic.bwg', mimeType: 'application/octet-stream', buffer: Buffer.from(makeBwgFixture()) });
         await page.getByRole('button', { name: 'Load imported session' }).click();
+        await page.locator('#render-audio').click();
+        const nativeExport = page.getByRole('dialog', { name: 'Export audio', exact: true });
+        await nativeExport.getByLabel('Duration in seconds', { exact: true }).fill('1');
+        const [nativeWorker, nativeDownload] = await Promise.all([page.waitForEvent('worker'), page.waitForEvent('download'),
+          nativeExport.getByRole('button', { name: 'Render WAV', exact: true }).click()]);
+        const workerPath = new URL(nativeWorker.url()).pathname;
+        expect(workerPath).toMatch(/\/assets\/bwg-export-worker-[^/]+\.js$/);
+        expect(nativeWorker.url().startsWith(origin + prefix)).toBe(true);
+        expect(cached).toContain(workerPath);
+        expectShortWav(await readFile(await nativeDownload.path()));
+        await page.locator('#music-file').setInputFiles({ name: 'local-export.wav', mimeType: 'audio/wav', buffer: await readFile(await nativeDownload.path()) });
+        await expect(page.locator('#music-name')).toHaveText('local-export.wav');
+        await page.locator('#render-audio').click();
+        const flacExport = page.getByRole('dialog', { name: 'Export audio', exact: true });
+        await flacExport.getByLabel('File format').selectOption('flac');
+        await expect(flacExport.getByLabel('Include local music')).toBeChecked();
+        await flacExport.getByLabel('Duration in seconds').fill('1');
+        const [flacWorker, flacDownload] = await Promise.all([
+          page.waitForEvent('worker', worker => /\/flac-export-worker-/.test(worker.url())), page.waitForEvent('download'),
+          flacExport.getByRole('button', { name: 'Render FLAC', exact: true }).click()]);
+        expect(flacWorker.url().startsWith(origin + prefix)).toBe(true);
+        expect(cached).toContain(new URL(flacWorker.url()).pathname);
+        expect(cached.some(path => /\/libflac\.wasm-/.test(path))).toBe(true);
+        const flac = await readFile(await flacDownload.path());
+        expect(flacDownload.suggestedFilename()).toMatch(/\.flac$/);
+        expect(flac.toString('ascii', 0, 4)).toBe('fLaC');
+        expect(flac.subarray(26, 42).some(value => value !== 0)).toBe(true);
+        const decodedFlac = await page.evaluate(async bytes => {
+          const context = new OfflineAudioContext(2, 1, 44100), audio = await context.decodeAudioData(new Uint8Array(bytes).buffer);
+          return { frames: audio.length, channels: audio.numberOfChannels, audible: audio.getChannelData(0).some(value => Math.abs(value) > .0001) };
+        }, Array.from(flac));
+        expect(decodedFlac).toEqual({ frames: 44100, channels: 2, audible: true });
+        await page.locator('button[data-visual-quick=calm]').click();
+        await page.locator('#record-video').click();
+        const videoExport = page.getByRole('dialog', { name: 'Export video', exact: true });
+        await videoExport.getByLabel('Resolution').selectOption('854x480');
+        await videoExport.getByLabel('Frame rate').selectOption('24');
+        await videoExport.getByLabel('Maximum recording seconds').fill('1');
+        const [videoDownload] = await Promise.all([page.waitForEvent('download'), videoExport.getByRole('button', { name: 'Start recording', exact: true }).click()]);
+        const videoBytes = await readFile(await videoDownload.path());
+        expect(videoBytes.length).toBeGreaterThan(1000);
+        expect(videoDownload.suggestedFilename()).toMatch(/\.(webm|mp4)$/);
+        const videoSize = await page.evaluate(async bytes => {
+          const video = document.createElement('video'), url = URL.createObjectURL(new Blob([new Uint8Array(bytes)]));
+          video.muted = true; video.preload = 'auto';
+          try {
+            await new Promise((resolve, reject) => {
+              const timer = setTimeout(() => reject(new Error('Video did not decode')), 10000);
+              video.onloadeddata = () => { clearTimeout(timer); resolve(true); };
+              video.onerror = () => { clearTimeout(timer); reject(new Error('Video could not decode')); };
+              video.src = url;
+            });
+            return [video.videoWidth, video.videoHeight];
+          } finally { video.removeAttribute('src'); video.load(); URL.revokeObjectURL(url); }
+        }, Array.from(videoBytes));
+        expect(videoSize).toEqual([854, 480]);
+        await expect(page.locator('#status')).toHaveText('● Listening');
+        await page.getByRole('button', { name: 'Stop listening', exact: true }).click();
+        await page.locator('#remove-music').click();
         await page.getByRole('button', { name: 'Start listening' }).click();
         await expect(page.locator('#status')).toHaveText('● Listening');
         await page.getByRole('button', { name: 'Stop listening' }).click();
@@ -193,7 +265,7 @@ try {
         await page.getByRole('button', { name: 'Stop listening' }).click();
         expect(await page.evaluate(() => caches.has('unrelated-app-cache'))).toBe(true);
         expect(errors).toEqual([]);
-        console.log(`${name} ${prefix}: complete offline assets/scenes/worklet/share, recorded Ogg playback, playback-safe intertab update, waiting old-tab retention, failed/successful rollback and cache isolation passed`);
+        console.log(`${name} ${prefix}: complete offline assets/scenes/worklet/share, native BWGen WAV/export worker, recorded Ogg playback, playback-safe intertab update, waiting old-tab retention, failed/successful rollback and cache isolation passed`);
       } finally { await browser.close(); }
     }
   }

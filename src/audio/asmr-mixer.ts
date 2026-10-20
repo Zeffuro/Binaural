@@ -3,6 +3,8 @@ import { ASMR_RATE, asmrSample } from './asmr-synthesis';
 import { smooth } from './graph';
 import { recordedAsmrBuffer } from './asmr-assets';
 import { cuppingParameters, cuppingWave } from './ear-cupping';
+import { AsmrPosition } from './asmr-position';
+import { phaseCycles, setSinePhase } from './render-timing';
 
 class AsmrVoice {
   private source: AudioBufferSourceNode;
@@ -18,9 +20,14 @@ class AsmrVoice {
   private pressureLevel: GainNode;
   private highpass: BiquadFilterNode;
   private phase = -1;
+  private disposed = false;
+  private position?: AsmrPosition;
   readonly sound: AsmrLayer['sound'];
-  constructor(private context: BaseAudioContext, layer: AsmrLayer, output: AudioNode, endAt?: number, audible = true) {
+  readonly spatial: boolean;
+  constructor(private context: BaseAudioContext, layer: AsmrLayer, output: AudioNode, endAt?: number, audible = true,
+    private offsetSeconds = 0) {
     this.sound = layer.sound;
+    this.spatial = !!layer.spatial;
     this.source = context.createBufferSource();
     if (recordedAsmrSounds.some(sound => sound.id === layer.sound)) {
       const buffer = recordedAsmrBuffer(layer.sound);
@@ -36,6 +43,10 @@ class AsmrVoice {
     this.panner = context.createStereoPanner();
     this.motion = context.createOscillator(); this.drift = context.createOscillator();
     this.motion.frequency.value = 1 / layer.period; this.drift.frequency.value = 1 / (layer.period * 2.71);
+    if (offsetSeconds > 0) {
+      setSinePhase(context, this.motion, phaseCycles(1 / layer.period, offsetSeconds));
+      setSinePhase(context, this.drift, phaseCycles(1 / (layer.period * 2.71), offsetSeconds));
+    }
     this.filter.frequency.value = 500 * 24 ** layer.tone;
     this.source.playbackRate.value = layer.rate; this.panner.pan.value = layer.pan;
     this.width = context.createGain(); this.wander = context.createGain();
@@ -48,9 +59,12 @@ class AsmrVoice {
     this.width.gain.value = this.wander.gain.value = 0;
     this.motion.connect(this.width).connect(this.panner.pan);
     this.drift.connect(this.wander).connect(this.panner.pan);
-    this.source.connect(this.highpass).connect(this.filter).connect(this.level).connect(this.panner).connect(output);
+    this.source.connect(this.highpass).connect(this.filter).connect(this.level);
+    if (layer.spatial) this.position = new AsmrPosition(context, this.level, output, layer.spatial, layer.period, endAt, offsetSeconds);
+    else this.level.connect(this.panner).connect(output);
     this.update(layer, audible);
-    this.source.start(); this.motion.start(); this.drift.start(); this.pressure.start();
+    this.source.start(0, (offsetSeconds * this.source.playbackRate.value) % this.source.buffer.duration);
+    this.motion.start(); this.drift.start(); this.pressure.start();
     if (endAt !== undefined && endAt > context.currentTime) for (const source of [this.source, this.motion, this.drift, this.pressure]) source.stop(endAt);
   }
   update(layer: AsmrLayer, audible: boolean): void {
@@ -61,7 +75,8 @@ class AsmrVoice {
     smooth(this.pressureTone.gain, pressure.frequencyDepth, time);
     smooth(this.pressure.frequency, 1 / layer.period, time);
     if (this.phase !== (layer.pressurePhase ?? 0)) {
-      this.phase = layer.pressurePhase ?? 0; const wave = cuppingWave(this.phase);
+      this.phase = layer.pressurePhase ?? 0;
+      const wave = cuppingWave(this.phase + 360 * phaseCycles(1 / layer.period, this.offsetSeconds));
       this.pressure.setPeriodicWave(this.context.createPeriodicWave(wave.real, wave.imaginary, { disableNormalization: true }));
     }
     smooth(this.source.playbackRate, layer.rate, time);
@@ -72,12 +87,17 @@ class AsmrVoice {
     smooth(this.wander.gain, layer.motion === 'wander' ? width * .3 : 0, time);
     smooth(this.motion.frequency, 1 / layer.period, time);
     smooth(this.drift.frequency, 1 / (layer.period * 2.71), time);
+    if (layer.spatial) this.position?.update(layer.spatial, layer.period);
   }
   dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
     const stopAt = this.context.currentTime + .15;
     smooth(this.level.gain, 0, this.context.currentTime);
+    smooth(this.pressureLevel.gain, 0, this.context.currentTime);
     for (const source of [this.source, this.motion, this.drift, this.pressure]) source.stop(stopAt);
     setTimeout(() => {
+      this.position?.dispose();
       for (const node of [this.source, this.motion, this.drift, this.filter, this.level, this.panner, this.width, this.wander, this.pressure, this.pressureTone, this.pressureLevel, this.highpass]) node.disconnect();
     }, 200);
   }
@@ -86,7 +106,7 @@ class AsmrVoice {
 export class AsmrMixer {
   private bus: GainNode;
   private voices = new Map<string, AsmrVoice>();
-  constructor(private context: BaseAudioContext, output: AudioNode, private endAt?: number) {
+  constructor(private context: BaseAudioContext, output: AudioNode, private endAt?: number, private offsetSeconds = 0) {
     this.bus = context.createGain(); this.bus.gain.value = 0; this.bus.connect(output);
   }
   update(settings: AsmrSettings = defaultAsmr(), enabled = true): void {
@@ -95,16 +115,19 @@ export class AsmrMixer {
     const solo = settings.layers.some(layer => layer.solo && !layer.muted);
     for (const [id, voice] of this.voices) {
       const layer = settings.layers.find(item => item.id === id);
-      if (!layer || layer.sound !== voice.sound || expired) { voice.dispose(); this.voices.delete(id); }
+      if (!layer || layer.sound !== voice.sound || !!layer.spatial !== voice.spatial || expired) { voice.dispose(); this.voices.delete(id); }
     }
     if (expired) return;
     for (const layer of settings.layers) {
       const audible = !layer.muted && (!solo || layer.solo);
       let voice = this.voices.get(layer.id);
       if (!voice && !enabled) continue;
-      if (!voice) { voice = new AsmrVoice(this.context, layer, this.bus, this.endAt, audible); this.voices.set(layer.id, voice); }
+      if (!voice) { voice = new AsmrVoice(this.context, layer, this.bus, this.endAt, audible, this.offsetSeconds); this.voices.set(layer.id, voice); }
       voice.update(layer, audible);
     }
   }
-  dispose(): void { this.voices.clear(); this.bus.disconnect(); }
+  dispose(): void {
+    for (const voice of this.voices.values()) voice.dispose();
+    this.voices.clear(); this.bus.disconnect();
+  }
 }

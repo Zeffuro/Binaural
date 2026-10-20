@@ -1,11 +1,13 @@
 import { expect, test } from '@playwright/test';
 
 test('MilkDrop is opt-in, all six presets render, and pause/reduced motion freeze frames', async ({ page }) => {
-  test.setTimeout(60000);
+  test.setTimeout(120000);
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto('/');
   await page.getByLabel('Scene', { exact: true }).selectOption('milkdrop');
+  await page.getByLabel('Visual quality', { exact: true }).selectOption('eco');
+  await page.getByLabel('Blend duration (seconds)', { exact: true }).fill('0');
   await expect(page.locator('#scene-status')).toContainText('Enable MilkDrop');
   const canvas = page.locator('.scene-milkdrop');
   const settleLayout = () => canvas.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));

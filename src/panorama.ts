@@ -50,9 +50,9 @@ export class Panorama {
     this.ready = true;
   }
 
-  render(yaw: number, quality: VisualQuality = 'balanced'): void {
+  render(yaw: number, quality: VisualQuality = 'balanced', captureSize?: { width: number; height: number }): void {
     if (!this.ready) return;
-    const bounds = this.canvas.getBoundingClientRect();
+    const bounds = captureSize ?? this.canvas.getBoundingClientRect();
     const ratio = visualRatio(bounds.width, quality);
     const width = Math.max(1, Math.round(bounds.width * ratio)), height = Math.max(1, Math.round(bounds.height * ratio));
     if (this.canvas.width !== width || this.canvas.height !== height) { this.canvas.width = width; this.canvas.height = height; }

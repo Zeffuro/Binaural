@@ -1,113 +1,69 @@
-import { parseSession, type Session } from '../model';
-import { noiseBuffer, smooth, ToneVoice } from './graph';
-import { generatedBackgrounds, makeGeneratedBackground } from './generated-backgrounds';
-import { AsmrMixer } from './asmr-mixer';
-import { listeningMode, modeGains } from '../listening-mode';
-import { prepareAsmrRecordings } from './asmr-assets';
+import type { Session } from '../model';
+import { renderPcm } from './pcm-export';
+import { FlacExportSource } from './flac-export-source';
+import { MAX_EXPORT_SECONDS, MAX_FILE_EXPORT_SECONDS, wavHeader, wavPcm } from './wav-encoding';
+import type { AudioExportOptions, WavOptions, WavWriter } from './export-types';
+export { MAX_EXPORT_SECONDS, MAX_FILE_EXPORT_SECONDS, WAV_SAMPLE_RATE, wavBytes } from './wav-encoding';
+export { WAV_SECTION_SECONDS, WAV_PREROLL_SECONDS } from './pcm-export';
+export type { AudioExportFormat, AudioExportOptions, WavOptions, WavProgress, WavWriter } from './export-types';
 
-export const WAV_SAMPLE_RATE = 44100;
-export const MAX_EXPORT_SECONDS = 180;
-
-function seededNoise(): () => number {
-  let seed = 0x6b2f916d;
-  return () => {
-    seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5;
-    return (seed >>> 0) / 4294967296;
-  };
-}
-
-function ambience(context: OfflineAudioContext, session: Session, destination: AudioNode, endAt?: number): void {
-  if (session.ambient === 'none') return;
-  const source = context.createBufferSource();
-  const generated = generatedBackgrounds.find(item => item.id === session.ambient);
-  if (generated) {
-    const sample = makeGeneratedBackground(generated.id);
-    const buffer = context.createBuffer(sample.channels.length, sample.channels[0].length, sample.rate);
-    sample.channels.forEach((channel, index) => buffer.getChannelData(index).set(channel));
-    source.buffer = buffer;
-  } else source.buffer = noiseBuffer(context, session.ambient, seededNoise());
-  source.loop = true;
-  const filter = context.createBiquadFilter();
-  filter.type = 'lowpass';
-  filter.frequency.value = session.ambient === 'ocean' ? 950 : 16000;
-  const swell = context.createGain();
-  swell.gain.value = 0.65;
-  const level = context.createGain();
-  level.gain.value = 0;
-  smooth(level.gain, session.ambientLevel * 0.22, 0);
-  source.connect(filter).connect(swell).connect(level).connect(destination);
-  if (session.ambient === 'ocean') {
-    const modulation = context.createOscillator();
-    modulation.frequency.value = 0.07;
-    const depth = context.createGain();
-    depth.gain.value = 0.3;
-    modulation.connect(depth).connect(swell.gain);
-    modulation.start();
-    if (endAt !== undefined) modulation.stop(endAt);
-  }
-  source.start();
-  if (endAt !== undefined) source.stop(endAt);
-}
-
-function encodeWav(buffer: AudioBuffer): Blob {
-  const output = new ArrayBuffer(44 + buffer.length * 4);
-  const view = new DataView(output);
-  const text = (offset: number, value: string): void => {
-    [...value].forEach((char, index) => view.setUint8(offset + index, char.charCodeAt(0)));
-  };
-  text(0, 'RIFF'); view.setUint32(4, output.byteLength - 8, true); text(8, 'WAVEfmt ');
-  view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 2, true);
-  view.setUint32(24, WAV_SAMPLE_RATE, true); view.setUint32(28, WAV_SAMPLE_RATE * 4, true);
-  view.setUint16(32, 4, true); view.setUint16(34, 16, true); text(36, 'data');
-  view.setUint32(40, buffer.length * 4, true);
-  const channels = [buffer.getChannelData(0), buffer.getChannelData(1)];
-  for (let frame = 0; frame < buffer.length; frame++) {
-    for (let channel = 0; channel < 2; channel++) {
-      const value = Math.max(-1, Math.min(1, channels[channel][frame]));
-      view.setInt16(44 + frame * 4 + channel * 2, Math.round(value * (value < 0 ? 32768 : 32767)), true);
+async function encode(input: Session, seconds: number, maximum: number, write: (bytes: ArrayBuffer) => Promise<void>,
+    patch: (header: ArrayBuffer) => Promise<void>, options: AudioExportOptions): Promise<void> {
+  const format = options.format ?? 'wav', signal = options.signal;
+  if (format !== 'wav' && format !== 'flac') throw new Error('Choose WAV or FLAC for audio export.');
+  let flac: FlacExportSource | undefined;
+  const emit = async (bytes: ArrayBuffer) => { signal?.throwIfAborted(); if (bytes.byteLength) await write(bytes); signal?.throwIfAborted(); };
+  try {
+    const total = await renderPcm(input, seconds, maximum, {
+      async start(frames) {
+        if (format === 'wav') await emit(wavHeader(frames));
+        else { flac = new FlacExportSource(frames, signal); await flac.ready; }
+      },
+      async write(left, right, first, frames) {
+        await emit(flac ? await flac.encode(left.subarray(first, first + frames), right.subarray(first, first + frames))
+          : wavPcm(left, right, first, frames));
+      },
+    }, options);
+    signal?.throwIfAborted();
+    options.onProgress?.({ completedFrames: total, totalFrames: total, fraction: 1, stage: 'finishing' });
+    if (flac) {
+      const final = await flac.finish();
+      await emit(final.data); signal?.throwIfAborted(); await patch(final.header); signal?.throwIfAborted();
     }
-  }
-  return new Blob([output], { type: 'audio/wav' });
+  } finally { flac?.dispose(); }
 }
 
-export async function renderWav(input: Session, seconds: number, signal?: AbortSignal): Promise<Blob> {
-  if (!Number.isFinite(seconds) || seconds < 0.05 || seconds > MAX_EXPORT_SECONDS) {
-    throw new Error(`Choose an export duration from 0.05 to ${MAX_EXPORT_SECONDS} seconds.`);
-  }
-  const session = parseSession(input);
-  const gains = modeGains(listeningMode(session));
-  if (session.bwg && gains.tones && !session.bwgMuted) throw new Error('WAV export currently supports ordinary tone and background sessions. BWGen export is not available yet.');
-  signal?.throwIfAborted();
-  if (gains.asmr) await prepareAsmrRecordings(session.asmr);
-  signal?.throwIfAborted();
-  if (typeof OfflineAudioContext === 'undefined') throw new Error('Offline audio rendering is unavailable in this browser.');
-  // Limit both the Float32 render and PCM download allocations before creating either.
-  const context = new OfflineAudioContext(2, Math.round(seconds * WAV_SAMPLE_RATE), WAV_SAMPLE_RATE);
-  const duration = session.timelineDuration ?? session.minutes * 60;
-  const endAt = duration > 0 ? duration : undefined;
-  const master = context.createGain();
-  master.gain.value = session.master;
-  const compressor = context.createDynamicsCompressor();
-  compressor.threshold.value = -10;
-  compressor.knee.value = 6;
-  compressor.ratio.value = 12;
-  compressor.attack.value = 0.003;
-  compressor.release.value = 0.25;
-  const gate = context.createGain();
-  gate.gain.setValueAtTime(0, 0);
-  gate.gain.linearRampToValueAtTime(1, duration > 0 ? Math.min(0.5, duration / 4) : 0.5);
-  if (endAt !== undefined) {
-    gate.gain.setValueAtTime(1, endAt - Math.min(2, duration / 2));
-    gate.gain.linearRampToValueAtTime(0, endAt);
-  }
-  master.connect(compressor).connect(gate).connect(context.destination);
-  const tones = context.createGain();
-  tones.gain.value = session.tonesMuted ? 0 : gains.tones;
-  tones.connect(master);
-  if (!session.bwg) for (const layer of session.layers) new ToneVoice(context, layer, tones, session.layers.length, endAt, 0);
-  ambience(context, session, master, endAt);
-  new AsmrMixer(context, master, endAt).update(session.asmr, !!gains.asmr);
-  const buffer = await context.startRendering();
-  signal?.throwIfAborted();
-  return encodeWav(buffer);
+export async function renderAudio(input: Session, seconds: number, options: AudioExportOptions = {}): Promise<Blob> {
+  const parts: ArrayBuffer[] = []; let header: ArrayBuffer | undefined;
+  try {
+    await encode(input, seconds, MAX_EXPORT_SECONDS, async bytes => { parts.push(bytes); }, async bytes => { header = bytes; }, options);
+    options.signal?.throwIfAborted();
+    const type = options.format === 'flac' ? 'audio/flac' : 'audio/wav', blob = new Blob(parts, { type });
+    return header ? new Blob([header, blob.slice(header.byteLength)], { type }) : blob;
+  } finally { parts.length = 0; }
 }
+
+export async function writeAudio(input: Session, seconds: number, writer: WavWriter, options: AudioExportOptions = {}): Promise<void> {
+  try {
+    if (options.format === 'flac' && !writer.seek) throw new Error('Direct FLAC saving requires a seekable output file.');
+    await encode(input, seconds, MAX_FILE_EXPORT_SECONDS, bytes => writer.write(bytes), async header => {
+      await writer.seek!(0); options.signal?.throwIfAborted(); await writer.write(header);
+    }, options);
+    options.signal?.throwIfAborted();
+    const total = Math.round(seconds * 44100);
+    options.onProgress?.({ completedFrames: total, totalFrames: total, fraction: 1, stage: 'saving' });
+    options.signal?.throwIfAborted(); await writer.close();
+  } catch (error) {
+    try { await writer.abort(error); } catch { /* Preserve the rendering error. */ }
+    throw error;
+  }
+}
+
+export const renderWav = (input: Session, seconds: number, signal?: AbortSignal, onProgress?: WavOptions['onProgress'], music?: File): Promise<Blob> =>
+  renderAudio(input, seconds, { signal, onProgress, music, format: 'wav' });
+export const writeWav = (input: Session, seconds: number, writer: WavWriter, options: WavOptions = {}): Promise<void> =>
+  writeAudio(input, seconds, writer, { ...options, format: 'wav' });
+export const renderFlac = (input: Session, seconds: number, options: WavOptions = {}): Promise<Blob> =>
+  renderAudio(input, seconds, { ...options, format: 'flac' });
+export const writeFlac = (input: Session, seconds: number, writer: WavWriter, options: WavOptions = {}): Promise<void> =>
+  writeAudio(input, seconds, writer, { ...options, format: 'flac' });

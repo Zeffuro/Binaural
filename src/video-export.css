@@ -1,0 +1,10 @@
+.video-export-dialog { width: min(760px, calc(100vw - 32px)); }
+.video-export-dialog p { overflow-wrap: anywhere; }
+.video-export-dialog .fine-print { color: var(--text-soft, #5e6c54); }
+#video-export-preview { aspect-ratio: 16 / 9; max-height: 260px; overflow: hidden; border-radius: 7px; background: #081714; margin-block: 16px; }
+#video-export-preview canvas { display: block; width: 100%; height: 100%; object-fit: contain; }
+#video-export-form :is(input[type=number], select) { display: block; width: 100%; min-width: 0; margin-block: 8px 14px; padding: 12px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface-input, #f7f9ef); color: inherit; }
+.video-export-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+#video-export-form .import-actions { flex-wrap: wrap; }
+#video-export-progress { width: 100%; accent-color: var(--green); }
+@media (max-width: 390px) { .video-export-grid { grid-template-columns: minmax(0, 1fr); } }

@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && tsc --project tsconfig.export-tests.json && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "test": "node scripts/test-browser.mjs",
     "test:full": "node scripts/test-browser.mjs --full",
@@ -21,11 +21,13 @@
   "devDependencies": {
     "@axe-core/playwright": "4.14.0",
     "@playwright/test": "1.64.1",
+    "@types/node": "22.20.5",
     "butterchurn-presets": "2.4.7",
     "typescript": "7.0.2",
     "vite": "8.3.4"
   },
   "dependencies": {
+    "@audio/encode-flac": "1.4.3",
     "butterchurn": "2.6.7"
   }
 }

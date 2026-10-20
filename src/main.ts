@@ -19,6 +19,7 @@ import { setupStudioControls } from './studio-controls';
 import { chooseSaveAction, copyName, favoritePreset, libraryPreferences, rememberPreset } from './session-library';
 import { readSharedSession, sessionLink } from './share';
 import { setupAudioExport } from './export-controls';
+import { setupVideoExport } from './video-export-controls';
 import { setupSessionGuide } from './session-guide';
 import { setupOffline } from './offline';
 import { favoriteFrequencies, frequencyKey, isFrequencyFavoriteStorage, toggleFrequencyFavorite } from './frequency-favorites';
@@ -41,6 +42,7 @@ let stopping: Promise<void> | undefined;
 let transportRevision = 0;
 let musicBusy = false;
 let backgroundBusy = false;
+let videoExport: ReturnType<typeof setupVideoExport> | undefined;
 let noticeTimer: ReturnType<typeof setTimeout>;
 const engine = new AudioEngine();
 const history = new EditHistory<{ session: Session; saved: Session[] }>();
@@ -52,10 +54,16 @@ const controls = setupStudioControls({
   emergency: () => { visual.stop(); document.querySelectorAll<HTMLDialogElement>('dialog[open]').forEach(dialog => dialog.close()); void stop().catch(report); },
 });
 const immersiveAudio = setupImmersiveAudio({ playPause: () => { void playPause().catch(report); }, stop: () => { void stop().catch(report); }, mute: toggleMute, volume: setMaster });
-const offline = setupOffline({ isPlaying: () => busy || engine.playing });
+const offline = setupOffline({ isPlaying: () => busy || engine.playing || !!videoExport?.active() });
 const timeline = setupTimelineEditor({ session: () => snapshot().session, apply: applyTimeline, isBusy: () => busy || engine.playing || musicBusy || backgroundBusy });
 $('#scene-mute-tones').addEventListener('click', toggleMute);
-setupAudioExport({ session: () => snapshot().session, hasMusic: () => !$('#remove-music').hidden, notify: message => notice(message) });
+setupAudioExport({ session: () => snapshot().session, music: () => engine.selectedMusicFile, notify: message => notice(message) });
+videoExport = setupVideoExport({ visual, session: () => snapshot().session, remaining: () => engine.remaining,
+  ensurePlaying: async () => {
+    if (!engine.playing || engine.paused) await playPause();
+    if (!engine.playing || engine.paused) throw new Error('Start listening before recording a video.');
+  }, playPause, captureAudio: () => engine.captureAudio(), busy: () => busy || musicBusy || backgroundBusy,
+  notify: message => notice(message) });
 const backgrounds = setupBackgrounds({ session: () => session, notify: message => notice(message),
   busy: value => { backgroundBusy = value; renderTransport(); }, source: value => { session.bwgBackgroundSource = value; } });
 setupExplorer(async (preset, play) => { await useSession(preset.session); if (play) await playPause(); });
@@ -142,7 +150,7 @@ function renderTransport(): void {
   asmr.transport();
   modes.refresh();
   const playing = engine.playing;
-  $('#play').innerHTML = playing ? '■ <span>Stop listening</span>' : '▶ <span>Start listening</span>';
+  $('#play').innerHTML = `<span aria-hidden="true">${playing ? '■' : '▶'}</span><span>${playing ? 'Stop listening' : 'Start listening'}</span>`;
   $('#play').classList.toggle('is-playing', playing);
   $<HTMLButtonElement>('#play').disabled = busy || musicBusy || backgroundBusy;
   $('#pause').hidden = !playing;

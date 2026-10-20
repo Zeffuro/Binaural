@@ -118,17 +118,17 @@ test('all ordinary background choices export deterministic PCM and survive tone 
   }
 });
 
-test('export rejects unsupported sessions and allocation bounds before rendering', async ({ page }) => {
+test('export rejects invalid sessions and duration bounds before rendering', async ({ page }) => {
   await page.goto('/');
   const result = await page.evaluate(async () => {
-    const { renderWav } = await import('/src/audio/export.ts');
+    const { renderWav, MAX_EXPORT_SECONDS } = await import('/src/audio/export.ts');
     const { initialSession } = await import('/src/model.ts');
     const session = initialSession();
     const errors = [];
-    for (const seconds of [NaN, Infinity, -1, 0, 0.01, 180.01]) {
+    for (const seconds of [NaN, Infinity, -1, 0, 0.01, MAX_EXPORT_SECONDS + .01]) {
       try { await renderWav(session, seconds); } catch (error) { errors.push(String(error)); }
     }
-    try { await renderWav({ ...session, bwg: { invalid: true } }, 1); } catch (error) { errors.push(String(error)); }
+    try { await renderWav({ ...session, bwg: { invalid: true } } as unknown as typeof session, 1); } catch (error) { errors.push(String(error)); }
     try { await renderWav({ ...session, master: NaN }, 1); } catch (error) { errors.push(String(error)); }
     const abort = new AbortController(); abort.abort();
     try { await renderWav(session, 1, abort.signal); } catch (error) { errors.push((error as Error).name); }
@@ -146,7 +146,7 @@ test('export rejects unsupported sessions and allocation bounds before rendering
   expect(result[9]).toBe('AbortError');
 });
 
-test('audio export dialog downloads a real WAV and reports local music exclusion', async ({ page }) => {
+test('audio export dialog downloads a real WAV and offers the selected local music', async ({ page }) => {
   await page.goto('/');
   await page.evaluate(async () => {
     const { setupAudioExport } = await import('/src/export-controls.ts');
@@ -155,7 +155,7 @@ test('audio export dialog downloads a real WAV and reports local music exclusion
     const button = document.createElement('button'); button.id = 'render-audio'; button.textContent = 'Test WAV';
     button.style.cssText = 'position:fixed;right:20px;top:20px;z-index:10000'; document.body.append(button);
     const session = initialSession(); session.minutes = 0; session.ambient = 'none';
-    setupAudioExport({ session: () => session, hasMusic: () => false, notify: () => {} });
+    setupAudioExport({ session: () => session, music: () => undefined, notify: () => {} });
   });
   await page.locator('#render-audio').click();
   await expect(page.getByRole('dialog', { name: 'Export audio' })).toBeVisible();
@@ -163,18 +163,19 @@ test('audio export dialog downloads a real WAV and reports local music exclusion
   const download = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Render WAV' }).click();
   expect((await download).suggestedFilename()).toBe('Quiet morning.wav');
-  await expect(page.getByRole('dialog', { name: 'Export audio' })).toHaveCount(0);
+  await expect(page.locator('dialog[aria-label="Export audio"]')).toHaveCount(0);
   const message = await page.evaluate(async () => {
     const { setupAudioExport } = await import('/src/export-controls.ts');
     const { initialSession } = await import('/src/model.ts');
     document.querySelector('#render-audio')!.remove();
     const button = document.createElement('button'); button.id = 'render-audio'; document.body.append(button);
-    let notice = '';
-    setupAudioExport({ session: initialSession, hasMusic: () => true, notify: message => { notice = message; } });
+    const music = new File(['invalid'], 'Local track.wav');
+    setupAudioExport({ session: initialSession, music: () => music, notify: () => {} });
     button.click();
-    return notice;
+    return document.querySelector('dialog[open] #export-music-info')!.textContent;
   });
-  expect(message).toContain('Remove the local music file');
+  expect(message).toContain('Local track.wav');
+  await expect(page.locator('dialog[open]').getByLabel('Include local music')).toBeChecked();
 });
 
 test('discard suppresses the WAV download while a browser render finishes', async ({ page }) => {
@@ -185,7 +186,7 @@ test('discard suppresses the WAV download while a browser render finishes', asyn
     document.querySelector('#render-audio')?.remove();
     const button = document.createElement('button'); button.id = 'render-audio'; button.textContent = 'Test WAV';
     button.style.cssText = 'position:fixed;right:20px;top:20px;z-index:10000'; document.body.append(button);
-    setupAudioExport({ session: initialSession, hasMusic: () => false, notify: () => {} });
+    setupAudioExport({ session: initialSession, music: () => undefined, notify: () => {} });
     const original = OfflineAudioContext.prototype.startRendering;
     OfflineAudioContext.prototype.startRendering = async function () {
       const result = await original.call(this);

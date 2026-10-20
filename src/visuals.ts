@@ -6,6 +6,7 @@ import { defaultVisualSettings, parseVisualSettings, type VisualSettings, visual
 import './visual-features.css';
 import { setupVisualDock } from './visual-dock';
 import { setupControlsPreference, setupImmersiveControls } from './immersive-controls';
+import { captureSurface, type VisualCapture } from './visual-capture';
 
 export function setupVisuals(audio: () => VisualFrame | undefined, changed: () => void = () => {}, beforeEdit: () => void = () => {}) {
   document.querySelector('#visual-controls')!.innerHTML = `
@@ -128,6 +129,34 @@ export function setupVisuals(audio: () => VisualFrame | undefined, changed: () =
   stage.addEventListener('cancel', event => { event.preventDefault(); event.stopPropagation(); void closeStage(); });
   refresh();
   return {
+    createCapture(width: number, height: number, fps = 30): VisualCapture {
+      const surface = captureSurface(width, height, fps);
+      let scene: VisualCapture | undefined, disposed = false;
+      const lease: VisualCapture = { canvas: surface.canvas,
+        draw() {
+          if (disposed) throw new Error('This video capture has been disposed.');
+          if (scenes.getState().scene !== 'off') {
+            scene ??= scenes.createCapture(width, height, fps);
+            scene.draw(); surface.paint(scene.canvas); return;
+          }
+          scene?.dispose(); scene = undefined;
+          if (!input('#visuals').checked) throw new Error('Choose a visual or enable ambient light before recording.');
+          const style = getComputedStyle(document.documentElement), ctx = surface.context;
+          const hue = Number(style.getPropertyValue('--light-hue')) || 0;
+          const saturation = style.getPropertyValue('--light-saturation').trim() || '40%';
+          const level = parseFloat(style.getPropertyValue('--light-level')) || 0;
+          const glow = parseFloat(style.getPropertyValue('--light-glow')) || 0;
+          ctx.save(); ctx.scale(width, height);
+          const gradient = ctx.createRadialGradient(.35, .35, 0, .35, .35, Math.hypot(.65, .65));
+          gradient.addColorStop(0, `hsl(${hue} ${saturation} ${Math.min(100, level + glow)}%)`);
+          gradient.addColorStop(1, `hsl(${hue} ${saturation} ${level}%)`);
+          ctx.fillStyle = gradient; ctx.fillRect(0, 0, 1, 1); ctx.restore();
+        },
+        dispose() { if (disposed) return; disposed = true; scene?.dispose(); surface.canvas.width = surface.canvas.height = 1; },
+      };
+      try { lease.draw(); } catch (error) { lease.dispose(); throw error; }
+      return lease;
+    },
     getState(): VisualSettings { return { light: { enabled: input('#visuals').checked, color: { ...color }, mode: input('#visual-mode').value as VisualSettings['light']['mode'], speed: Number(input('#visual-speed').value), studio: input('#visual-theme').checked }, ...scenes.getState() }; },
     restore(value?: VisualSettings) {
       const state = value ? parseVisualSettings(value) : defaultVisualSettings();

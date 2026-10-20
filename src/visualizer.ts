@@ -5,6 +5,7 @@ import type { VisualDock } from './visual-dock';
 import { setupImmersiveControls } from './immersive-controls';
 import { setupTriggerControls } from './trigger-controls';
 import { TriggerRenderer } from './trigger-renderer';
+import { captureSurface, type VisualCapture } from './visual-capture';
 
 export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | undefined, changed: () => void, dock?: VisualDock, beforeEdit: () => void = () => {}) {
   host.innerHTML = `<div class="scene-heading"><h3>Visualizations</h3><span class="small-muted">For music or a quiet moment</span></div>
@@ -37,6 +38,7 @@ export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | un
   let video: HTMLVideoElement | undefined;
   let lastFrame: VisualFrame | undefined;
   let loading = 0;
+  const captures = new Set<{ width: number; height: number; update(): void }>();
   const bands = new Float32Array(48);
   const library = setupSceneLibrary(host, refresh, message => { status.textContent = message; }, changed);
   const consent = host.querySelector<HTMLInputElement>('#milkdrop-enable')!;
@@ -59,7 +61,25 @@ export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | un
     URL.revokeObjectURL(source);
   }
 
-  const active = () => mode.value !== 'off' && allowed() && (running || independent.checked) && !reduced.matches && !document.hidden && (onscreen || stage.open);
+  const active = () => mode.value !== 'off' && allowed() && (running || independent.checked) && !reduced.matches && !document.hidden && (onscreen || stage.open || captures.size > 0);
+  const captureSize = () => [...captures].sort((a, b) => b.width * b.height - a.width * a.height)[0];
+  function captureSource(): HTMLCanvasElement | HTMLImageElement | HTMLVideoElement {
+    if (mode.value === 'off') throw new Error('Choose a visual or enable ambient light before recording.');
+    if (!allowed()) throw new Error(mode.value === 'milkdrop' ? 'Enable MilkDrop visuals before recording.' : 'Enable light triggers before recording.');
+    if (mode.value === 'milkdrop' || mode.value.startsWith('nature:')) {
+      if (!library.captureReady()) throw new Error('Wait for this scene to load before recording. If graphics were interrupted, choose another scene.');
+      const source = library.flat() ?? library.canvas();
+      if (source instanceof HTMLImageElement && (!source.complete || !source.naturalWidth)) throw new Error('Wait for this nature photo to load before recording.');
+      return source;
+    }
+    if (mode.value === 'local') {
+      const source = media.firstElementChild;
+      if (source instanceof HTMLImageElement && source.complete && source.naturalWidth) return source;
+      if (source instanceof HTMLVideoElement && source.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && !source.error && source.videoWidth) return source;
+      throw new Error('Choose a ready local photo or video before recording.');
+    }
+    return canvas;
+  }
   function render(timestamp = 0): void {
     const cadence = timestamp && previousTick ? timestamp - previousTick : 0;
     previousTick = timestamp;
@@ -72,19 +92,19 @@ export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | un
     const delta = previous && drawing ? Math.min(drawInterval / 1000, 0.05) : 0;
     elapsed += delta;
     previous = timestamp;
-    const bounds = viewport.getBoundingClientRect();
+    const bounds = captureSize() ?? viewport.getBoundingClientRect();
     const width = Math.max(1, bounds.width), height = Math.max(1, bounds.height);
     const ratio = visualRatio(width, effectiveQuality);
     if (canvas.width !== Math.round(width * ratio) || canvas.height !== Math.round(height * ratio)) {
       canvas.width = Math.round(width * ratio); canvas.height = Math.round(height * ratio);
     }
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-    if (running && !reduced.matches) lastFrame = audio();
-    const frame = reduced.matches ? undefined : lastFrame;
-    library.render(mode.value, frame, delta, elapsed);
+    if (running && drawing) lastFrame = audio();
+    const frame = lastFrame;
+    library.render(mode.value, frame, delta, elapsed, captureSize(), drawing);
     const waveform = frame?.waveform;
     const rms = waveform ? Math.sqrt(waveform.reduce((sum, n) => sum + ((n - 128) / 128) ** 2, 0) / waveform.length) : 0;
-    energy += (Math.min(1, rms * 4) - energy) * 0.08;
+    if (drawing) energy += (Math.min(1, rms * 4) - energy) * 0.08;
     ctx.fillStyle = '#081714'; ctx.fillRect(0, 0, width, height);
     const cssHue = getComputedStyle(document.documentElement).getPropertyValue('--light-hue').trim();
     const hue = cssHue ? Number(cssHue) : 140;
@@ -95,7 +115,7 @@ export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | un
       glassPhase += delta * settings.speed; lightPhase += delta * settings.lightSpeed * Math.PI * 2;
       const rms = (samples?: Uint8Array) => samples ? Math.sqrt(samples.reduce((sum, value) => sum + ((value - 128) / 128) ** 2, 0) / samples.length) : 0;
       const left = rms(frame?.left), right = rms(frame?.right);
-      pan += ((right - left) / Math.max(.05, left + right) - pan) * .06;
+      if (drawing) pan += ((right - left) / Math.max(.05, left + right) - pan) * .06;
       triggerRenderer.render(ctx, width, height, settings, { glass: glassPhase, light: lightPhase, energy, pan });
       canvas.dataset.glass = glassPhase.toFixed(4); canvas.dataset.light = lightPhase.toFixed(4);
     } else if (mode.value === 'spectrum') {
@@ -103,7 +123,7 @@ export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | un
       for (let i = 0; i < bands.length; i++) {
         const bin = Math.min(511, Math.floor(Math.pow(i / (bands.length - 1), 2) * 450) + 1);
         const value = (frame?.frequency[bin] ?? 0) / 255;
-        bands[i] += (value - bands[i]) * 0.18;
+        if (drawing) bands[i] += (value - bands[i]) * 0.18;
         const bar = 2 + bands[i] * height * 0.78;
         ctx.fillStyle = `hsl(${hue + i * 1.8} 55% ${42 + bands[i] * 18}%)`;
         ctx.fillRect(i * gap + 1, height - 12 - bar, Math.max(1, gap - 3), bar);
@@ -150,6 +170,8 @@ export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | un
     }
     canvas.dataset.frame = elapsed.toFixed(3);
     canvas.dataset.energy = energy.toFixed(4);
+    // WebGL buffers must be copied in the same task as their freshly rendered frame.
+    for (const capture of captures) capture.update();
     if (measuring && drawInterval && cadence) library.sampleQuality(performance.now() - started, cadence, drawInterval);
     if (active()) raf = requestAnimationFrame(render);
   }
@@ -270,9 +292,7 @@ export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | un
     try {
       cancelAnimationFrame(raf); previous = previousTick = nextDraw = 0; render();
       const image = document.createElement('canvas');
-      const source = mode.value === 'local' ? media.firstElementChild as HTMLImageElement | HTMLVideoElement | null
-        : mode.value === 'milkdrop' || mode.value.startsWith('nature:') ? library.flat() ?? library.canvas() : canvas;
-      if (!source) throw new Error('Choose your local photo or video again to save a still.');
+      const source = captureSource();
       image.width = canvas.width; image.height = canvas.height;
       image.getContext('2d')!.drawImage(source, 0, 0, image.width, image.height);
       image.toBlob(blob => {
@@ -285,6 +305,30 @@ export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | un
   });
   refresh();
   return { transport(value: boolean) { if (value !== running) { running = value; refresh(); } },
+    createCapture(width: number, height: number, fps = 30): VisualCapture {
+      captureSource();
+      const surface = captureSurface(width, height, fps);
+      let disposed = false, failure: unknown;
+      const capture = { width, height, update() {
+        if (failure) return;
+        try { surface.paint(captureSource()); } catch (error) { failure = error; }
+      } };
+      const lease: VisualCapture = { canvas: surface.canvas,
+        draw() {
+          if (disposed) throw new Error('This video capture has been disposed.');
+          captureSource();
+          if (failure) throw failure;
+          if (mode.value === 'local') surface.paint(captureSource());
+        },
+        dispose() {
+          if (disposed) return;
+          disposed = true; captures.delete(capture); surface.canvas.width = surface.canvas.height = 1; refresh();
+        },
+      };
+      captures.add(capture);
+      try { refresh(); lease.draw(); } catch (error) { try { lease.dispose(); } catch { /* Preserve the capture failure. */ } throw error; }
+      return lease;
+    },
     getState() { return { scene: mode.value, ...library.getState(), triggers: triggers.state() }; },
     restore(state: VisualSettings) {
       loading++; const old = media.firstElementChild as HTMLImageElement | HTMLVideoElement | null;

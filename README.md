@@ -1,7 +1,7 @@
 # Binaural
 
 A browser studio for binaural beats, ambient sound, music and visualizations.
-Includes BWGen preset import, Butterchurn visuals and nature panoramas.
+Includes BWGen import, WAV/FLAC export, video recording and nature panoramas.
 Presets stay in your browser; audio files play locally.
 Production builds offer offline use and installation where supported.
 
@@ -27,6 +27,6 @@ Install test browsers first with `npx playwright install chromium firefox`.
 
 ## License
 
-[GPL-3.0-only](LICENSE). Bundled visuals and photographs have their own
+[GPL-3.0-only](LICENSE). Bundled libraries and media have their own
 [credits and licenses](public/credits.html). Keep the source publicly accessible
 when deploying through GitHub Pages.

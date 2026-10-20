@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node", "vite/client"],
+    "paths": { "/src/*": ["./src/*"] }
+  },
+  "include": [
+    "tests/audio-export.spec.ts",
+    "tests/asmr-spatial.spec.ts",
+    "tests/long-wav-export.spec.ts",
+    "tests/wav-timing.spec.ts",
+    "tests/bwg-export-source.spec.ts",
+    "tests/music-export-asset.spec.ts",
+    "tests/music-flac-export.spec.ts",
+    "tests/flac-encoder.spec.ts",
+    "tests/export-formats.spec.ts",
+    "tests/video-recording.spec.ts",
+    "tests/video-visual-capture.spec.ts",
+    "tests/video-export.spec.ts",
+    "src/*.d.ts"
+  ]
+}

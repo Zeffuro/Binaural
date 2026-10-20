@@ -141,8 +141,8 @@ select { border: 1px solid #e0e6d6; background: #fcfcf6; border-radius: 4px; pad
 .visual-toggle small { display: block; font-size: 11px; margin-top: 6px; color: #6a7b5e; }
 .save-area { border-top: 1px solid var(--line); margin-top: 22px; }
 #preset-name { width: 100%; min-width: 0; border: 1px solid #dfe5d5; background: #f8faf1; color: #5e7652; padding: 11px; font-size: 11px; border-radius: 4px; }
-.save-button { width: 100%; margin-top: 13px; background: #e4eacd; color: #5a7047; border: 1px solid #d7e0bf; border-radius: 5px; padding: 12px; font-size: 11px; }
-.save-button:hover { background: #d6e0b8; }
+.save-button { width: 100%; margin-top: 13px; background: #e4eacd; color: #52674b; border: 1px solid #d7e0bf; border-radius: 5px; padding: 12px; font-size: 11px; }
+.save-button:hover { background: #dce4c1; }
 .export-button { width: 100%; margin-top: 10px; font-size: 11px; }
 .side-note { text-align: center; color: #99a18d; font: italic 13px/1.8 Georgia, serif; margin: 3px 0; }
 .page-footer { display: flex; justify-content: space-between; padding: 29px 0; color: #9aa48e; font-size: 11px; letter-spacing: 1px; }

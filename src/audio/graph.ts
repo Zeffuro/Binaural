@@ -1,5 +1,6 @@
 import { type Ambient, type Layer } from '../model';
-import { schedule } from './automation';
+import { frequencyPhase, schedule } from './automation';
+import { phaseCycles, setSinePhase } from './render-timing';
 
 export function hold(param: AudioParam, time: number): void {
   if (typeof param.cancelAndHoldAtTime === 'function') param.cancelAndHoldAtTime(time);
@@ -24,7 +25,7 @@ export class ToneVoice {
   private envelopes: GainNode[];
 
   constructor(private context: BaseAudioContext, layer: Layer, destination: AudioNode,
-    count: number, endAt?: number, origin = context.currentTime) {
+    count: number, endAt?: number, origin = context.currentTime, offsetSeconds = 0) {
     this.output = context.createGain();
     this.output.gain.value = 0;
     this.merger = context.createChannelMerger(2);
@@ -33,6 +34,11 @@ export class ToneVoice {
     this.envelopes = [context.createGain(), context.createGain()];
     this.sources[0].frequency.value = layer.left;
     this.sources[1].frequency.value = layer.right;
+    if (offsetSeconds > 0) this.sources.forEach((source, ear) => {
+      const points = ear === 0 ? layer.automation?.left : layer.automation?.right;
+      setSinePhase(context, source, points ? frequencyPhase(points, offsetSeconds)
+        : phaseCycles(ear === 0 ? layer.left : layer.right, offsetSeconds));
+    });
     // Keep both merger inputs connected, including when one ear is silent.
     for (const [ear, source] of this.sources.entries()) {
       source.connect(this.envelopes[ear]);

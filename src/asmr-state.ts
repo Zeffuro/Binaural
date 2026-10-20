@@ -1,3 +1,6 @@
+import { extraAsmrTextures } from './asmr-textures.ts';
+import { parseAsmrSpatial, type AsmrSpatialSettings } from './asmr-spatial.ts';
+
 export const generatedAsmrSounds = [
   { id: 'brush', name: 'Soft brush', description: 'Soft textured strokes' },
   { id: 'wood', name: 'Wood tapping', description: 'Warm, hollow taps' },
@@ -8,6 +11,7 @@ export const generatedAsmrSounds = [
   { id: 'water', name: 'Water drops', description: 'Rounded little droplets' },
   { id: 'chimes', name: 'Soft chimes', description: 'Slow, muted bell tones' },
   { id: 'cupping', name: 'Warm ear cupping', description: 'Warm filtered texture for close, muffled ear effects' },
+  ...extraAsmrTextures,
 ] as const;
 export const recordedAsmrSounds = [
   { id: 'recorded-hands', name: 'Hand rubbing', file: 'hand-rubbing.ogg', description: 'Recorded hands rubbing together' },
@@ -33,6 +37,7 @@ export interface AsmrLayer {
   tone: number;
   pressure: number;
   pressurePhase: number;
+  spatial?: AsmrSpatialSettings;
 }
 export interface AsmrSettings { level: number; layers: AsmrLayer[] }
 export const MAX_ASMR_LAYERS = 6;
@@ -53,7 +58,8 @@ export function parseAsmr(value: unknown): AsmrSettings {
       Object.entries(asmrRanges).some(([field, [min, max]]) => !bounded(input[field], min, max))) throw new Error('Invalid ASMR sound layer.');
     const layer = makeAsmrLayer(input.sound as AsmrSound);
     for (const field of Object.keys(asmrRanges) as (keyof typeof asmrRanges)[]) layer[field] = input[field] as number;
-    return { ...layer, motion: input.motion as AsmrLayer['motion'], muted: input.muted, solo: input.solo };
+    return { ...layer, motion: input.motion as AsmrLayer['motion'], muted: input.muted, solo: input.solo,
+      ...(input.spatial === undefined ? {} : { spatial: parseAsmrSpatial(input.spatial) }) };
   });
   return { level: value.level, layers };
 }

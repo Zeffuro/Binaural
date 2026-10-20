@@ -1,5 +1,19 @@
 import { type AutomationPoint } from '../model';
 
+export function frequencyPhase(points: AutomationPoint[], time: number): number {
+  let previous = points[0], elapsed = 0, cycles = 0;
+  for (const point of points.slice(1)) {
+    const end = Math.min(time, point.time), duration = Math.max(0, end - elapsed);
+    const frequency = Math.fround(previous.value);
+    const slope = point.curve === 'linear' && point.time > previous.time
+      ? (Math.fround(point.value) - frequency) / (point.time - previous.time) : 0;
+    cycles = (cycles + duration * (frequency + slope * duration / 2)) % 1;
+    if (point.time > time) return (cycles + 1) % 1;
+    previous = point; elapsed = point.time;
+  }
+  return ((cycles + Math.max(0, time - elapsed) * Math.fround(previous.value)) % 1 + 1) % 1;
+}
+
 export function valueAt(points: AutomationPoint[], time: number): number {
   let previous = points[0];
   for (const point of points.slice(1)) {

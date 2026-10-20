@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { makeBwgFixture } from './helpers/bwg';
 
-test('all nine generated ASMR triggers produce distinct bounded seamless PCM', async ({ page }) => {
+test('all fifteen generated ASMR triggers produce distinct bounded seamless PCM', async ({ page }) => {
   await page.goto('/');
   const results = await page.evaluate(async () => {
     const path = '/src/audio/asmr-synthesis.ts', statePath = '/src/asmr-state.ts';
@@ -12,8 +12,9 @@ test('all nine generated ASMR triggers produce distinct bounded seamless PCM', a
       return { id, rms: Math.sqrt(sum / sample.length), peak, first: sample[0], last: sample.at(-1), hash, same: sample === asmrSample(id) };
     });
   });
-  expect(results).toHaveLength(9); expect(new Set(results.map(result => result.hash)).size).toBe(9);
-  for (const result of results) { expect(result.rms).toBeGreaterThan(.025); expect(result.peak).toBeLessThanOrEqual(.701); expect(Math.abs(result.first)).toBe(0); expect(Math.abs(result.last)).toBe(0); expect(result.same).toBe(true); }
+  expect(results).toHaveLength(15); expect(new Set(results.map(result => result.hash)).size).toBe(15);
+  const added = ['fingertip-taps', 'keyboard', 'comb', 'fabric', 'rain-stick', 'soft-clicks'];
+  for (const result of results) { expect(result.rms).toBeGreaterThan(added.includes(result.id) ? .001 : .025); expect(result.peak).toBeLessThanOrEqual(.701); expect(Math.abs(result.first)).toBe(0); expect(Math.abs(result.last)).toBe(0); expect(result.same).toBe(true); }
 });
 
 test('ASMR stereo routing, sweep direction, mute/solo and six-layer headroom render correctly', async ({ page }) => {
@@ -57,20 +58,21 @@ test('ASMR stereo routing, sweep direction, mute/solo and six-layer headroom ren
 test('ASMR follows pause, live edits and the audio-clock stop gate; expired edits cannot restart voices', async ({ page }) => {
   await page.goto('/'); await page.locator('h1').click();
   const result = await page.evaluate(async () => {
-    const enginePath = '/src/audio/engine.ts', statePath = '/src/asmr-state.ts', modelPath = '/src/model.ts';
+    const enginePath = '/src/audio/engine.ts', statePath = '/src/asmr-state.ts', modelPath = '/src/model.ts', clockPath = '/tests/helpers/audio-clock.ts';
     const { AudioEngine } = await import(enginePath), { makeAsmrLayer } = await import(statePath), { initialSession } = await import(modelPath);
+    const { waitForAudioTime } = await import(clockPath);
     const engine = new AudioEngine(), session = initialSession();
     session.minutes = .025; session.master = 1; session.tonesMuted = true; session.ambient = 'none';
     session.asmr = { level: 1, layers: [{ ...makeAsmrLayer('air'), level: 1 }] };
     await engine.start(session);
     const context: AudioContext = engine.context, analyzer = context.createAnalyser(); analyzer.fftSize = 2048; engine.transport.connect(analyzer);
     const read = () => { const data = new Float32Array(2048); analyzer.getFloatTimeDomainData(data); return Math.max(...data.map(Math.abs)); };
-    await new Promise(resolve => setTimeout(resolve, 300)); const before = read();
+    await waitForAudioTime(context, .55); const before = read();
     await engine.pause(); const frozen = context.currentTime; await new Promise(resolve => setTimeout(resolve, 150)); const paused = context.currentTime === frozen;
     await engine.resume(); session.asmr.layers[0].pan = 1; engine.update(session);
-    await new Promise(resolve => setTimeout(resolve, 1500)); const after = read();
+    await waitForAudioTime(context, 1.7); const after = read();
     session.asmr.layers.push(makeAsmrLayer('wood')); engine.update(session);
-    await new Promise(resolve => setTimeout(resolve, 180)); const expired = read(), voices = engine.asmr.voices.size;
+    await waitForAudioTime(context, context.currentTime + .18); const expired = read(), voices = engine.asmr.voices.size;
     await engine.stop(); return { before, paused, after, expired, voices, playing: engine.playing };
   });
   expect(result.before).toBeGreaterThan(.001); expect(result.paused).toBe(true); expect(result.after).toBe(0); expect(result.expired).toBe(0); expect(result.voices).toBe(0); expect(result.playing).toBe(false);
@@ -92,7 +94,7 @@ test('ASMR schema is bounded and legacy sessions still load; WAV contains the ac
     return { rejected, legacy: parseSession(initialSession()).asmr === undefined, presets: asmrPresets.map((preset: { make: () => unknown }) => parseAsmr(preset.make()).layers.length), left, right };
   });
   expect(result.rejected).toBe(true); expect(result.legacy).toBe(true);
-  expect(result.presets).toHaveLength(16); expect(result.presets.every(count => count >= 1 && count <= 6)).toBe(true);
+  expect(result.presets).toHaveLength(28); expect(result.presets.every(count => count >= 1 && count <= 6)).toBe(true);
   expect(result.left).toBeGreaterThan(10000); expect(result.right).toBe(0);
 });
 

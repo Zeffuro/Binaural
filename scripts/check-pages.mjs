@@ -8,6 +8,19 @@ import { makeBwgFixture } from '../tests/helpers/bwg.ts';
 
 const root = resolve(fileURLToPath(new URL('../dist/', import.meta.url)));
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.webp': 'image/webp', '.png': 'image/png', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json', '.txt': 'text/plain', '.ogg': 'audio/ogg' };
+function expectShortWav(wav) {
+  expect(wav.length).toBe(176444);
+  expect(wav.toString('ascii', 0, 4)).toBe('RIFF');
+  expect(wav.readUInt32LE(4)).toBe(wav.length - 8);
+  expect(wav.toString('ascii', 8, 16)).toBe('WAVEfmt ');
+  expect(wav.readUInt32LE(16)).toBe(16);
+  expect(wav.readUInt16LE(20)).toBe(1); expect(wav.readUInt16LE(22)).toBe(2);
+  expect(wav.readUInt32LE(24)).toBe(44100); expect(wav.readUInt32LE(28)).toBe(176400);
+  expect(wav.readUInt16LE(32)).toBe(4); expect(wav.readUInt16LE(34)).toBe(16);
+  expect(wav.toString('ascii', 36, 40)).toBe('data');
+  expect(wav.readUInt32LE(40)).toBe(wav.length - 44);
+  expect(wav.subarray(44).some(value => value !== 0)).toBe(true);
+}
 let mount = '/Binaural/';
 const server = createServer(async (request, response) => {
   try {
@@ -55,7 +68,7 @@ try {
         await page.getByRole('button', { name: 'Apply timeline', exact: true }).click();
         await expect(page.locator('#timeline-info')).toBeVisible();
         await expect(page.locator('#status')).toHaveText('Ready when you are');
-        await page.locator('[data-listening-mode="asmr"]').click();
+        await page.locator('button[data-listening-mode="asmr"]').click();
         for (const id of ['glass-lantern', 'red-sweep', 'rose-brushes', 'paper-prism', 'blue-droplets', 'torch-whisper']) {
           await page.locator('#asmr-preset').selectOption(id); await page.locator('#asmr-pair').click();
           await expect(page.locator('[data-asmr]')).toHaveCount(2);
@@ -122,13 +135,68 @@ try {
         await expect(page.getByLabel('Scene', { exact: true })).toHaveValue('milkdrop');
         await expect(page.getByLabel('Enable MilkDrop visuals')).not.toBeChecked();
         await expect(page.locator('#status')).toHaveText('Ready when you are');
-        await page.getByRole('button', { name: 'Render WAV', exact: true }).click();
+        await page.locator('#render-audio').click();
         await page.getByRole('dialog', { name: 'Export audio', exact: true }).getByLabel('Duration in seconds', { exact: false }).fill('1');
         const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('dialog', { name: 'Export audio', exact: true }).getByRole('button', { name: 'Render WAV', exact: true }).click()]);
         const wav = await readFile(await download.path());
-        expect(wav.toString('ascii', 0, 4)).toBe('RIFF'); expect(wav.length).toBe(176444);
+        expectShortWav(wav);
         await page.locator('#import-file').setInputFiles({ name: 'synthetic.bwg', mimeType: 'application/octet-stream', buffer: Buffer.from(makeBwgFixture()) });
         await page.getByRole('button', { name: 'Load imported session' }).click();
+        await page.locator('#render-audio').click();
+        const nativeExport = page.getByRole('dialog', { name: 'Export audio', exact: true });
+        await nativeExport.getByLabel('Duration in seconds', { exact: true }).fill('1');
+        const [nativeWorker, nativeDownload] = await Promise.all([page.waitForEvent('worker'), page.waitForEvent('download'),
+          nativeExport.getByRole('button', { name: 'Render WAV', exact: true }).click()]);
+        expect(nativeWorker.url()).toMatch(/\/assets\/bwg-export-worker-[^/]+\.js$/);
+        expect(nativeWorker.url().startsWith(origin + prefix)).toBe(true);
+        expectShortWav(await readFile(await nativeDownload.path()));
+        await page.locator('#music-file').setInputFiles({ name: 'local-export.wav', mimeType: 'audio/wav', buffer: await readFile(await nativeDownload.path()) });
+        await expect(page.locator('#music-name')).toHaveText('local-export.wav');
+        await page.locator('#render-audio').click();
+        const flacExport = page.getByRole('dialog', { name: 'Export audio', exact: true });
+        await flacExport.getByLabel('File format').selectOption('flac');
+        await expect(flacExport.getByLabel('Include local music')).toBeChecked();
+        await flacExport.getByLabel('Duration in seconds').fill('1');
+        const [flacWorker, flacDownload] = await Promise.all([
+          page.waitForEvent('worker', worker => /\/flac-export-worker-/.test(worker.url())), page.waitForEvent('download'),
+          flacExport.getByRole('button', { name: 'Render FLAC', exact: true }).click()]);
+        expect(flacWorker.url().startsWith(origin + prefix)).toBe(true);
+        const flac = await readFile(await flacDownload.path());
+        expect(flacDownload.suggestedFilename()).toMatch(/\.flac$/);
+        expect(flac.toString('ascii', 0, 4)).toBe('fLaC');
+        expect(flac.subarray(26, 42).some(value => value !== 0)).toBe(true);
+        const decodedFlac = await page.evaluate(async bytes => {
+          const context = new OfflineAudioContext(2, 1, 44100), audio = await context.decodeAudioData(new Uint8Array(bytes).buffer);
+          return { frames: audio.length, channels: audio.numberOfChannels, audible: audio.getChannelData(0).some(value => Math.abs(value) > .0001) };
+        }, Array.from(flac));
+        expect(decodedFlac).toEqual({ frames: 44100, channels: 2, audible: true });
+        await page.locator('button[data-visual-quick=calm]').click();
+        await page.locator('#record-video').click();
+        const videoExport = page.getByRole('dialog', { name: 'Export video', exact: true });
+        await videoExport.getByLabel('Resolution').selectOption('854x480');
+        await videoExport.getByLabel('Frame rate').selectOption('24');
+        await videoExport.getByLabel('Maximum recording seconds').fill('1');
+        const [videoDownload] = await Promise.all([page.waitForEvent('download'), videoExport.getByRole('button', { name: 'Start recording', exact: true }).click()]);
+        const videoBytes = await readFile(await videoDownload.path());
+        expect(videoBytes.length).toBeGreaterThan(1000);
+        expect(videoDownload.suggestedFilename()).toMatch(/\.(webm|mp4)$/);
+        const videoSize = await page.evaluate(async bytes => {
+          const video = document.createElement('video'), url = URL.createObjectURL(new Blob([new Uint8Array(bytes)]));
+          video.muted = true; video.preload = 'auto';
+          try {
+            await new Promise((resolve, reject) => {
+              const timer = setTimeout(() => reject(new Error('Video did not decode')), 10000);
+              video.onloadeddata = () => { clearTimeout(timer); resolve(true); };
+              video.onerror = () => { clearTimeout(timer); reject(new Error('Video could not decode')); };
+              video.src = url;
+            });
+            return [video.videoWidth, video.videoHeight];
+          } finally { video.removeAttribute('src'); video.load(); URL.revokeObjectURL(url); }
+        }, Array.from(videoBytes));
+        expect(videoSize).toEqual([854, 480]);
+        await expect(page.locator('#status')).toHaveText('● Listening');
+        await page.getByRole('button', { name: 'Stop listening', exact: true }).click();
+        await page.locator('#remove-music').click();
         await page.getByLabel('Scene', { exact: true }).selectOption('milkdrop');
         await page.getByLabel('Enable MilkDrop visuals').check();
         await page.getByRole('button', { name: 'Start listening' }).click();
@@ -149,7 +217,7 @@ try {
         const links = await page.locator('a[href]').evaluateAll(nodes => nodes.map(node => node.href).filter(href => href.startsWith(location.origin)));
         for (const link of links) expect((await page.request.get(link)).status(), link).toBe(200);
         expect(errors).toEqual([]); expect(outside).toEqual([]); expect(badResponses).toEqual([]);
-        console.log(`${name}: ${prefix} 19 light triggers, 6 generated ASMR mixes and recorded Ogg playback, timeline, inline/fullscreen workspace, guide, soundscapes, assets, 6 MilkDrop presets, 3 photos, shared session, WAV, worklet, pause and credits passed`);
+        console.log(`${name}: ${prefix} 19 light triggers, 6 generated ASMR mixes and recorded Ogg playback, timeline, inline/fullscreen workspace, guide, soundscapes, assets, 6 MilkDrop presets, 3 photos, shared session, ordinary/native BWGen WAV, export worker, worklet, pause and credits passed`);
       } finally { await browser.close(); }
     }
   }

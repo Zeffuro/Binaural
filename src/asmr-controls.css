@@ -11,6 +11,15 @@
 :root[data-theme=dark] #asmr-controls .asmr-flags [aria-pressed=true] { background: #aec58e; color: #142516; }
 .asmr-advanced { margin-top: 14px; }
 .asmr-advanced summary { cursor: pointer; padding-block: 8px; font-size: 13px; }
+.asmr-position { border-left: 2px solid var(--line); padding-left: 12px; margin-top: 14px; min-width: 0; }
+.asmr-library { border: 1px solid var(--line); border-radius: 9px; padding: 12px; margin-block: 16px; min-width: 0; }
+.asmr-library summary { cursor: pointer; padding-block: 6px; }
+.asmr-library input[type=search] { width: 100%; min-width: 0; box-sizing: border-box; }
+.asmr-library-card { border-top: 1px solid var(--line); padding-top: 12px; min-width: 0; }
+.asmr-library-card h3 { margin: 0; font-size: 15px; }
+.asmr-library-card p { margin-block: 8px; overflow-wrap: anywhere; }
+.asmr-library-card .asmr-actions { margin-top: 8px; }
+.asmr-library-card [aria-pressed=true] { font-weight: 700; }
 #asmr-controls input[type=range] { width: 100%; margin-bottom: 12px; }
 #asmr-controls output { white-space: nowrap; }
 #asmr-controls .section-heading { flex-wrap: wrap; gap: 10px; }

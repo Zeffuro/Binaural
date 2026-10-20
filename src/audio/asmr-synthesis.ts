@@ -1,15 +1,11 @@
 import { generatedAsmrSounds, type AsmrSound } from '../asmr-state';
+import { fillAsmrTexture } from './asmr-textures';
 
 export const ASMR_RATE = 24000;
 export const ASMR_SECONDS = 12;
 const cache = new Map<AsmrSound, Float32Array>();
 
-export function asmrSample(sound: AsmrSound): Float32Array {
-  if (!generatedAsmrSounds.some(item => item.id === sound)) throw new Error('Load the recorded ASMR sound before playing it.');
-  const existing = cache.get(sound); if (existing) return existing;
-  const data = new Float32Array(ASMR_RATE * ASMR_SECONDS);
-  let seed = [...sound].reduce((n, c) => Math.imul(n, 31) + c.charCodeAt(0), 893);
-  const random = () => { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; return (seed >>> 0) / 4294967296; };
+function fillOriginalTexture(sound: AsmrSound, data: Float32Array, random: () => number): void {
   const noise = new Float32Array(data.length);
   let low = 0;
   for (let i = 0; i < noise.length; i++) {
@@ -44,6 +40,15 @@ export function asmrSample(sound: AsmrSound): Float32Array {
       }
     }
   }
+}
+
+export function asmrSample(sound: AsmrSound): Float32Array {
+  if (!generatedAsmrSounds.some(item => item.id === sound)) throw new Error('Load the recorded ASMR sound before playing it.');
+  const existing = cache.get(sound); if (existing) return existing;
+  const data = new Float32Array(ASMR_RATE * ASMR_SECONDS);
+  let seed = [...sound].reduce((n, c) => Math.imul(n, 31) + c.charCodeAt(0), 893);
+  const random = () => { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; return (seed >>> 0) / 4294967296; };
+  if (!fillAsmrTexture(sound, data, ASMR_RATE, random)) fillOriginalTexture(sound, data, random);
   let peak = .001;
   for (const value of data) peak = Math.max(peak, Math.abs(value));
   const seam = ASMR_RATE * .02;
