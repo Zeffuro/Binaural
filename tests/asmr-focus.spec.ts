@@ -150,18 +150,22 @@ test('@live ASMR focus waits for recorded sounds to become audible', async ({ pa
       session.asmr = { focus: true, level: .7, layers: [makeAsmrLayer('air')] };
       await engine.start(session);
       Object.assign(window, { focusFixture: { engine, session } });
+      const musicProbe = engine.context.createConstantSource(); musicProbe.offset.value = .01;
+      musicProbe.connect(engine.musicGain); musicProbe.start();
+      const busProbe = engine.context.createConstantSource(), busMeter = engine.context.createAnalyser();
+      busProbe.offset.value = .1; busProbe.connect(engine.asmr.bus); busProbe.start();
+      engine.asmr.bus.connect(busMeter); busMeter.fftSize = 2048;
       session.asmr.layers = [makeAsmrLayer('recorded-cloth')]; engine.update(session);
-      await waitForAudioTime(engine.context, engine.context.currentTime + .5);
-      const settleDeadline = performance.now() + 3000;
-      while (engine.asmr.bus.gain.value > .000005) {
-        if (performance.now() > settleDeadline) throw new Error('The pending ASMR bus did not fade out.');
-        await waitForAudioTime(engine.context, engine.context.currentTime + .05);
-      }
-      return { loading: engine.loadingAsmr, music: engine.musicGain.gain.value, bus: engine.asmr.bus.gain.value };
+      await waitForAudioTime(engine.context, engine.context.currentTime + .6);
+      const samples = new Float32Array(2048); busMeter.getFloatTimeDomainData(samples);
+      const busOutput = Math.max(...samples.map(Math.abs));
+      busProbe.stop(); busProbe.disconnect(); engine.asmr.bus.disconnect(busMeter); busMeter.disconnect();
+      return { loading: engine.loadingAsmr, music: engine.musicGain.gain.value, bus: engine.asmr.bus.gain.value, busOutput };
     });
     await seen;
     const waiting = await pending;
     expect(waiting.loading).toBe(true); expect(waiting.music).toBeCloseTo(.2, 5); expect(waiting.bus).toBeCloseTo(0, 5);
+    expect(waiting.busOutput).toBeLessThan(.000005);
     release();
     const ready = await page.evaluate(async () => {
       const { engine } = (window as unknown as { focusFixture: { engine: any } }).focusFixture;
