@@ -11,6 +11,10 @@ const sensoryPresetIds = [
   'fingertip-duet', 'quiet-keyboard', 'comb-and-cloth', 'woven-hush', 'rain-stick-garden', 'little-object-tray',
   'left-soft-attention', 'right-comb-attention', 'soft-object-check', 'parcel-on-desk', 'shoulder-side-fabric', 'around-your-head',
 ];
+const experienceIds = [
+  'powder-brush', 'temple-brushing', 'slow-combing', 'hand-fan', 'close-ear-covers', 'behind-the-ears',
+  'hollow-wood', 'glass-and-grain', 'tapping-contrast', 'paper-folds', 'crinkle-left', 'little-water-bowl',
+];
 interface RecipeSummary {
   id: string; group: string; validLight: boolean; canonical: boolean; repeatable: boolean; freshIds: boolean;
   layerCount: number; sources: string[]; spatialCount: number; knownSources: boolean;
@@ -54,7 +58,7 @@ test('six original textures fill deterministically and retain the caller normali
   for (const rate of [24000, 48000]) expect(new Set(results.textures.filter(item => item.rate === rate).map(item => item.signature)).size).toBe(6);
 });
 
-test('all 28 ASMR recipes are canonical, cover every source, and reference existing lights', async ({ page }) => {
+test('all 40 ASMR recipes are canonical, cover every source, and reference existing lights', async ({ page }) => {
   await page.goto('/');
   const result = await page.evaluate(async () => {
     const statePath = '/src/asmr-state.ts', presetPath = '/src/asmr-presets.ts', lightPath = '/src/trigger-presets.ts', extraPath = '/src/asmr-textures.ts';
@@ -77,8 +81,8 @@ test('all 28 ASMR recipes are canonical, cover every source, and reference exist
   });
   expect(result.generated).toBe(15); expect(result.recordings).toBe(5); expect(result.lightCount).toBe(19);
   expect(result.textures).toEqual(textureIds);
-  expect(result.presets.map(preset => preset.id)).toEqual([...originalPresetIds, ...sensoryPresetIds]);
-  expect(new Set(result.presets.map(preset => preset.id)).size).toBe(28);
+  expect(result.presets.map(preset => preset.id)).toEqual([...originalPresetIds, ...sensoryPresetIds, ...experienceIds]);
+  expect(new Set(result.presets.map(preset => preset.id)).size).toBe(40);
   expect([...new Set(result.presets.flatMap(preset => preset.sources))].sort()).toEqual([...result.sources].sort());
   const sensory = result.presets.filter(preset => preset.group === 'Sensory textures');
   expect(sensory.map(preset => preset.id)).toEqual(sensoryPresetIds);
@@ -111,7 +115,7 @@ test('every recipe renders finite non-silent bounded offline stereo through the 
     }
     return results;
   });
-  expect(results.map(preset => preset.id)).toEqual([...originalPresetIds, ...sensoryPresetIds]);
+  expect(results.map(preset => preset.id)).toEqual([...originalPresetIds, ...sensoryPresetIds, ...experienceIds]);
   for (const result of results) {
     expect(result.finite, result.id).toBe(true); expect(result.energy, result.id).toBeGreaterThan(0); expect(result.peak, result.id).toBeLessThan(1);
   }

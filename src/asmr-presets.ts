@@ -1,4 +1,5 @@
 import { makeAsmrLayer, type AsmrLayer, type AsmrSettings, type AsmrSound } from './asmr-state';
+import { asmrExperiences } from './asmr-experiences';
 
 const layer = (sound: AsmrSound, values: Partial<AsmrLayer> = {}): AsmrLayer => ({ ...makeAsmrLayer(sound), ...values });
 export const asmrPresets = [
@@ -58,4 +59,5 @@ export const asmrPresets = [
     make: (): AsmrSettings => ({ level: .5, layers: [layer('fabric', { level: .5, motion: 'still', rate: .85, tone: .45, spatial: { azimuth: 110, elevation: 25, distance: .7, motion: 'still' } }), layer('recorded-cloth', { level: .25, motion: 'still', rate: .9, tone: .45 })] }) },
   { id: 'around-your-head', name: 'Around your head', group: 'Sensory textures', description: 'Soft fabric slowly circles your head in 3D headphones, beside comb flutters and recorded hand rubbing.', light: 'wandering-light',
     make: (): AsmrSettings => ({ level: .45, layers: [layer('fabric', { level: .4, period: 30, tone: .45, rate: .85, spatial: { azimuth: -90, elevation: 10, distance: .8, motion: 'orbit' } }), layer('comb', { level: .2, pan: .5, motion: 'still', tone: .4, rate: .7 }), layer('recorded-hands', { level: .25, pan: -.5, motion: 'still', tone: .45, pressure: .3 })] }) },
+  ...asmrExperiences,
 ];

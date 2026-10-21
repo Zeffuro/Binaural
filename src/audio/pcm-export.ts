@@ -8,6 +8,7 @@ import { exportGraph } from './export-graph';
 import { decodeMusicForExport } from './music-export';
 import { WAV_SAMPLE_RATE, wavFrames } from './wav-encoding';
 import type { PcmOutput, WavOptions, WavProgress } from './export-types';
+import { asmrBackgroundGain } from '../asmr-focus';
 
 export const WAV_SECTION_SECONDS = 30;
 export const WAV_PREROLL_SECONDS = 3;
@@ -30,7 +31,7 @@ export async function renderPcm(input: Session, seconds: number, maximum: number
     if (preset && gains.tones && !session.bwgMuted && session.master) {
       const background = await backgroundAssets.resolve(preset, session.bwgBackgroundSource);
       signal?.throwIfAborted();
-      native = new BwgExportSource(preset, WAV_SAMPLE_RATE, session.layers.map(layer => session.tonesMuted ? 0 : layer.level), background, signal);
+      native = new BwgExportSource(preset, WAV_SAMPLE_RATE, session.layers.map(layer => session.tonesMuted ? 0 : layer.level), background, signal, asmrBackgroundGain(session));
       await native.ready;
     }
     signal?.throwIfAborted(); await output.start(total);

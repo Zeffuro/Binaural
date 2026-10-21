@@ -23,7 +23,7 @@ export class BwgExportSource {
   private abort = (): void => { this.fail(new DOMException('WAV export was cancelled.', 'AbortError')); };
 
   constructor(preset: BwgPreset, private rate: number, levels: number[], background?: BoundBackground,
-      private signal?: AbortSignal) {
+      private signal?: AbortSignal, backgroundGain = 1) {
     this.ready = new Promise<void>((resolve, reject) => { this.resolveReady = resolve; this.rejectReady = reject; });
     void this.ready.catch(() => undefined);
     if (signal?.aborted) { this.abort(); return; }
@@ -36,7 +36,7 @@ export class BwgExportSource {
         this.fail(new Error(event.message || 'The BWGen export worker failed.'));
       };
       this.worker.onmessageerror = () => this.fail(new Error('The BWGen export worker returned unreadable audio.'));
-      this.worker.postMessage({ type: 'init', preset, rate, levels, background });
+      this.worker.postMessage({ type: 'init', preset, rate, levels, background, backgroundGain });
     } catch (error) { this.fail(error instanceof Error ? error : new Error(String(error))); }
   }
 

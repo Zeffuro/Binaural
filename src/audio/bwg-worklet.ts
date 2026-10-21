@@ -16,6 +16,8 @@ class BwgProcessor extends AudioWorkletProcessor {
     this.renderer = new BwgRenderer(options.processorOptions.preset, sampleRate, options.processorOptions.background);
     this.port.onmessage = event => {
       if (Array.isArray(event.data?.levels)) this.renderer.levels = event.data.levels;
+      const gain = event.data?.backgroundGain;
+      if (typeof gain === 'number' && Number.isFinite(gain) && gain >= 0 && gain <= 1) this.renderer.backgroundGain = gain;
     };
   }
   process(_inputs: Float32Array[][], outputs: Float32Array[][]): boolean {

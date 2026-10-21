@@ -35,10 +35,14 @@ export class BwgRenderer {
   private noise = [new NativeNoise(1), new NativeNoise(719)];
   private noisePhase = [TAU * 0.75, TAU * 0.75];
   private background?: BwgBackground;
+  backgroundGain = 1;
+  private currentBackgroundGain = 1;
+  private backgroundSmoothing: number;
   levels: number[];
   readonly continues: boolean;
 
   constructor(readonly preset: BwgPreset, readonly rate: number, background?: BoundBackground) {
+    this.backgroundSmoothing = 1 - Math.exp(-1 / (.035 * rate));
     validateCurves(preset);
     const count = Math.max(...preset.segments.map(segment => segment.voices));
     this.states = Array.from({ length: count }, () => ({ carrier: [0, 0], modulation: [TAU * 0.75, TAU * 0.75] }));
@@ -84,8 +88,9 @@ export class BwgRenderer {
       }
       const noise = this.renderNoise(segment, position);
       const background = this.background?.render(segment, position);
-      left[frame] = l + noise[0] + (background?.[0] ?? 0) * 0.22 / this.states.length;
-      right[frame] = r + noise[1] + (background?.[1] ?? 0) * 0.22 / this.states.length;
+      this.currentBackgroundGain += (this.backgroundGain - this.currentBackgroundGain) * this.backgroundSmoothing;
+      left[frame] = l + noise[0] * this.currentBackgroundGain + (background?.[0] ?? 0) * 0.22 / this.states.length * this.currentBackgroundGain;
+      right[frame] = r + noise[1] * this.currentBackgroundGain + (background?.[1] ?? 0) * 0.22 / this.states.length * this.currentBackgroundGain;
     }
     return alive;
   }

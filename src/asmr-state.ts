@@ -39,9 +39,9 @@ export interface AsmrLayer {
   pressurePhase: number;
   spatial?: AsmrSpatialSettings;
 }
-export interface AsmrSettings { level: number; layers: AsmrLayer[] }
+export interface AsmrSettings { level: number; layers: AsmrLayer[]; focus?: boolean }
 export const MAX_ASMR_LAYERS = 6;
-export const defaultAsmr = (): AsmrSettings => ({ level: .6, layers: [] });
+export const defaultAsmr = (): AsmrSettings => ({ level: .6, layers: [], focus: false });
 export const makeAsmrLayer = (sound: AsmrSound = 'brush'): AsmrLayer => ({
   id: crypto.randomUUID(), sound, level: .6, muted: false, solo: false,
   pan: 0, motion: 'sweep', width: .85, period: 12, rate: 1, tone: .45, pressure: 0, pressurePhase: 0,
@@ -51,6 +51,7 @@ export function parseAsmr(value: unknown): AsmrSettings {
   const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
   const bounded = (v: unknown, min: number, max: number): v is number => typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max;
   if (!record(value) || !bounded(value.level, 0, 1) || !Array.isArray(value.layers) || value.layers.length > MAX_ASMR_LAYERS) throw new Error('Invalid ASMR mixer. Use up to six sound layers.');
+  if (value.focus !== undefined && typeof value.focus !== 'boolean') throw new Error('Invalid ASMR focus setting.');
   const layers = value.layers.map(input => {
     if (record(input)) input = { pressure: 0, pressurePhase: 0, ...input };
     if (!record(input) || !asmrSounds.some(sound => sound.id === input.sound) ||
@@ -61,5 +62,5 @@ export function parseAsmr(value: unknown): AsmrSettings {
     return { ...layer, motion: input.motion as AsmrLayer['motion'], muted: input.muted, solo: input.solo,
       ...(input.spatial === undefined ? {} : { spatial: parseAsmrSpatial(input.spatial) }) };
   });
-  return { level: value.level, layers };
+  return { level: value.level, layers, focus: value.focus ?? false };
 }

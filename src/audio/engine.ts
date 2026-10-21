@@ -8,6 +8,7 @@ import { VisualAnalysis, type VisualFrame } from './visual-analysis';
 import { AsmrMixer } from './asmr-mixer';
 import { listeningMode, modeGains } from '../listening-mode';
 import { asmrRecordingsReady, prepareAsmrRecordings } from './asmr-assets';
+import { asmrBackgroundGain } from '../asmr-focus';
 
 export interface AudioCaptureLease {
   stream: MediaStream;
@@ -158,8 +159,6 @@ export class AudioEngine {
     smooth(this.master.gain, session.master, context.currentTime);
     const gains = modeGains(listeningMode(session));
     if (this.toneBus) smooth(this.toneBus.gain, session.tonesMuted ? 0 : gains.tones, context.currentTime);
-    // The session gate is downstream, so edits cannot erase its scheduled fade-out.
-    smooth(this.musicGain.gain, session.musicLevel * 0.4, context.currentTime);
     for (const [id, voice] of this.voices) {
       if (!session.layers.some(layer => layer.id === id)) {
         voice.dispose();
@@ -174,19 +173,30 @@ export class AudioEngine {
       else this.voices.set(layer.id, new ToneVoice(context, layer, this.toneBus!, session.layers.length, this.endAt, this.origin));
     }
     if (this.ambient !== session.ambient) this.changeAmbient(session);
-    if (this.noiseGain) smooth(this.noiseGain.gain, session.ambientLevel * 0.22, context.currentTime);
+    const ready = asmrRecordingsReady(session.asmr);
+    this.updateBackgroundLevels(session, ready);
     const revision = ++this.asmrRevision, mixer = this.asmr;
     if (!mixer) return;
-    if (!gains.asmr || asmrRecordingsReady(session.asmr)) {
+    if (!gains.asmr || ready) {
       this.asmrPending = false; mixer.update(session.asmr, !!gains.asmr); return;
     }
     this.asmrPending = true;
     const settings = structuredClone(session.asmr);
     mixer.update(settings, false);
     const current = () => this.context === context && this.asmr === mixer && this.asmrRevision === revision && !this.stopping;
-    void prepareAsmrRecordings(settings).then(() => { if (current()) { this.asmrPending = false; mixer.update(settings, true); } }, error => {
+    void prepareAsmrRecordings(settings).then(() => { if (current()) {
+      this.asmrPending = false; mixer.update(settings, true); this.updateBackgroundLevels({ ...session, asmr: settings });
+    } }, error => {
       if (current()) { this.asmrPending = false; this.failure = error instanceof Error ? error.message : 'The ASMR recording could not load.'; }
     });
+  }
+
+  private updateBackgroundLevels(session: Session, ready = true): void {
+    const time = this.context!.currentTime, gain = asmrBackgroundGain(session, ready);
+    // The session gate is downstream, so edits cannot erase its scheduled fade-out.
+    if (this.musicGain) smooth(this.musicGain.gain, session.musicLevel * .4 * gain, time);
+    if (this.noiseGain) smooth(this.noiseGain.gain, session.ambientLevel * .22 * gain, time);
+    this.bwgNode?.port.postMessage({ backgroundGain: gain });
   }
 
   private changeAmbient(session: Session): void {

@@ -6,6 +6,7 @@ import { generatedBackgrounds, makeGeneratedBackground } from './generated-backg
 import { AsmrMixer } from './asmr-mixer';
 import { listeningMode, modeGains } from '../listening-mode';
 import { phaseCycles, setSinePhase } from './render-timing';
+import { asmrBackgroundGain } from '../asmr-focus';
 
 function seededNoise(): () => number {
   let seed = 0x6b2f916d;
@@ -26,7 +27,7 @@ function ambience(context: OfflineAudioContext, session: Session, output: AudioN
   filter.frequency.value = session.ambient === 'ocean' ? 950 : 16000;
   const swell = context.createGain(); swell.gain.value = .65;
   const level = context.createGain(); level.gain.value = 0;
-  smooth(level.gain, session.ambientLevel * .22, 0);
+  smooth(level.gain, session.ambientLevel * .22 * asmrBackgroundGain(session), 0);
   source.connect(filter).connect(swell).connect(level).connect(output);
   if (session.ambient === 'ocean') {
     const modulation = context.createOscillator(); modulation.frequency.value = .07;
@@ -67,7 +68,7 @@ export function exportGraph(context: OfflineAudioContext, session: Session, offs
   if (music && session.musicLevel > 0) {
     const source = context.createBufferSource(), level = context.createGain();
     source.buffer = music; source.loop = true; level.gain.value = 0;
-    smooth(level.gain, session.musicLevel * .4, 0);
+    smooth(level.gain, session.musicLevel * .4 * asmrBackgroundGain(session), 0);
     source.connect(level).connect(master); source.start(0, offset % music.duration);
     if (localEnd !== undefined) source.stop(localEnd);
   }

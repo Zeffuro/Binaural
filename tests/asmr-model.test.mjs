@@ -6,6 +6,39 @@ import { listeningMode, modeGains, modeForSources, listeningModes } from '../src
 import { makeAsmrLayer, parseAsmr, recordedAsmrSounds, generatedAsmrSounds } from '../src/asmr-state.ts';
 import { cuppingParameters, cuppingWave } from '../src/audio/ear-cupping.ts';
 import { createAsmrAssetStore, finishRecordedBuffer } from '../src/audio/asmr-asset-store.ts';
+import { asmrBackgroundGain, ASMR_FOCUS_GAIN } from '../src/asmr-focus.ts';
+
+test('ASMR focus migrates off, rejects malformed flags and preserves serialized settings', () => {
+  const legacy = { level: .6, layers: [makeAsmrLayer('air')] };
+  assert.equal(parseAsmr(legacy).focus, false);
+  for (const focus of [null, 0, 1, 'true', 'false', {}, []]) assert.throws(() => parseAsmr({ ...legacy, focus }));
+  for (const focus of [false, true]) {
+    const parsed = parseAsmr(JSON.parse(JSON.stringify({ ...legacy, focus })));
+    assert.equal(parsed.focus, focus); assert.equal(parsed.level, .6); assert.equal(parsed.layers[0].level, .6);
+  }
+});
+
+test('ASMR focus follows effective mute and solo selection without changing stored levels', () => {
+  const layer = makeAsmrLayer('air');
+  const session = { master: .4, mode: 'mixed', asmr: { focus: true, level: .6, layers: [layer] } };
+  const original = structuredClone(session);
+  assert.ok(Math.abs(20 * Math.log10(ASMR_FOCUS_GAIN) + 10) < 1e-12);
+  for (const mode of listeningModes) {
+    assert.equal(asmrBackgroundGain({ ...session, mode }), modeGains(mode).asmr ? ASMR_FOCUS_GAIN : 1);
+  }
+  assert.equal(asmrBackgroundGain({ ...session, mode: undefined }), ASMR_FOCUS_GAIN);
+  assert.equal(asmrBackgroundGain(session, false), 1);
+  for (const asmr of [undefined, { ...session.asmr, focus: false }, { ...session.asmr, level: 0 }, { ...session.asmr, layers: [] },
+    { ...session.asmr, layers: [{ ...layer, muted: true }] }, { ...session.asmr, layers: [{ ...layer, level: 0 }] },
+    { ...session.asmr, layers: [layer, { ...layer, solo: true, level: 0 }] }]) {
+    assert.equal(asmrBackgroundGain({ ...session, asmr }), 1);
+  }
+  assert.equal(asmrBackgroundGain({ ...session, master: 0 }), 1);
+  for (const layers of [[{ ...layer, solo: true }], [layer, { ...layer, solo: true, muted: true }]]) {
+    assert.equal(asmrBackgroundGain({ ...session, asmr: { ...session.asmr, layers } }), ASMR_FOCUS_GAIN);
+  }
+  assert.deepEqual(session, original);
+});
 
 test('modes isolate the appropriate bus and preserve legacy sessions and mix values', () => {
   assert.equal(listeningMode({}), 'binaural');

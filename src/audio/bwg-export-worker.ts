@@ -35,13 +35,16 @@ scope.onmessage = event => {
           !Array.isArray(message.preset?.segments) || message.preset.segments.length < 1 || message.preset.segments.length > 25 ||
           message.preset.segments.some(segment => !Number.isInteger(segment.voices) || segment.voices < 1 || segment.voices > 10) ||
           !Array.isArray(message.levels) || message.levels.length > 10 ||
-          message.levels.some(level => !Number.isFinite(level) || level < 0 || level > 1)) {
+          message.levels.some(level => !Number.isFinite(level) || level < 0 || level > 1) ||
+          (message.backgroundGain !== undefined && (typeof message.backgroundGain !== 'number' ||
+            !Number.isFinite(message.backgroundGain) || message.backgroundGain < 0 || message.backgroundGain > 1))) {
         throw new Error('Invalid BWGen export renderer settings.');
       }
       validateBackground(message.background);
       rate = message.rate;
       renderer = new BwgRenderer(message.preset, rate, message.background);
       renderer.levels = message.levels;
+      renderer.backgroundGain = message.backgroundGain ?? 1;
       scope.postMessage({ type: 'ready' });
       return;
     }

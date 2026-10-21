@@ -5,7 +5,7 @@ export const BWG_EXPORT_HISTORY_SECONDS = 3;
 export const BWG_EXPORT_MAX_READ_SECONDS = 40;
 
 export type BwgExportRequest =
-  | { type: 'init'; preset: BwgPreset; rate: number; levels: number[]; background?: BoundBackground }
+  | { type: 'init'; preset: BwgPreset; rate: number; levels: number[]; background?: BoundBackground; backgroundGain?: number }
   | { type: 'read'; id: number; startFrame: number; frames: number };
 export type BwgExportResponse =
   | { type: 'ready' }
