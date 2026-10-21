@@ -136,8 +136,8 @@ test('gesture controls fit mobile, keep advanced brightness and pass accessibili
   await page.getByLabel('ASMR pace', { exact: true }).selectOption('still');
   await page.getByLabel('ASMR position', { exact: true }).selectOption('left');
   await page.locator('#trigger-controls details > summary').click();
-  await page.getByRole('slider', { name: 'Brightness', exact: true }).fill('4');
-  await expect(page.getByRole('slider', { name: 'Brightness', exact: true })).toHaveValue('4');
+  await page.locator('#trigger-controls').getByRole('slider', { name: 'Brightness', exact: true }).fill('4');
+  await expect(page.locator('#trigger-controls').getByRole('slider', { name: 'Brightness', exact: true })).toHaveValue('4');
   for (const theme of ['light', 'dark']) {
     await page.evaluate(value => { document.documentElement.dataset.theme = value; }, theme);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

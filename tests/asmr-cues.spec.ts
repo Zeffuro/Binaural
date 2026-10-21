@@ -125,6 +125,7 @@ test('@live cue sensing follows actual individual stereo and HRTF ears and prese
       if (cue && expected) { referenceError = Math.max(referenceError, Math.abs(cue.pan - expected.pan)); nativeReadings++; }
     }
     const direction = frame.asmr.map((cue: AsmrCue) => ({ id: cue.id, pan: cue.pan, time: cue.time, kind: cue.kind }));
+    const directionTime = frame.time;
     const gate = () => engine.visualFrame().asmr.length;
     const gates = [];
     session.asmr.layers.forEach((layer: AsmrLayer) => layer.muted = true); engine.update(session); gates.push(gate() === 0);
@@ -149,7 +150,7 @@ test('@live cue sensing follows actual individual stereo and HRTF ears and prese
     session.timelineDuration = .55; await engine.start(session);
     await waitForAudioTime(engine.context, .7); const ended = gate() === 0;
     engine.update(session); const expiredVoices = engine.asmr.voices.size; await engine.stop();
-    return { direction, time: frame.time, referenceError, nativeDifference, nativeReadings, gates, resumed, replaced,
+    return { direction, time: directionTime, referenceError, nativeDifference, nativeReadings, gates, resumed, replaced,
       replacementQuiet, paused, frozen, afterResume, disposed, ended, expiredVoices };
   });
   expect(result.direction).toHaveLength(3); expect(result.direction[0].pan).toBeLessThan(-.9);
