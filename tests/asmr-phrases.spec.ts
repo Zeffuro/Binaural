@@ -223,8 +223,14 @@ test('@live phrase resources load lazily once, obey pending/mode gates and retai
       session.mode = 'binaural'; engine.update(session); release();
       const deadline = performance.now() + 10000;
       while (calls < 1 || engine.loadingAsmr) { if (performance.now() > deadline) throw new Error('Phrase preparation did not settle.'); await new Promise(resolve => setTimeout(resolve, 20)); }
+      const modeProbe = context.createConstantSource(), modeMeter = context.createAnalyser();
+      modeProbe.offset.value = .1; modeProbe.connect(engine.asmr.bus); modeProbe.start();
+      engine.asmr.bus.connect(modeMeter); modeMeter.fftSize = 2048;
       await waitForAudioTime(context, context.currentTime + .6);
       const disabled = engine.asmr.bus.gain.value, disabledVoices = engine.asmr.voices.size;
+      const disabledSamples = new Float32Array(2048); modeMeter.getFloatTimeDomainData(disabledSamples);
+      const disabledOutput = Math.max(...disabledSamples.map(Math.abs));
+      modeProbe.stop(); modeProbe.disconnect(); engine.asmr.bus.disconnect(modeMeter); modeMeter.disconnect();
       session.mode = 'mixed'; session.ambient = 'none'; engine.update(session);
       while (engine.loadingAsmr) { if (performance.now() > deadline) throw new Error('Phrase source never became ready.'); await new Promise(resolve => setTimeout(resolve, 20)); }
       const analyzer = context.createAnalyser(); analyzer.fftSize = 2048; engine.transport.connect(analyzer);
@@ -239,13 +245,14 @@ test('@live phrase resources load lazily once, obey pending/mode gates and retai
       session.asmr.layers.forEach((layer: { muted: boolean }) => { layer.muted = true; }); engine.update(session);
       session.ambient = 'none'; engine.update(session); await waitForAudioTime(context, context.currentTime + .5); const muted = peak();
       await engine.stop();
-      return { lazy, calls, pending, backgroundPending, hiddenVoices, disabled, disabledVoices, audible, reused,
+      return { lazy, calls, pending, backgroundPending, hiddenVoices, disabled, disabledVoices, disabledOutput, audible, reused,
         lateOrigin, firstOrigin, paused, muted, stopped: !engine.playing, bytes: creations.map(item => item.bytes), failure: engine.failure };
     } finally { await engine.stop(); window.AudioWorkletNode = OriginalNode; }
   });
   expect(result.lazy).toBe(true); expect(result.calls).toBe(1); expect(result.pending).toBe(true);
   expect(result.backgroundPending).toBeCloseTo(.4 * .22, 5); expect(result.hiddenVoices).toBe(0);
   expect(result.disabled).toBeCloseTo(0, 5); expect(result.disabledVoices).toBe(0);
+  expect(result.disabledOutput).toBeLessThan(.00001);
   expect(result.audible).toBeGreaterThan(.001); expect(result.reused).toBe(true);
   expect(result.lateOrigin).toBe(result.firstOrigin); expect(result.paused).toBe(true); expect(result.muted).toBeLessThan(.00001);
   expect(result.stopped).toBe(true); expect(result.failure).toBeUndefined();
