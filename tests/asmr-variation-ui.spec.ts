@@ -21,7 +21,7 @@ test('variation is optional, changes only selected sounds and keeps its settings
   await page.locator('[data-asmr-sound=brush]').click();
   await page.locator('#asmr-flow').selectOption('natural');
   await page.locator('#asmr-variation-settings > summary').click();
-  await page.locator('#asmr-variation-amount').fill('.72');
+  await page.locator('#asmr-variation-amount').fill('0.72');
   await page.locator('#asmr-phrase-seconds').fill('20');
   await page.locator('#asmr-variation-seed').fill('9281');
   await expect(page.locator('#asmr-variation-seed')).toBeFocused();

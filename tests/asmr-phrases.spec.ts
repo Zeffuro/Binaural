@@ -223,7 +223,7 @@ test('@live phrase resources load lazily once, obey pending/mode gates and retai
       session.mode = 'binaural'; engine.update(session); release();
       const deadline = performance.now() + 10000;
       while (calls < 1 || engine.loadingAsmr) { if (performance.now() > deadline) throw new Error('Phrase preparation did not settle.'); await new Promise(resolve => setTimeout(resolve, 20)); }
-      await new Promise(resolve => setTimeout(resolve, 150));
+      await waitForAudioTime(context, context.currentTime + .6);
       const disabled = engine.asmr.bus.gain.value, disabledVoices = engine.asmr.voices.size;
       session.mode = 'mixed'; session.ambient = 'none'; engine.update(session);
       while (engine.loadingAsmr) { if (performance.now() > deadline) throw new Error('Phrase source never became ready.'); await new Promise(resolve => setTimeout(resolve, 20)); }
