@@ -1,5 +1,8 @@
 import { extraAsmrTextures } from './asmr-textures.ts';
 import { parseAsmrSpatial, type AsmrSpatialSettings } from './asmr-spatial.ts';
+import { recordedAsmrSounds } from './asmr-recordings.ts';
+import { parseAsmrVariation, type AsmrVariation } from './asmr-variation.ts';
+export { recordedAsmrSounds } from './asmr-recordings.ts';
 
 export const generatedAsmrSounds = [
   { id: 'brush', name: 'Soft brush', description: 'Soft textured strokes' },
@@ -12,13 +15,6 @@ export const generatedAsmrSounds = [
   { id: 'chimes', name: 'Soft chimes', description: 'Slow, muted bell tones' },
   { id: 'cupping', name: 'Warm ear cupping', description: 'Warm filtered texture for close, muffled ear effects' },
   ...extraAsmrTextures,
-] as const;
-export const recordedAsmrSounds = [
-  { id: 'recorded-hands', name: 'Hand rubbing', file: 'hand-rubbing.ogg', description: 'Recorded hands rubbing together' },
-  { id: 'recorded-crinkles', name: 'Soft packaging', file: 'soft-crinkles.ogg', description: 'Recorded delicate packaging crinkles' },
-  { id: 'recorded-metal', name: 'Metal tapping', file: 'metal-tapping.ogg', description: 'Recorded radiator taps' },
-  { id: 'recorded-cloth', name: 'Cloth rustles', file: 'cloth-rustles.ogg', description: 'Recorded blankets and soft fabric' },
-  { id: 'recorded-grass', name: 'Grass brushing', file: 'grass-brushing.ogg', description: 'Recorded grass with distant water' },
 ] as const;
 export const asmrSounds = [...generatedAsmrSounds, ...recordedAsmrSounds];
 export type AsmrSound = typeof asmrSounds[number]['id'];
@@ -39,7 +35,7 @@ export interface AsmrLayer {
   pressurePhase: number;
   spatial?: AsmrSpatialSettings;
 }
-export interface AsmrSettings { level: number; layers: AsmrLayer[]; focus?: boolean }
+export interface AsmrSettings { level: number; layers: AsmrLayer[]; focus?: boolean; variation?: AsmrVariation }
 export const MAX_ASMR_LAYERS = 6;
 export const defaultAsmr = (): AsmrSettings => ({ level: .6, layers: [], focus: false });
 export const makeAsmrLayer = (sound: AsmrSound = 'brush'): AsmrLayer => ({
@@ -62,5 +58,6 @@ export function parseAsmr(value: unknown): AsmrSettings {
     return { ...layer, motion: input.motion as AsmrLayer['motion'], muted: input.muted, solo: input.solo,
       ...(input.spatial === undefined ? {} : { spatial: parseAsmrSpatial(input.spatial) }) };
   });
-  return { level: value.level, layers, focus: value.focus ?? false };
+  return { level: value.level, layers, focus: value.focus ?? false,
+    ...(value.variation === undefined ? {} : { variation: parseAsmrVariation(value.variation) }) };
 }

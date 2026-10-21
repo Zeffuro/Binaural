@@ -15,7 +15,7 @@ test('ASMR mixes load silently, explicitly approve paired lights once, and keep 
   await expect(page.locator('#asmr-controls')).toBeVisible();
   await expect(page.locator('[data-asmr]')).toHaveCount(1);
   await page.locator('#asmr-more-experiences > summary').click();
-  await expect(page.locator('#asmr-preset option')).toHaveCount(40);
+  await expect(page.locator('#asmr-preset option')).toHaveCount(46);
   for (const id of ['glass-lantern', 'red-sweep', 'rose-brushes', 'paper-prism', 'blue-droplets', 'torch-whisper']) {
     await page.locator('#asmr-preset').selectOption(id); await page.locator('#asmr-pair').click();
     if (id === 'glass-lantern') await page.getByRole('dialog', { name: 'Moving visual trigger', exact: true }).getByRole('button', { name: 'Start visual', exact: true }).click();

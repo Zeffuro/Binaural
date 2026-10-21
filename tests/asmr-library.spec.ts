@@ -5,8 +5,8 @@ import { setSources } from './helpers/listening-sources';
 test('ASMR library searches sources, filters all recipes and loads silently with optional lights', async ({ page }) => {
   await page.goto('/'); await setSources(page, 'asmr');
   await page.locator('#asmr-more-experiences > summary').click();
-  await expect(page.locator('.asmr-library-card')).toHaveCount(40);
-  for (const [group, count] of [['Ear focus', 5], ['Recorded textures', 5], ['Layered mixes', 6], ['Sensory textures', 12], ['Personal attention', 6], ['Object study', 6]] as const) {
+  await expect(page.locator('.asmr-library-card')).toHaveCount(46);
+  for (const [group, count] of [['Ear focus', 5], ['Recorded textures', 5], ['Layered mixes', 6], ['Sensory textures', 12], ['Personal attention', 6], ['Object study', 6], ['Long sessions', 6]] as const) {
     await page.locator('#asmr-filter').selectOption(group);
     await expect(page.locator('.asmr-library-card')).toHaveCount(count);
   }
@@ -74,7 +74,7 @@ test('expanded ASMR library fits small screens and remains accessible in both th
 test('main explorer finds all ASMR experiences without showing dormant tone settings', async ({ page }) => {
   await page.goto('/'); await page.locator('#explore-presets').click();
   await page.locator('#preset-category').selectOption('ASMR');
-  await expect(page.locator('.explore-card')).toHaveCount(40);
+  await expect(page.locator('.explore-card')).toHaveCount(46);
   await expect(page.locator('#preset-results')).not.toContainText('Hz');
   await page.locator('#preset-search').fill('temple');
   await expect(page.locator('.explore-card h3')).toHaveText('Temple brushing');

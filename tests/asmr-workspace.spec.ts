@@ -121,8 +121,8 @@ test('starter experiences use the existing mixes and the compact and expanded wo
     expect(session.asmr.layers.map(({ id: _id, ...layer }: { id: string }) => layer)).toEqual(expected.layers.map(({ id: _id, ...layer }: { id: string }) => layer));
   }
   await page.locator('#asmr-more-experiences > summary').click();
-  await expect(page.locator('#asmr-preset option')).toHaveCount(40);
-  await expect(page.locator('.asmr-library-card')).toHaveCount(40);
+  await expect(page.locator('#asmr-preset option')).toHaveCount(46);
+  await expect(page.locator('.asmr-library-card')).toHaveCount(46);
   await page.locator('.asmr-advanced').evaluateAll(nodes => nodes.forEach(node => { (node as HTMLDetailsElement).open = true; }));
   for (const theme of ['light', 'dark']) {
     await page.getByLabel('Appearance', { exact: true }).selectOption(theme);

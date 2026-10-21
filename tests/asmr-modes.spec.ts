@@ -21,8 +21,8 @@ test('source switches preserve the mix, keep controls discoverable and never aut
   await page.locator('[data-asmr-preset=ear-cupping]').click();
   await page.locator('.asmr-advanced').first().locator('summary').click();
   await expect(page.getByLabel('Sound 1 ear cupping', { exact: true })).toHaveValue('0.85');
-  await expect(page.locator('#asmr-preset option')).toHaveCount(40);
-  await expect(page.getByLabel('Sound 1 trigger', { exact: true }).locator('option')).toHaveCount(20);
+  await expect(page.locator('#asmr-preset option')).toHaveCount(46);
+  await expect(page.getByLabel('Sound 1 trigger', { exact: true }).locator('option')).toHaveCount(24);
   for (const selected of ['mixed', 'binaural', 'ambient', 'asmr'] as const) {
     await setSources(page, selected);
     await expect(tones).toHaveAttribute('aria-pressed', String(selected === 'mixed' || selected === 'binaural'));
@@ -146,13 +146,23 @@ test('all bundled recordings retain their channel layout, bounded PCM and actual
   expect(results).toHaveLength(clips.length); expect(requests).toHaveLength(clips.length);
   for (const result of results) {
     const clip = clips.find((clip: { file: string }) => clip.file === result.file);
-    expect(clip, result.id).toBeDefined(); expect(result.channels, result.id).toBe(clip.channels);
+    expect(clip, result.id).toBeDefined();
+    if (clip.format === 'MP3') {
+      expect([1, 2]).toContain(result.channels);
+      expect(Math.abs(result.duration - clip.originalMetadata.durationSeconds), result.id).toBeLessThan(.15);
+      expect(result.duration, result.id).toBeLessThan(60);
+    } else {
+      expect(result.channels, result.id).toBe(clip.channels);
+      expect(Math.abs(result.duration - clip.durationSeconds), result.id).toBeLessThan(.01);
+    }
     expect(result.finite, result.id).toBe(true); expect(result.edges, result.id).toBe(true);
     expect(result.peak, result.id).toBeGreaterThan(.001); expect(result.peak, result.id).toBeLessThanOrEqual(.700001);
-    expect(Math.abs(result.duration - clip.durationSeconds), result.id).toBeLessThan(.01);
     expect(result.energy[0], result.id).toBeGreaterThan(1000); expect(result.energy[1], result.id).toBe(0);
-    if (result.channels === 2 && result.id !== 'recorded-grass') expect(result.difference, result.id).toBeGreaterThan(.1);
-    else expect(result.difference, result.id).toBe(0);
+    if (clip.format !== 'MP3') {
+      if (result.channels === 2 && result.id !== 'recorded-grass') expect(result.difference, result.id).toBeGreaterThan(.1);
+      else expect(result.difference, result.id).toBe(0);
+    }
+    console.log(`Decoded ${result.id}: ${result.channels} channels, ${result.duration.toFixed(3)} seconds, stereo difference ${result.difference.toFixed(3)}`);
   }
 });
 

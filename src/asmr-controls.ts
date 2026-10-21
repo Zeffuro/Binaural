@@ -2,6 +2,7 @@ import { asmrMotions, asmrRanges, generatedAsmrSounds, recordedAsmrSounds, defau
 import { asmrPresets } from './asmr-presets';
 import { ASMR_FAVORITES_KEY, createAsmrLibrary, filterAsmrLibrary, parseAsmrFavorites, saveAsmrFavorites } from './asmr-library';
 import { asmrSpatialRanges, defaultSpatial } from './asmr-spatial';
+import { defaultAsmrVariation, type AsmrVariation } from './asmr-variation';
 import './asmr-controls.css';
 
 export function setupAsmr(options: {
@@ -16,7 +17,7 @@ export function setupAsmr(options: {
   enable?: () => void;
 }) {
   const host = document.querySelector<HTMLElement>('#asmr-controls')!;
-  const presetGroup = (preset: typeof asmrPresets[number]) => 'group' in preset ? preset.group : 'Layered mixes';
+  const presetGroup = (preset: typeof asmrPresets[number]) => preset.group ?? 'Layered mixes';
   const presetGroups = [...new Set(['Ear focus', ...asmrPresets.map(presetGroup)])];
   const quickSounds: [AsmrSound, string][] = [['brush', 'Brush'], ['fingertip-taps', 'Tapping'], ['fabric', 'Fabric'], ['recorded-crinkles', 'Crinkle'], ['air', 'Air'], ['water', 'Water']];
   const starters = [['hands-close', 'Hands up close'], ['slow-ear-sweep', 'Hands moving slowly'], ['woven-hush', 'Soft fabric'], ['soft-crinkle-room', 'Delicate crinkles'], ['fingertip-duet', 'Fingertip tapping'], ['ear-cupping', 'Warm ear cups']];
@@ -24,6 +25,14 @@ export function setupAsmr(options: {
     <p class="small-muted">Choose a sound for close listening. Stereo headphones work best.</p>
     <label class="visual-toggle"><span>ASMR focus</span><input id="asmr-focus" type="checkbox" aria-describedby="asmr-focus-help" /></label>
     <p id="asmr-focus-help" class="fine-print">Lower atmosphere and music by 10 dB while ASMR sounds are active. Your volume settings are kept.</p>
+    <label for="asmr-flow">Session flow</label><select id="asmr-flow"><option value="steady">Steady</option><option value="natural">Natural layers</option><option value="turns">Take turns</option></select>
+    <p class="fine-print">Natural layers vary phrases and pauses. Take turns gives each selected sound its own moment.</p>
+    <details id="asmr-variation-settings" hidden><summary>Adjust variation</summary>
+      <label class="range-heading" for="asmr-variation-amount">Variation <output id="asmr-variation-value" aria-hidden="true"></output></label><input id="asmr-variation-amount" type="range" min="0" max="1" step=".01" />
+      <label class="range-heading" for="asmr-phrase-seconds">Phrase length <output id="asmr-phrase-value" aria-hidden="true"></output></label><input id="asmr-phrase-seconds" type="range" min="4" max="30" step="1" />
+      <div id="asmr-turn-settings"><label class="range-heading" for="asmr-turn-seconds">Time with each sound <output id="asmr-turn-value" aria-hidden="true"></output></label><input id="asmr-turn-seconds" type="range" min="15" max="600" step="1" /></div>
+      <label for="asmr-variation-seed">Variation seed</label><input id="asmr-variation-seed" type="number" min="1" max="2147483647" step="1" required />
+      <button id="asmr-new-variation" class="secondary-button">New variation</button><p class="fine-print">The same seed and settings repeat the same session, including audio exports. Only your selected sounds are used.</p></details>
     <div class="asmr-quick" role="group" aria-label="Quick ASMR sounds">${quickSounds.map(([sound, label]) => `<button class="secondary-button" data-asmr-sound="${sound}">${label}</button>`).join('')}</div>
     <p class="asmr-starter-label">Or start with an experience</p>
     <div class="asmr-featured" role="group" aria-label="Starter experiences">${starters.map(([id, label]) => `<button class="secondary-button" data-asmr-preset="${id}">${label}</button>`).join('')}</div>
@@ -82,7 +91,9 @@ export function setupAsmr(options: {
     options.enable?.();
     $<HTMLSelectElement>('#asmr-preset').value = id;
     $('#asmr-description').textContent = preset.description;
-    options.update({ ...preset.make(), focus: settings().focus ?? false }, pair ? preset.light : undefined); render();
+    const next = preset.make(), current = settings();
+    options.update({ ...next, focus: current.focus ?? false,
+      ...(next.variation || current.variation ? { variation: next.variation ?? current.variation } : {}) }, pair ? preset.light : undefined); render();
     $('#asmr-status').textContent = `${preset.name} loaded. Start listening when ready.`;
   }
   const ranges = (layer: AsmrLayer, index: number, fields: (keyof typeof asmrRanges)[]) => fields.map(field => {
@@ -156,6 +167,17 @@ export function setupAsmr(options: {
     const focusedField = focused?.dataset.field, focusedPosition = focused?.dataset.position, focusedPlacement = focused?.dataset.placement;
     $<HTMLInputElement>('#asmr-level').value = String(state.level); $('#asmr-volume').textContent = format('level', state.level);
     $<HTMLInputElement>('#asmr-focus').checked = !!state.focus;
+    const variation = state.variation ?? defaultAsmrVariation();
+    $<HTMLSelectElement>('#asmr-flow').value = variation.mode;
+    $('#asmr-variation-settings').hidden = variation.mode === 'steady';
+    $<HTMLInputElement>('#asmr-variation-amount').value = String(variation.amount);
+    $('#asmr-variation-value').textContent = `${Math.round(variation.amount * 100)}%`;
+    $<HTMLInputElement>('#asmr-phrase-seconds').value = String(variation.phraseSeconds);
+    $('#asmr-phrase-value').textContent = `${variation.phraseSeconds} s`;
+    $<HTMLInputElement>('#asmr-variation-seed').value = String(variation.seed);
+    $('#asmr-turn-settings').hidden = variation.mode !== 'turns';
+    $<HTMLInputElement>('#asmr-turn-seconds').value = String(variation.turnSeconds);
+    $('#asmr-turn-value').textContent = variation.turnSeconds < 60 ? `${variation.turnSeconds} s` : `${Number((variation.turnSeconds / 60).toFixed(1))} min`;
     $('#asmr-imported-row').hidden = options.importedMute() === undefined;
     $<HTMLInputElement>('#asmr-imported-mute').checked = !!options.importedMute();
     $('#asmr-count').textContent = `${state.layers.length} / ${MAX_ASMR_LAYERS}`; $('#asmr-empty').hidden = state.layers.length > 0;
@@ -183,12 +205,26 @@ export function setupAsmr(options: {
     const next = structuredClone(settings()); change(next); options.update(next, light);
   }
   host.addEventListener('focusin', event => { const target = event.target as HTMLElement; if (target.matches('input,select') && !target.closest('.asmr-library')) options.beforeEdit(); });
+  $('#asmr-variation-seed').addEventListener('blur', event => {
+    const input = event.target as HTMLInputElement;
+    if (!input.checkValidity()) input.value = String((settings().variation ?? defaultAsmrVariation()).seed);
+  });
   host.addEventListener('input', event => {
     const input = event.target as HTMLInputElement;
     if (!input.checkValidity() || options.busy()) return;
     if (input.id === 'asmr-search' || input.id === 'asmr-filter') { renderLibrary(); return; }
     if (input.id === 'asmr-imported-mute') { options.muteImported(input.checked); return; }
     if (input.id === 'asmr-focus') { edit(value => { value.focus = input.checked; }); return; }
+    if (['asmr-flow', 'asmr-variation-amount', 'asmr-phrase-seconds', 'asmr-turn-seconds', 'asmr-variation-seed'].includes(input.id)) {
+      edit(value => {
+        const variation = value.variation ?? defaultAsmrVariation();
+        const field = { 'asmr-flow': 'mode', 'asmr-variation-amount': 'amount', 'asmr-phrase-seconds': 'phraseSeconds', 'asmr-turn-seconds': 'turnSeconds', 'asmr-variation-seed': 'seed' }[input.id]!;
+        if (field === 'mode') variation.mode = input.value as AsmrVariation['mode'];
+        else variation[field as 'amount' | 'phraseSeconds' | 'turnSeconds' | 'seed'] = Number(input.value);
+        value.variation = variation;
+      });
+      render(); return;
+    }
     if (input.id === 'asmr-level') { edit(value => { value.level = Number(input.value); }); $('#asmr-volume').textContent = format('level', Number(input.value)); return; }
     const id = input.closest<HTMLElement>('[data-asmr]')?.dataset.asmr;
     if (!id) return;
@@ -260,7 +296,15 @@ export function setupAsmr(options: {
       render(); focusLayer(layer.id); return;
     }
     options.beforeEdit();
-    if (button.id === 'asmr-add') {
+    if (button.id === 'asmr-new-variation') {
+      edit(value => {
+        const variation = value.variation ?? defaultAsmrVariation();
+        const seed = crypto.getRandomValues(new Uint32Array(1))[0] % 2147483647 + 1;
+        value.variation = { ...variation, seed: seed === variation.seed ? seed % 2147483647 + 1 : seed };
+      });
+      render(); $('#asmr-status').textContent = 'New variation ready.';
+    }
+    else if (button.id === 'asmr-add') {
       if (settings().layers.length >= MAX_ASMR_LAYERS) return;
       options.enable?.();
       const layer = makeAsmrLayer(); edit(value => { value.layers.push(layer); }); render(); focusLayer(layer.id);

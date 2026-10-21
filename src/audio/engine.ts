@@ -7,7 +7,7 @@ import { generatedBackgrounds, makeGeneratedBackground } from './generated-backg
 import { VisualAnalysis, type VisualFrame } from './visual-analysis';
 import { AsmrMixer } from './asmr-mixer';
 import { listeningMode, modeGains } from '../listening-mode';
-import { asmrRecordingsReady, prepareAsmrRecordings } from './asmr-assets';
+import { asmrAudioReady, prepareAsmrAudio } from './asmr-phrase-source';
 import { asmrBackgroundGain } from '../asmr-focus';
 
 export interface AudioCaptureLease {
@@ -126,9 +126,10 @@ export class AudioEngine {
       this.toneBus = context.createGain();
       this.toneBus.gain.value = session.tonesMuted ? 0 : modeGains(listeningMode(session)).tones;
       this.toneBus.connect(this.master);
-      this.asmr = new AsmrMixer(context, this.master, this.endAt);
+      this.asmr = new AsmrMixer(context, this.master, this.endAt, 0,
+        () => { if (current()) this.failure = 'The ASMR phrase processor stopped unexpectedly. Playback has been stopped.'; });
       if (modeGains(listeningMode(session)).asmr) {
-        await prepareAsmrRecordings(session.asmr);
+        await prepareAsmrAudio(context, session.asmr);
         if (!current()) return;
       }
       if (bwg) {
@@ -173,7 +174,7 @@ export class AudioEngine {
       else this.voices.set(layer.id, new ToneVoice(context, layer, this.toneBus!, session.layers.length, this.endAt, this.origin));
     }
     if (this.ambient !== session.ambient) this.changeAmbient(session);
-    const ready = asmrRecordingsReady(session.asmr);
+    const ready = asmrAudioReady(context, session.asmr);
     this.updateBackgroundLevels(session, ready);
     const revision = ++this.asmrRevision, mixer = this.asmr;
     if (!mixer) return;
@@ -184,7 +185,7 @@ export class AudioEngine {
     const settings = structuredClone(session.asmr);
     mixer.update(settings, false);
     const current = () => this.context === context && this.asmr === mixer && this.asmrRevision === revision && !this.stopping;
-    void prepareAsmrRecordings(settings).then(() => { if (current()) {
+    void prepareAsmrAudio(context, settings).then(() => { if (current()) {
       this.asmrPending = false; mixer.update(settings, true); this.updateBackgroundLevels({ ...session, asmr: settings });
     } }, error => {
       if (current()) { this.asmrPending = false; this.failure = error instanceof Error ? error.message : 'The ASMR recording could not load.'; }

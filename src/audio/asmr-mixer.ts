@@ -5,9 +5,11 @@ import { recordedAsmrBuffer } from './asmr-assets';
 import { cuppingParameters, cuppingWave } from './ear-cupping';
 import { AsmrPosition } from './asmr-position';
 import { phaseCycles, setSinePhase } from './render-timing';
+import { createAsmrPhraseSource, phraseConfig, type AsmrSource } from './asmr-phrase-source';
+import type { AsmrPhraseConfig } from './asmr-phrases';
 
 class AsmrVoice {
-  private source: AudioBufferSourceNode;
+  private source: AsmrSource;
   private filter: BiquadFilterNode;
   private level: GainNode;
   private panner: StereoPannerNode;
@@ -24,20 +26,31 @@ class AsmrVoice {
   private position?: AsmrPosition;
   readonly sound: AsmrLayer['sound'];
   readonly spatial: boolean;
+  readonly phrases: boolean;
   constructor(private context: BaseAudioContext, layer: AsmrLayer, output: AudioNode, endAt?: number, audible = true,
-    private offsetSeconds = 0) {
+    private offsetSeconds = 0, config?: AsmrPhraseConfig, onFailure?: () => void, originSeconds = context.currentTime - offsetSeconds) {
     this.sound = layer.sound;
     this.spatial = !!layer.spatial;
-    this.source = context.createBufferSource();
-    if (recordedAsmrSounds.some(sound => sound.id === layer.sound)) {
-      const buffer = recordedAsmrBuffer(layer.sound);
-      if (!buffer) throw new Error('The ASMR recording is still loading.');
-      this.source.buffer = buffer;
-    } else {
-      const sample = asmrSample(layer.sound), buffer = context.createBuffer(1, sample.length, ASMR_RATE);
-      buffer.getChannelData(0).set(sample); this.source.buffer = buffer;
+    this.phrases = !!config;
+    if (config) {
+      this.source = createAsmrPhraseSource(context, layer, config, offsetSeconds, endAt, onFailure, originSeconds);
+      this.offsetSeconds = offsetSeconds = context.currentTime - originSeconds;
     }
-    this.source.loop = true;
+    else {
+      const source = context.createBufferSource();
+      if (recordedAsmrSounds.some(sound => sound.id === layer.sound)) {
+        const buffer = recordedAsmrBuffer(layer.sound);
+        if (!buffer) throw new Error('The ASMR recording is still loading.');
+        source.buffer = buffer;
+      } else {
+        const sample = asmrSample(layer.sound), buffer = context.createBuffer(1, sample.length, ASMR_RATE);
+        buffer.getChannelData(0).set(sample); source.buffer = buffer;
+      }
+      source.loop = true;
+      source.playbackRate.value = layer.rate;
+      this.source = { playbackRate: source.playbackRate, connect: node => source.connect(node), disconnect: () => source.disconnect(),
+        start: () => source.start(0, (offsetSeconds * source.playbackRate.value) % source.buffer!.duration), stop: time => source.stop(time) };
+    }
     this.filter = context.createBiquadFilter(); this.filter.type = 'lowpass'; this.filter.Q.value = .4;
     this.level = context.createGain(); this.level.gain.value = 0;
     this.panner = context.createStereoPanner();
@@ -63,11 +76,12 @@ class AsmrVoice {
     if (layer.spatial) this.position = new AsmrPosition(context, this.level, output, layer.spatial, layer.period, endAt, offsetSeconds);
     else this.level.connect(this.panner).connect(output);
     this.update(layer, audible);
-    this.source.start(0, (offsetSeconds * this.source.playbackRate.value) % this.source.buffer.duration);
+    this.source.start();
     this.motion.start(); this.drift.start(); this.pressure.start();
     if (endAt !== undefined && endAt > context.currentTime) for (const source of [this.source, this.motion, this.drift, this.pressure]) source.stop(endAt);
   }
-  update(layer: AsmrLayer, audible: boolean): void {
+  update(layer: AsmrLayer, audible: boolean, config?: AsmrPhraseConfig): void {
+    if (config) this.source.configure?.(config);
     const time = this.context.currentTime;
     const pressure = cuppingParameters(audible ? layer.level : 0, layer.tone, layer.pressure ?? 0);
     smooth(this.level.gain, pressure.gain, time);
@@ -106,24 +120,31 @@ class AsmrVoice {
 export class AsmrMixer {
   private bus: GainNode;
   private voices = new Map<string, AsmrVoice>();
-  constructor(private context: BaseAudioContext, output: AudioNode, private endAt?: number, private offsetSeconds = 0) {
+  private origin: number;
+  constructor(private context: BaseAudioContext, output: AudioNode, private endAt?: number, private offsetSeconds = 0,
+    private onFailure?: () => void) {
+    this.origin = context.currentTime;
     this.bus = context.createGain(); this.bus.gain.value = 0; this.bus.connect(output);
   }
   update(settings: AsmrSettings = defaultAsmr(), enabled = true): void {
     const expired = this.endAt !== undefined && this.context.currentTime >= this.endAt;
     smooth(this.bus.gain, expired || !enabled ? 0 : settings.level, this.context.currentTime);
     const solo = settings.layers.some(layer => layer.solo && !layer.muted);
+    const phrases = !!settings.variation && settings.variation.mode !== 'steady';
     for (const [id, voice] of this.voices) {
       const layer = settings.layers.find(item => item.id === id);
-      if (!layer || layer.sound !== voice.sound || !!layer.spatial !== voice.spatial || expired) { voice.dispose(); this.voices.delete(id); }
+      if (!layer || layer.sound !== voice.sound || !!layer.spatial !== voice.spatial || voice.phrases !== phrases || expired) { voice.dispose(); this.voices.delete(id); }
     }
     if (expired) return;
-    for (const layer of settings.layers) {
+    for (const [ordinal, layer] of settings.layers.entries()) {
       const audible = !layer.muted && (!solo || layer.solo);
       let voice = this.voices.get(layer.id);
       if (!voice && !enabled) continue;
-      if (!voice) { voice = new AsmrVoice(this.context, layer, this.bus, this.endAt, audible, this.offsetSeconds); this.voices.set(layer.id, voice); }
-      voice.update(layer, audible);
+      const config = phrases ? phraseConfig(settings, ordinal) : undefined;
+      if (!voice) { voice = new AsmrVoice(this.context, layer, this.bus, this.endAt, audible,
+        this.offsetSeconds + this.context.currentTime - this.origin, config, this.onFailure,
+        this.origin - this.offsetSeconds); this.voices.set(layer.id, voice); }
+      voice.update(layer, audible, config);
     }
   }
   dispose(): void {

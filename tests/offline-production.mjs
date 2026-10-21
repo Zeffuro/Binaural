@@ -9,7 +9,7 @@ import { makeBwgFixture } from './helpers/bwg.ts';
 import { setSources } from './helpers/listening-sources.ts';
 
 const root = fileURLToPath(new URL('../dist/', import.meta.url));
-const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.txt': 'text/plain', '.ogg': 'audio/ogg' };
+const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.txt': 'text/plain', '.ogg': 'audio/ogg', '.mp3': 'audio/mpeg' };
 function expectShortWav(wav) {
   expect(wav.length).toBe(176444);
   expect(wav.toString('ascii', 0, 4)).toBe('RIFF');
@@ -100,6 +100,18 @@ try {
         await expect(page.locator('#status')).toHaveText('● Listening');
         await page.locator('#pause').click(); await expect(page.locator('#status')).toHaveText('Ⅱ Paused');
         await page.locator('#play').click();
+        await page.locator('#asmr-preset').selectOption('hairbrush-unhurried'); await page.locator('#asmr-load').click();
+        await expect(page.locator('#asmr-flow')).toHaveValue('natural');
+        const hairRecording = page.waitForResponse(origin + prefix + 'audio/asmr/hair-brushing.mp3');
+        await page.locator('#play').click();
+        const hairResponse = await hairRecording;
+        expect(hairResponse.ok()).toBe(true); expect(hairResponse.headers()['content-type']).toBe('audio/mpeg');
+        expect(hairResponse.fromServiceWorker()).toBe(true);
+        await expect(page.locator('#status')).toHaveText('● Listening');
+        await page.locator('#pause').click(); await expect(page.locator('#status')).toHaveText('Ⅱ Paused');
+        await page.locator('#play').click();
+        await page.locator('#asmr-flow').selectOption('steady');
+        await page.locator('#asmr-preset').selectOption('hands-close'); await page.locator('#asmr-load').click();
         await page.getByLabel('Enable light triggers', { exact: true }).uncheck();
         await page.locator('[data-visual-quick=triggers]').click();
         await page.getByLabel('Enable light triggers', { exact: true }).check();

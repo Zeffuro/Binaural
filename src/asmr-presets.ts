@@ -1,8 +1,13 @@
 import { makeAsmrLayer, type AsmrLayer, type AsmrSettings, type AsmrSound } from './asmr-state';
 import { asmrExperiences } from './asmr-experiences';
+import { asmrRoutines } from './asmr-routines';
 
 const layer = (sound: AsmrSound, values: Partial<AsmrLayer> = {}): AsmrLayer => ({ ...makeAsmrLayer(sound), ...values });
-export const asmrPresets = [
+export interface AsmrPreset {
+  id: string; name: string; description: string; group?: string; light: string; minutes?: number;
+  make: () => AsmrSettings;
+}
+export const asmrPresets: AsmrPreset[] = [
   { id: 'glass-lantern', name: 'Glass lantern', description: 'Small glass taps and soft brushes with cool moving reflections.', light: 'prism-lantern',
     make: (): AsmrSettings => ({ level: .6, layers: [layer('glass', { level: .45, period: 12 }), layer('brush', { level: .6, motion: 'wander', period: 18, tone: .3 })] }) },
   { id: 'red-sweep', name: 'Red sweep', description: 'An airy left-to-right sweep with a soft red scan.', light: 'red-scan',
@@ -60,4 +65,5 @@ export const asmrPresets = [
   { id: 'around-your-head', name: 'Around your head', group: 'Sensory textures', description: 'Soft fabric slowly circles your head in 3D headphones, beside comb flutters and recorded hand rubbing.', light: 'wandering-light',
     make: (): AsmrSettings => ({ level: .45, layers: [layer('fabric', { level: .4, period: 30, tone: .45, rate: .85, spatial: { azimuth: -90, elevation: 10, distance: .8, motion: 'orbit' } }), layer('comb', { level: .2, pan: .5, motion: 'still', tone: .4, rate: .7 }), layer('recorded-hands', { level: .25, pan: -.5, motion: 'still', tone: .45, pressure: .3 })] }) },
   ...asmrExperiences,
+  ...asmrRoutines,
 ];

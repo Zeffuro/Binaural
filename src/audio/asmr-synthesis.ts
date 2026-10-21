@@ -4,6 +4,8 @@ import { fillAsmrTexture } from './asmr-textures';
 export const ASMR_RATE = 24000;
 export const ASMR_SECONDS = 12;
 const cache = new Map<AsmrSound, Float32Array>();
+const variants = new Map<string, Float32Array>();
+const VARIANT_CACHE_BYTES = 6 * 1024 * 1024;
 
 function fillOriginalTexture(sound: AsmrSound, data: Float32Array, random: () => number): void {
   const noise = new Float32Array(data.length);
@@ -42,11 +44,11 @@ function fillOriginalTexture(sound: AsmrSound, data: Float32Array, random: () =>
   }
 }
 
-export function asmrSample(sound: AsmrSound): Float32Array {
+function synthesize(sound: AsmrSound, variant = 0): Float32Array {
   if (!generatedAsmrSounds.some(item => item.id === sound)) throw new Error('Load the recorded ASMR sound before playing it.');
-  const existing = cache.get(sound); if (existing) return existing;
   const data = new Float32Array(ASMR_RATE * ASMR_SECONDS);
   let seed = [...sound].reduce((n, c) => Math.imul(n, 31) + c.charCodeAt(0), 893);
+  if (variant) seed ^= Math.imul(variant, 0x6d2b79f5);
   const random = () => { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; return (seed >>> 0) / 4294967296; };
   if (!fillAsmrTexture(sound, data, ASMR_RATE, random)) fillOriginalTexture(sound, data, random);
   let peak = .001;
@@ -56,5 +58,22 @@ export function asmrSample(sound: AsmrSound): Float32Array {
     const edge = Math.min(1, i / seam, (data.length - 1 - i) / seam);
     data[i] = data[i] / peak * .7 * Math.sin(edge * Math.PI / 2) ** 2;
   }
-  cache.set(sound, data); return data;
+  return data;
+}
+
+export function asmrSample(sound: AsmrSound): Float32Array {
+  const existing = cache.get(sound); if (existing) return existing;
+  const data = synthesize(sound); cache.set(sound, data); return data;
+}
+
+export function asmrVariantSample(sound: AsmrSound, variant: 1 | 2): Float32Array {
+  const key = `${sound}:${variant}`, existing = variants.get(key);
+  if (existing) { variants.delete(key); variants.set(key, existing); return existing; }
+  const data = synthesize(sound, variant);
+  let bytes = data.byteLength;
+  for (const item of variants.values()) bytes += item.byteLength;
+  while (bytes > VARIANT_CACHE_BYTES && variants.size) {
+    const oldest = variants.keys().next().value!; bytes -= variants.get(oldest)!.byteLength; variants.delete(oldest);
+  }
+  variants.set(key, data); return data;
 }
