@@ -2,6 +2,8 @@ import { expect, test } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { makeBwgFixture } from './helpers/bwg';
 
+const constant = (value: number) => [{ value, position: 0 }, { value, position: 10000 }];
+
 test('ASMR focus stays reversible through undo, saved presets, JSON and shared links', async ({ page }) => {
   await page.goto('/');
   const focus = page.getByRole('checkbox', { name: 'ASMR focus', exact: true });
@@ -204,7 +206,7 @@ test('@live ASMR focus reaches native worklet backgrounds and restores their out
       return { off, ratio: on / off, restored: restored / off, nativeBus: engine.bwgBus.gain.value };
     } finally { splitter.disconnect(); analyzer.disconnect(); await engine.stop(); }
   }, makeBwgFixture(undefined, {
-    5: [{ value: 5000, position: 0 }], 6: [{ value: 5000, position: 0 }],
+    5: constant(5000), 6: constant(5000),
   }));
   expect(result.off).toBeGreaterThan(.005);
   expect(Math.abs(result.ratio - 10 ** (-10 / 20))).toBeLessThan(.025);
@@ -249,8 +251,8 @@ test('native focus ducks noise and bound backgrounds without scaling tones, with
     }
     return { rows, rejected };
   }, makeBwgFixture(undefined, {
-    0: [{ value: 10000, position: 0 }], 1: [{ value: 10000, position: 0 }],
-    5: [{ value: 5000, position: 0 }], 6: [{ value: 5000, position: 0 }],
+    0: constant(10000), 1: constant(10000),
+    5: constant(5000), 6: constant(5000),
   }));
   for (const row of result.rows) {
     expect(row.parity).toBe(0); expect(row.isolation).toBeLessThan(2e-8);
@@ -281,7 +283,7 @@ test('native WAV export carries focus into its worker and restores the original 
     }
     return { power: Math.sqrt(before / 44100), ratio: Math.sqrt(after / before), error };
   }, makeBwgFixture(undefined, {
-    5: [{ value: 5000, position: 0 }], 6: [{ value: 5000, position: 0 }],
+    5: constant(5000), 6: constant(5000),
   }));
   expect(result.power).toBeGreaterThan(10);
   expect(result.ratio).toBeCloseTo(10 ** (-10 / 20), 3);

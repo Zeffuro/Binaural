@@ -12,7 +12,7 @@ test('all fifteen generated ASMR triggers produce distinct bounded seamless PCM'
       return { id, rms: Math.sqrt(sum / sample.length), peak, first: sample[0], last: sample.at(-1), hash, same: sample === asmrSample(id) };
     });
   });
-  expect(results).toHaveLength(15); expect(new Set(results.map(result => result.hash)).size).toBe(15);
+  expect(results).toHaveLength(15); expect(new Set(results.map((result: { hash: number }) => result.hash)).size).toBe(15);
   const added = ['fingertip-taps', 'keyboard', 'comb', 'fabric', 'rain-stick', 'soft-clicks'];
   for (const result of results) { expect(result.rms).toBeGreaterThan(added.includes(result.id) ? .001 : .025); expect(result.peak).toBeLessThanOrEqual(.701); expect(Math.abs(result.first)).toBe(0); expect(Math.abs(result.last)).toBe(0); expect(result.same).toBe(true); }
 });
@@ -94,7 +94,7 @@ test('ASMR schema is bounded and legacy sessions still load; WAV contains the ac
     return { rejected, legacy: parseSession(initialSession()).asmr === undefined, presets: asmrPresets.map((preset: { make: () => unknown }) => parseAsmr(preset.make()).layers.length), left, right };
   });
   expect(result.rejected).toBe(true); expect(result.legacy).toBe(true);
-  expect(result.presets).toHaveLength(28); expect(result.presets.every(count => count >= 1 && count <= 6)).toBe(true);
+  expect(result.presets).toHaveLength(40); expect(result.presets.every((count: number) => count >= 1 && count <= 6)).toBe(true);
   expect(result.left).toBeGreaterThan(10000); expect(result.right).toBe(0);
 });
 

@@ -6,6 +6,7 @@
   },
   "include": [
     "tests/audio-export.spec.ts",
+    "tests/asmr-audio.spec.ts",
     "tests/asmr-spatial.spec.ts",
     "tests/accessibility.spec.ts",
     "tests/light-triggers.spec.ts",
