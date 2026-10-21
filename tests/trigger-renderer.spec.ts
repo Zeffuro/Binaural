@@ -8,7 +8,8 @@ test('every original light preset renders distinctly and deterministic source li
     const canvas = document.createElement('canvas'); canvas.width = 480; canvas.height = 270;
     const ctx = canvas.getContext('2d')!, renderer = new TriggerRenderer();
     const draw = (settings: any, glass = 0, light = 0) => {
-      renderer.render(ctx, 480, 270, settings, { glass, light, energy: 0, pan: 0 });
+      renderer.render(ctx, 480, 270, settings, { glass, light, energy: 0, pan: 0,
+        cues: [{ id: 'cue', kind: 'follow', pan: -.3, strength: .8, progress: .35, contact: .7, time: 1 }] });
       const bytes = ctx.getImageData(0, 0, 480, 270).data; let hash = 2166136261, maximum = 0;
       for (let i = 0; i < bytes.length; i++) { hash = Math.imul(hash ^ bytes[i], 16777619); if (i % 4 !== 3) maximum = Math.max(maximum, bytes[i]); }
       return { hash, maximum };
@@ -23,8 +24,8 @@ test('every original light preset renders distinctly and deterministic source li
     const black = ['kaleidoscope', 'scan', 'torch'].map(style => draw({ ...state, style, brightness: 0 }).maximum);
     return { presets, initial, repeated, reset, movedLight, movedGlass, lampOff, warmLamp, scanAccent, black };
   });
-  expect(result.presets).toHaveLength(19);
-  expect(new Set(result.presets.map((preset: any) => preset.hash)).size).toBe(19);
+  expect(result.presets).toHaveLength(26);
+  expect(new Set(result.presets.map((preset: any) => preset.hash)).size).toBe(26);
   expect(result.presets.every((preset: any) => preset.maximum > 20)).toBe(true);
   expect(result.repeated).toEqual(result.initial); expect(result.reset).toEqual(result.initial);
   expect(result.movedLight.hash).not.toBe(result.initial.hash); expect(result.movedGlass.hash).not.toBe(result.initial.hash);

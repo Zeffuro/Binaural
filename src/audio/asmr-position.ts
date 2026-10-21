@@ -9,6 +9,7 @@ export class AsmrPosition {
   private cosine: OscillatorNode;
   private matrix: GainNode[];
   private disposed = false;
+  get outputNode(): AudioNode { return this.panner; }
 
   constructor(private context: BaseAudioContext, private input: AudioNode, output: AudioNode,
     settings: AsmrSpatialSettings, period: number, private endAt?: number, offsetSeconds = 0) {

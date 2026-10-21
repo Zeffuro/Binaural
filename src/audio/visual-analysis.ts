@@ -1,9 +1,12 @@
+import type { AsmrCue } from './asmr-cues';
+
 export interface VisualFrame {
   frequency: Uint8Array<ArrayBuffer>;
   waveform: Uint8Array<ArrayBuffer>;
   left: Uint8Array<ArrayBuffer>;
   right: Uint8Array<ArrayBuffer>;
   time: number;
+  asmr?: AsmrCue[];
 }
 
 export class VisualAnalysis {

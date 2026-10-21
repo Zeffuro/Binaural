@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { setSources } from './helpers/listening-sources';
+import { loadAsmrExperience } from './helpers/asmr-discovery';
 
 async function adjust(page: Page, index = 0) {
   const details = page.locator('.asmr-advanced').nth(index);
@@ -80,8 +81,8 @@ test('duplicated 3D sounds keep independent positions through subsequent edits a
 test('3D controls fit 320px screens and remain accessible in both themes', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 800 }); await page.goto('/');
   await setSources(page, 'asmr');
-  await page.locator('#asmr-more-experiences > summary').click();
-  await page.locator('#asmr-preset').selectOption('around-your-head'); await page.locator('#asmr-load').click();
+  await loadAsmrExperience(page, 'around-your-head');
+  await page.getByRole('dialog', { name: 'Moving visual trigger', exact: true }).getByRole('button', { name: 'Not now', exact: true }).click();
   for (const theme of ['light', 'dark']) {
     await page.getByLabel('Appearance', { exact: true }).selectOption(theme);
     await page.locator('.asmr-advanced').evaluateAll(nodes => nodes.forEach(node => { (node as HTMLDetailsElement).open = true; }));

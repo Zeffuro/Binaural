@@ -1,6 +1,6 @@
 import { setupColorPicker } from './color-picker';
 import { fromHex, toHex } from './visual-color';
-import { defaultTriggerSettings, parseTriggerSettings, triggerRanges, type TriggerSettings } from './trigger-state';
+import { defaultTriggerSettings, parseTriggerSettings, triggerRanges, triggerGestures, type TriggerSettings } from './trigger-state';
 import { triggerPresets } from './trigger-presets';
 import { setupAsmrVisualConsent } from './asmr-visual-consent';
 import './trigger-controls.css';
@@ -34,7 +34,7 @@ export function setupTriggerControls(host: HTMLElement, redraw: () => void, chan
     <div class="trigger-grid trigger-essentials">${group('Intensity', ['brightness'], `<div class="trigger-intensity" role="group" aria-label="Light intensity">${intensities.map(([name, value]) => `<button type="button" class="secondary-button" data-trigger-intensity="${value}" aria-pressed="false">${name}</button>`).join('')}</div><p class="fine-print">Up to 400% exposure for intense white highlights.</p>`)}
     ${group('Light movement', ['lightSpeed', 'size'], select('path', 'Light path', [['orbit', 'Orbit'], ['horizontal', 'Side to side'], ['vertical', 'Up and down'], ['figure-eight', 'Figure eight'], ['manual', 'Place by hand']]))}</div>
     <details class="trigger-settings"><summary>More settings: color, glass and light</summary><div class="trigger-grid">
-    <fieldset><legend>Style and color</legend>${select('style', 'Trigger style', [['kaleidoscope', 'Optical kaleidoscope'], ['scan', 'Light scan'], ['torch', 'Soft torch']])}<div data-trigger-color="color"></div><div data-trigger-color="accent"></div><div data-trigger-color="lampColor"></div></fieldset>
+    <fieldset><legend>Style and color</legend>${select('style', 'Trigger style', [['kaleidoscope', 'Optical kaleidoscope'], ['scan', 'Light scan'], ['torch', 'Soft torch'], ['gesture', 'Close-up gestures']])}<div data-trigger-color="color"></div><div data-trigger-color="accent"></div><div data-trigger-color="lampColor"></div></fieldset>
     ${group('Mirrors and glass', ['symmetry', 'density', 'zoom', 'seed'], select('layout', 'Mirror layout', [['tiled', 'Mirrored tiles'], ['radial', 'Radial mirrors']]) + select('motif', 'Glass shapes', [['beads', 'Beads'], ['prism', 'Prisms'], ['petals', 'Petals'], ['stars', 'Stars']]), 'glass')}
     ${group('Glass movement', ['speed', 'drift'], '', 'glass')}
     ${group('Light placement and backlight', ['light', 'rotation', 'offsetX', 'offsetY'])}
@@ -50,6 +50,12 @@ export function setupTriggerControls(host: HTMLElement, redraw: () => void, chan
   const description = panel.querySelector('#trigger-description')!;
   const richControls = [...panel.children].filter(child => child.tagName !== 'H3' && child !== details);
   const advanced = document.createElement('div'); details.querySelector('summary')!.after(advanced);
+  const syncControls = document.createElement('div'); syncControls.className = 'asmr-gesture-controls';
+  const gestureNames = ['Match the sound', 'Follow the light', 'Brush pass', 'Tap contact', 'Tracing', 'Inspect an object', 'Ear attention', 'Water ripples'];
+  syncControls.innerHTML = '<label class="visual-toggle"><span>Sync with ASMR sounds</span><input id="trigger-sync-asmr" data-trigger="syncAsmr" type="checkbox" /></label>'
+    + `<div id="trigger-gesture-choice">${select('gesture', 'Visual gesture', triggerGestures.map((value, i) => [value, gestureNames[i]]))}</div>`
+    + '<p id="trigger-sync-help" class="fine-print">Follows each sound’s activity and audible side. Recorded clips use detected sound activity. Start listening to see the gestures.</p>';
+  panel.querySelector('h3')!.after(syncControls);
   const simple = document.createElement('div'); simple.className = 'asmr-visual-simple'; simple.hidden = true;
   const quickSelect = (field: string, label: string, values: [string, string][]) => `<label>${label}<select aria-label="ASMR ${label.toLowerCase()}" data-asmr-visual="${field}">${options(values)}<option value="custom" disabled>Custom</option></select></label>`;
   simple.innerHTML = quickSelect('intensity', 'Intensity', [['soft', 'Soft'], ['normal', 'Normal'], ['focused', 'Focused']])
@@ -86,7 +92,8 @@ export function setupTriggerControls(host: HTMLElement, redraw: () => void, chan
     panel.querySelector('[data-trigger-reset]')!.textContent = state.preset === 'custom' ? `Reset to ${triggerPresets.find(item => item.id === basePreset)?.name ?? 'Prism lantern'}` : 'Reset preset';
     panel.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-trigger]').forEach(input => {
       const key = input.dataset.trigger as keyof TriggerSettings;
-      input.value = String(state[key]);
+      if (input instanceof HTMLInputElement && input.type === 'checkbox') input.checked = !!state[key];
+      else input.value = String(state[key]);
       if (key in triggerRanges) input.setAttribute('aria-valuetext', format(key as Numeric));
     });
     panel.querySelectorAll<HTMLOutputElement>('[data-trigger-output]').forEach(output => { output.textContent = format(output.dataset.triggerOutput as Numeric); });
@@ -96,6 +103,8 @@ export function setupTriggerControls(host: HTMLElement, redraw: () => void, chan
     panel.querySelector<HTMLInputElement>('[data-trigger=light]')!.disabled = state.style !== 'kaleidoscope';
     panel.querySelector<HTMLInputElement>('[data-trigger=trail]')!.disabled = state.style !== 'scan';
     panel.querySelector<HTMLInputElement>('[data-trigger=depth]')!.disabled = state.style === 'scan';
+    panel.querySelector<HTMLElement>('#trigger-gesture-choice')!.hidden = state.style !== 'gesture';
+    panel.querySelector<HTMLElement>('#trigger-sync-help')!.hidden = !state.syncAsmr;
     for (const key of ['offsetX', 'offsetY']) panel.querySelector<HTMLInputElement>(`[data-trigger=${key}]`)!.disabled = state.path !== 'manual';
     pickers.forEach(({ key, picker }) => picker.update(fromHex(state[key], 0)));
     const quickValue = (field: string, value: string) => { simple.querySelector<HTMLSelectElement>(`[data-asmr-visual=${field}]`)!.value = value; };
@@ -119,7 +128,7 @@ export function setupTriggerControls(host: HTMLElement, redraw: () => void, chan
     event.stopPropagation();
     const input = event.target as HTMLInputElement, key = input.dataset.trigger;
     if (!key) return;
-    const value = key in triggerRanges ? Number(input.value) : input.value;
+    const value = input.type === 'checkbox' ? input.checked : key in triggerRanges ? Number(input.value) : input.value;
     try { state = parseTriggerSettings({ ...state, [key]: value }); customize(); } catch { sync(); }
   });
   panel.addEventListener('change', event => { event.stopPropagation(); if (event.target === preset) apply(preset.value); });
@@ -144,7 +153,7 @@ export function setupTriggerControls(host: HTMLElement, redraw: () => void, chan
   panel.querySelector('[data-trigger-reset]')!.addEventListener('click', () => { beforeEdit(); apply(state.preset === 'custom' ? basePreset : state.preset); });
   panel.querySelectorAll<HTMLButtonElement>('[data-trigger-preset]').forEach(button => button.addEventListener('click', () => { beforeEdit(); apply(button.dataset.triggerPreset!); }));
   panel.querySelectorAll<HTMLButtonElement>('[data-trigger-intensity]').forEach(button => button.addEventListener('click', () => { beforeEdit(); state.brightness = Number(button.dataset.triggerIntensity); customize(); }));
-  consent.addEventListener('change', () => { cancelPending(); if (!consent.checked) approval.revoke(); redraw(); });
+  consent.addEventListener('change', () => { beforeEdit(); cancelPending(); if (!consent.checked) approval.revoke(); redraw(); });
   dialog.querySelector('button')!.addEventListener('click', () => dialog.close());
   dialog.addEventListener('cancel', event => { event.preventDefault(); event.stopPropagation(); dialog.close(); });
   dialog.addEventListener('close', () => { if (returnParent) returnParent.append(panel); details.open = previousOpen; });
@@ -155,12 +164,14 @@ export function setupTriggerControls(host: HTMLElement, redraw: () => void, chan
     select(mode: string) { panel.hidden = consentBox.hidden = mode !== 'triggers'; },
     next, apply,
     cancelPending,
+    disable() { cancelPending(); consent.checked = false; },
     generic() { cancelPending(); if (asmrContext) context(false); },
-    async applyAsmr(id: string, accepted: () => void): Promise<boolean> {
+    approved: () => consent.checked,
+    async applyAsmr(id: string, accepted: () => void, approved = false): Promise<boolean> {
       cancelPending();
       const selected = triggerPresets.find(item => item.id === id); if (!selected) return false;
       const current = revision;
-      const decision = consent.checked || approval.remembered() ? { allowed: true, remember: false } : await approval.request();
+      const decision = approved || consent.checked || approval.remembered() ? { allowed: true, remember: false } : await approval.request();
       if (!decision.allowed || current !== revision) return false;
       if (decision.remember) approval.remember();
       state = structuredClone(selected.settings); basePreset = selected.id;

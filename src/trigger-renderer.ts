@@ -1,6 +1,8 @@
 import type { TriggerSettings } from './trigger-state';
+import type { AsmrCue } from './audio/asmr-cues';
+import { renderGestures } from './gesture-renderer';
 
-type Motion = { glass: number; light: number; energy: number; pan: number };
+type Motion = { glass: number; light: number; energy: number; pan: number; cues?: readonly AsmrCue[] };
 type Point = { x: number; y: number };
 const TAU = Math.PI * 2;
 const SOURCE = 512;
@@ -151,12 +153,20 @@ export class TriggerRenderer {
 
   render(ctx: CanvasRenderingContext2D, width: number, height: number, state: TriggerSettings, motion: Motion): void {
     if (width <= 0 || height <= 0) return;
+    if (state.syncAsmr && state.style !== 'gesture') {
+      const cue = motion.cues?.reduce<AsmrCue | undefined>((best, next) => !best || next.strength > best.strength ? next : best, undefined);
+      const fixed = state.path === 'manual' || (!state.speed && !state.drift && !state.lightSpeed);
+      state = { ...state, path: 'manual', offsetX: fixed ? state.offsetX : cue?.pan ?? 0, offsetY: fixed ? state.offsetY : cue ? Math.sin(cue.progress * TAU) * .2 : 0,
+        brightness: state.brightness * (cue ? .75 + cue.strength * .25 : .12) };
+      motion = { ...motion, energy: cue?.strength ?? 0, pan: cue?.pan ?? 0 };
+    }
     const scale = Math.min(1, 1440 / Math.max(width, height));
     const w = Math.max(1, Math.round(width * scale)), h = Math.max(1, Math.round(height * scale));
     if (this.frame.width !== w || this.frame.height !== h) { this.frame.width = w; this.frame.height = h; }
     const frame = this.frame.getContext('2d')!;
     frame.clearRect(0, 0, w, h); frame.fillStyle = '#050408'; frame.fillRect(0, 0, w, h);
-    if (state.style === 'kaleidoscope') this.kaleidoscope(frame, w, h, state, motion);
+    if (state.style === 'gesture') renderGestures(frame, w, h, state, motion.cues ?? [], motion.light);
+    else if (state.style === 'kaleidoscope') this.kaleidoscope(frame, w, h, state, motion);
     else if (state.style === 'scan') this.scan(frame, w, h, state, motion);
     else this.torch(frame, w, h, state, motion);
     ctx.save();

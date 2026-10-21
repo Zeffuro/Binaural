@@ -1,6 +1,6 @@
 import { asmrMotions, asmrRanges, generatedAsmrSounds, recordedAsmrSounds, defaultAsmr, makeAsmrLayer, MAX_ASMR_LAYERS, type AsmrLayer, type AsmrSettings, type AsmrSound } from './asmr-state';
 import { asmrPresets } from './asmr-presets';
-import { ASMR_FAVORITES_KEY, createAsmrLibrary, filterAsmrLibrary, parseAsmrFavorites, saveAsmrFavorites } from './asmr-library';
+import { openPresetExplorer } from './explorer';
 import { asmrSpatialRanges, defaultSpatial } from './asmr-spatial';
 import { defaultAsmrVariation, type AsmrVariation } from './asmr-variation';
 import './asmr-controls.css';
@@ -17,8 +17,6 @@ export function setupAsmr(options: {
   enable?: () => void;
 }) {
   const host = document.querySelector<HTMLElement>('#asmr-controls')!;
-  const presetGroup = (preset: typeof asmrPresets[number]) => preset.group ?? 'Layered mixes';
-  const presetGroups = [...new Set(['Ear focus', ...asmrPresets.map(presetGroup)])];
   const quickSounds: [AsmrSound, string][] = [['brush', 'Brush'], ['fingertip-taps', 'Tapping'], ['fabric', 'Fabric'], ['recorded-crinkles', 'Crinkle'], ['air', 'Air'], ['water', 'Water']];
   const starters = [['hands-close', 'Hands up close'], ['slow-ear-sweep', 'Hands moving slowly'], ['woven-hush', 'Soft fabric'], ['soft-crinkle-room', 'Delicate crinkles'], ['fingertip-duet', 'Fingertip tapping'], ['ear-cupping', 'Warm ear cups']];
   host.innerHTML = `<div class="section-heading"><div><span class="eyebrow">UP CLOSE</span><h2>ASMR mixer <span id="asmr-count" class="count">0 / 6</span></h2></div><button id="asmr-add" class="text-button">＋ Add sound</button></div>
@@ -36,13 +34,7 @@ export function setupAsmr(options: {
     <div class="asmr-quick" role="group" aria-label="Quick ASMR sounds">${quickSounds.map(([sound, label]) => `<button class="secondary-button" data-asmr-sound="${sound}">${label}</button>`).join('')}</div>
     <p class="asmr-starter-label">Or start with an experience</p>
     <div class="asmr-featured" role="group" aria-label="Starter experiences">${starters.map(([id, label]) => `<button class="secondary-button" data-asmr-preset="${id}">${label}</button>`).join('')}</div>
-    <details id="asmr-more-experiences" class="asmr-library"><summary>More experiences</summary>
-    <div class="asmr-recipes"><label for="asmr-preset">Choose an experience</label><select id="asmr-preset">${presetGroups.map(group => `<optgroup label="${group}">${asmrPresets.filter(preset => presetGroup(preset) === group).map(preset => `<option value="${preset.id}">${preset.name}</option>`).join('')}</optgroup>`).join('')}</select><p id="asmr-description" class="fine-print"></p>
-      <div class="asmr-actions"><button id="asmr-load" class="secondary-button">Load sounds</button><button id="asmr-pair" class="secondary-button">Load sounds + lights</button></div></div>
-      <label for="asmr-search">Find a mix</label><input id="asmr-search" type="search" placeholder="Try left ear, cloth or tapping" />
-      <label for="asmr-filter">Show mixes</label><select id="asmr-filter"><option value="all">All mixes</option><option value="favorites">Favorites</option>${presetGroups.map(group => `<option>${group}</option>`).join('')}</select>
-      <p class="fine-print">Search names, descriptions and sounds. Favorites stay in this browser. Loading a mix does not start playback.</p>
-      <p id="asmr-results" class="fine-print" role="status"></p><div id="asmr-library-list"></div></details>
+    <button id="asmr-browse" class="secondary-button">Browse all ASMR experiences ↗</button>
     <details id="asmr-mixer" class="asmr-mixer"><summary>Current sounds <span id="asmr-enabled-status"></span></summary>
     <label class="range-heading" for="asmr-level">ASMR volume <output id="asmr-volume" aria-hidden="true"></output></label><input id="asmr-level" aria-label="ASMR volume" type="range" min="0" max="1" step=".01" />
     <div id="asmr-layers"></div><p id="asmr-empty" class="fine-print">Choose a mix or add a sound. Nothing plays until you start listening.</p>
@@ -55,45 +47,14 @@ export function setupAsmr(options: {
   const settings = () => options.get() ?? defaultAsmr();
   const enabled = () => options.enabled?.() ?? true;
   let wasEnabled: boolean | undefined;
-  const library = createAsmrLibrary(asmrPresets, [...generatedAsmrSounds, ...recordedAsmrSounds]);
-  let favorites = new Set<string>();
-  try { favorites = parseAsmrFavorites(localStorage.getItem(ASMR_FAVORITES_KEY), library); } catch { /* Storage may be unavailable. */ }
-  function renderLibrary(): void {
-    const focused = host.contains(document.activeElement) ? document.activeElement as HTMLElement : null;
-    const focusedId = focused?.closest<HTMLElement>('[data-asmrlibrary]')?.dataset.asmrlibrary;
-    const focusedAction = focused?.dataset.libraryAction;
-    const matches = filterAsmrLibrary(library, $<HTMLInputElement>('#asmr-search').value, $<HTMLSelectElement>('#asmr-filter').value, favorites);
-    $('#asmr-results').textContent = matches.length ? `${matches.length} of ${library.length} mixes` : 'No mixes found. Try another search or choose All mixes.';
-    $('#asmr-library-list').replaceChildren(...matches.map(entry => {
-      const card = document.createElement('article'); card.className = 'asmr-library-card'; card.dataset.asmrlibrary = entry.id;
-      card.innerHTML = '<h3></h3><p class="fine-print"></p><p class="small-muted"></p><div class="asmr-actions"><button class="secondary-button" data-library-action="load">Load sounds</button><button class="secondary-button" data-library-action="pair">Load sounds + lights</button><button class="text-button" data-library-action="favorite">☆ Favorite</button></div>';
-      card.querySelector('h3')!.textContent = entry.name;
-      card.querySelector('.fine-print')!.textContent = entry.description;
-      card.querySelector('.small-muted')!.textContent = `${entry.group}: ${entry.sounds.join(' + ')}`;
-      card.querySelectorAll<HTMLButtonElement>('button').forEach(button => {
-        button.disabled = options.busy();
-        button.setAttribute('aria-label', `${button.textContent!.replace('☆ ', '')}: ${entry.name}`);
-      });
-      const favorite = card.querySelector<HTMLButtonElement>('[data-library-action="favorite"]')!;
-      favorite.setAttribute('aria-pressed', String(favorites.has(entry.id)));
-      favorite.textContent = favorites.has(entry.id) ? '★ Favorite' : '☆ Favorite';
-      return card;
-    }));
-    if (focusedId && focusedAction) {
-      const replacement = host.querySelector<HTMLButtonElement>(`[data-asmrlibrary="${focusedId}"] [data-library-action="${focusedAction}"]`);
-      (replacement ?? $('#asmr-filter')).focus({ preventScroll: true });
-    }
-  }
-  function loadPreset(id: string, pair = false): void {
+  function loadPreset(id: string): void {
     const preset = asmrPresets.find(preset => preset.id === id);
     if (!preset) return;
     options.beforeEdit();
     options.enable?.();
-    $<HTMLSelectElement>('#asmr-preset').value = id;
-    $('#asmr-description').textContent = preset.description;
     const next = preset.make(), current = settings();
     options.update({ ...next, focus: current.focus ?? false,
-      ...(next.variation || current.variation ? { variation: next.variation ?? current.variation } : {}) }, pair ? preset.light : undefined); render();
+      ...(next.variation || current.variation ? { variation: next.variation ?? current.variation } : {}) }); render();
     $('#asmr-status').textContent = `${preset.name} loaded. Start listening when ready.`;
   }
   const ranges = (layer: AsmrLayer, index: number, fields: (keyof typeof asmrRanges)[]) => fields.map(field => {
@@ -204,7 +165,7 @@ export function setupAsmr(options: {
     if (options.busy()) return;
     const next = structuredClone(settings()); change(next); options.update(next, light);
   }
-  host.addEventListener('focusin', event => { const target = event.target as HTMLElement; if (target.matches('input,select') && !target.closest('.asmr-library')) options.beforeEdit(); });
+  host.addEventListener('focusin', event => { if ((event.target as HTMLElement).matches('input,select')) options.beforeEdit(); });
   $('#asmr-variation-seed').addEventListener('blur', event => {
     const input = event.target as HTMLInputElement;
     if (!input.checkValidity()) input.value = String((settings().variation ?? defaultAsmrVariation()).seed);
@@ -212,7 +173,6 @@ export function setupAsmr(options: {
   host.addEventListener('input', event => {
     const input = event.target as HTMLInputElement;
     if (!input.checkValidity() || options.busy()) return;
-    if (input.id === 'asmr-search' || input.id === 'asmr-filter') { renderLibrary(); return; }
     if (input.id === 'asmr-imported-mute') { options.muteImported(input.checked); return; }
     if (input.id === 'asmr-focus') { edit(value => { value.focus = input.checked; }); return; }
     if (['asmr-flow', 'asmr-variation-amount', 'asmr-phrase-seconds', 'asmr-turn-seconds', 'asmr-variation-seed'].includes(input.id)) {
@@ -269,22 +229,9 @@ export function setupAsmr(options: {
   host.addEventListener('click', event => {
     const button = (event.target as HTMLElement).closest<HTMLButtonElement>('button');
     if (!button || options.busy()) return;
-    if (button.dataset.libraryAction) {
-      const id = button.closest<HTMLElement>('[data-asmrlibrary]')!.dataset.asmrlibrary!;
-      if (button.dataset.libraryAction !== 'favorite') { loadPreset(id, button.dataset.libraryAction === 'pair'); return; }
-      if (favorites.has(id)) favorites.delete(id); else favorites.add(id);
-      let saved = false;
-      try { saved = saveAsmrFavorites(localStorage, favorites); } catch { /* Keep favorites for this tab. */ }
-      $('#asmr-status').textContent = saved ? 'Favorites saved in this browser.' : 'Favorites kept for this tab. Browser storage is unavailable.';
-      renderLibrary();
-      const replacement = host.querySelector<HTMLButtonElement>(`[data-asmrlibrary="${id}"] [data-library-action="favorite"]`);
-      (replacement ?? $('#asmr-filter')).focus(); return;
-    }
+    if (button.id === 'asmr-browse') { openPresetExplorer('ASMR'); return; }
     if (button.dataset.asmrPreset) {
       loadPreset(button.dataset.asmrPreset); return;
-    }
-    if (button.id === 'asmr-load' || button.id === 'asmr-pair') {
-      loadPreset($<HTMLSelectElement>('#asmr-preset').value, button.id === 'asmr-pair'); return;
     }
     if (button.dataset.asmrSound) {
       const sound = button.dataset.asmrSound as AsmrSound;
@@ -330,13 +277,5 @@ export function setupAsmr(options: {
       } else render();
     }
   });
-  window.addEventListener('storage', event => {
-    if (event.key !== ASMR_FAVORITES_KEY && event.key !== null) return;
-    try { if (event.storageArea !== localStorage) return; } catch { return; }
-    favorites = parseAsmrFavorites(event.newValue, library); renderLibrary();
-  });
-  $<HTMLSelectElement>('#asmr-preset').addEventListener('change', () => { $('#asmr-description').textContent = asmrPresets.find(preset => preset.id === $<HTMLSelectElement>('#asmr-preset').value)!.description; });
-  $('#asmr-description').textContent = asmrPresets[0].description;
-  $<HTMLSelectElement>('#asmr-preset').value = asmrPresets[0].id;
-  renderLibrary(); render(); return { refresh: render, transport };
+  render(); return { refresh: render, transport };
 }

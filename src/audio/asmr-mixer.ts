@@ -7,6 +7,7 @@ import { AsmrPosition } from './asmr-position';
 import { phaseCycles, setSinePhase } from './render-timing';
 import { createAsmrPhraseSource, phraseConfig, type AsmrSource } from './asmr-phrase-source';
 import type { AsmrPhraseConfig } from './asmr-phrases';
+import { AsmrCueDetector, earRms, type AsmrCue } from './asmr-cues';
 
 class AsmrVoice {
   private source: AsmrSource;
@@ -24,12 +25,16 @@ class AsmrVoice {
   private phase = -1;
   private disposed = false;
   private position?: AsmrPosition;
+  private cue: AsmrCueDetector;
+  private cueAudible = false;
+  private cueTap?: { output: AudioNode; splitter: ChannelSplitterNode; ears: AnalyserNode[]; samples: Float32Array<ArrayBuffer>[] };
   readonly sound: AsmrLayer['sound'];
   readonly spatial: boolean;
   readonly phrases: boolean;
   constructor(private context: BaseAudioContext, layer: AsmrLayer, output: AudioNode, endAt?: number, audible = true,
     private offsetSeconds = 0, config?: AsmrPhraseConfig, onFailure?: () => void, originSeconds = context.currentTime - offsetSeconds) {
     this.sound = layer.sound;
+    this.cue = new AsmrCueDetector(layer.id, layer.sound);
     this.spatial = !!layer.spatial;
     this.phrases = !!config;
     if (config) {
@@ -81,6 +86,8 @@ class AsmrVoice {
     if (endAt !== undefined && endAt > context.currentTime) for (const source of [this.source, this.motion, this.drift, this.pressure]) source.stop(endAt);
   }
   update(layer: AsmrLayer, audible: boolean, config?: AsmrPhraseConfig): void {
+    this.cueAudible = audible && layer.level > 0;
+    if (!this.cueAudible) this.cue.reset();
     if (config) this.source.configure?.(config);
     const time = this.context.currentTime;
     const pressure = cuppingParameters(audible ? layer.level : 0, layer.tone, layer.pressure ?? 0);
@@ -103,9 +110,29 @@ class AsmrVoice {
     smooth(this.drift.frequency, 1 / (layer.period * 2.71), time);
     if (layer.spatial) this.position?.update(layer.spatial, layer.period);
   }
+  readCue(gain: number, time: number): AsmrCue | undefined {
+    if (this.disposed || !this.cueAudible || gain <= 0) { this.cue.reset(); return; }
+    if (!this.cueTap) {
+      const output = this.position?.outputNode ?? this.panner, splitter = this.context.createChannelSplitter(2);
+      const ears = [this.context.createAnalyser(), this.context.createAnalyser()];
+      ears.forEach((ear, channel) => { ear.fftSize = 1024; splitter.connect(ear, channel); });
+      output.connect(splitter);
+      this.cueTap = { output, splitter, ears, samples: [new Float32Array(1024), new Float32Array(1024)] };
+    }
+    const { ears, samples } = this.cueTap;
+    ears.forEach((ear, index) => ear.getFloatTimeDomainData(samples[index]));
+    return this.cue.read(time, earRms(samples[0]) * gain, earRms(samples[1]) * gain);
+  }
+  clearCue(): void { this.cue.reset(); }
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.cue.reset();
+    if (this.cueTap) {
+      this.cueTap.output.disconnect(this.cueTap.splitter);
+      this.cueTap.splitter.disconnect(); this.cueTap.ears.forEach(ear => ear.disconnect());
+      this.cueTap = undefined;
+    }
     const stopAt = this.context.currentTime + .15;
     smooth(this.level.gain, 0, this.context.currentTime);
     smooth(this.pressureLevel.gain, 0, this.context.currentTime);
@@ -121,6 +148,7 @@ export class AsmrMixer {
   private bus: GainNode;
   private voices = new Map<string, AsmrVoice>();
   private origin: number;
+  private cueLevel = 0;
   constructor(private context: BaseAudioContext, output: AudioNode, private endAt?: number, private offsetSeconds = 0,
     private onFailure?: () => void) {
     this.origin = context.currentTime;
@@ -128,6 +156,8 @@ export class AsmrMixer {
   }
   update(settings: AsmrSettings = defaultAsmr(), enabled = true): void {
     const expired = this.endAt !== undefined && this.context.currentTime >= this.endAt;
+    this.cueLevel = expired || !enabled ? 0 : settings.level;
+    if (this.cueLevel <= 0) this.clearCues();
     smooth(this.bus.gain, expired || !enabled ? 0 : settings.level, this.context.currentTime);
     const solo = settings.layers.some(layer => layer.solo && !layer.muted);
     const phrases = !!settings.variation && settings.variation.mode !== 'steady';
@@ -147,6 +177,18 @@ export class AsmrMixer {
       voice.update(layer, audible, config);
     }
   }
+  readCues(gain = 1, time = this.context.currentTime): AsmrCue[] {
+    if (this.cueLevel <= 0 || gain <= 0 || (this.endAt !== undefined && this.context.currentTime >= this.endAt)) {
+      this.clearCues(); return [];
+    }
+    const cues: AsmrCue[] = [];
+    for (const voice of [...this.voices.values()].slice(0, 6)) {
+      const cue = voice.readCue(gain * this.cueLevel, time);
+      if (cue) cues.push(cue);
+    }
+    return cues;
+  }
+  clearCues(): void { for (const voice of this.voices.values()) voice.clearCue(); }
   dispose(): void {
     for (const voice of this.voices.values()) voice.dispose();
     this.voices.clear(); this.bus.disconnect();

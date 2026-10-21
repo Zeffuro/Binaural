@@ -59,6 +59,7 @@ test('all six long routines load their complete duration and repeatable flow fro
   for (const [id, minutes, mode] of recipes) {
     await page.locator('#explore-presets').click(); await page.locator('#preset-category').selectOption('ASMR');
     await page.locator(`[data-load-preset="asmr-${id}"]`).click();
+    if (id === 'pages-evening') await page.getByRole('dialog', { name: 'Moving visual trigger', exact: true }).getByRole('button', { name: 'Start visual', exact: true }).click();
     await expect(page.locator('#minutes')).toHaveValue(minutes);
     await expect(page.locator('#asmr-flow')).toHaveValue(mode);
     await expect(page.locator('#status')).toHaveText('Ready when you are');

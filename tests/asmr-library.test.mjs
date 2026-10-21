@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createAsmrLibrary, filterAsmrLibrary, parseAsmrFavorites, saveAsmrFavorites, ASMR_FAVORITES_KEY } from '../src/asmr-library.ts';
+import { EXPLORER_FAVORITES_KEY, readExplorerFavorites, saveExplorerFavorites } from '../src/explorer-favorites.ts';
 
 const sources = [
   { id: 'cloth', name: 'Cloth rustles', description: 'Recorded blankets and soft fabric' },
@@ -45,4 +46,26 @@ test('favorites persist under their own key and storage failures preserve tab st
   assert.deepEqual(parseAsmrFavorites(values.get(ASMR_FAVORITES_KEY), library), favorites);
   assert.equal(saveAsmrFavorites({ setItem: () => { throw new Error('quota'); } }, favorites), false);
   assert.deepEqual([...favorites], ['left', 'cloth']);
+});
+
+test('global favorites migrate legacy IDs without dropping future or unknown entries', () => {
+  const values = new Map([[ASMR_FAVORITES_KEY, '["left","future",7,"left"]']]);
+  const storage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) };
+  const favorites = readExplorerFavorites(storage);
+  assert.deepEqual([...favorites], ['asmr-left', 'asmr-future']);
+  assert.equal(saveExplorerFavorites(storage, favorites), true);
+  assert.equal(values.get(ASMR_FAVORITES_KEY), '["left","future",7,"left"]');
+  favorites.delete('asmr-left'); saveExplorerFavorites(storage, favorites);
+  assert.deepEqual([...readExplorerFavorites(storage)], ['asmr-future']);
+  favorites.clear(); saveExplorerFavorites(storage, favorites);
+  assert.deepEqual([...readExplorerFavorites(storage)], []);
+  assert.equal(values.get(EXPLORER_FAVORITES_KEY), '[]');
+});
+
+test('malformed global data recovers legacy favorites and denied writes preserve memory', () => {
+  const values = new Map([[EXPLORER_FAVORITES_KEY, '{'], [ASMR_FAVORITES_KEY, '["cloth"]']]);
+  const favorites = readExplorerFavorites({ getItem: key => values.get(key) ?? null });
+  assert.deepEqual([...favorites], ['asmr-cloth']);
+  assert.equal(saveExplorerFavorites({ setItem() { throw new Error('quota'); } }, favorites), false);
+  assert.deepEqual([...favorites], ['asmr-cloth']);
 });

@@ -1,6 +1,7 @@
 import { makeAsmrLayer, type AsmrLayer, type AsmrSettings, type AsmrSound } from './asmr-state';
 import { asmrExperiences } from './asmr-experiences';
 import { asmrRoutines } from './asmr-routines';
+import { asmrGesturePresets } from './asmr-gesture-presets';
 
 const layer = (sound: AsmrSound, values: Partial<AsmrLayer> = {}): AsmrLayer => ({ ...makeAsmrLayer(sound), ...values });
 export interface AsmrPreset {
@@ -66,4 +67,5 @@ export const asmrPresets: AsmrPreset[] = [
     make: (): AsmrSettings => ({ level: .45, layers: [layer('fabric', { level: .4, period: 30, tone: .45, rate: .85, spatial: { azimuth: -90, elevation: 10, distance: .8, motion: 'orbit' } }), layer('comb', { level: .2, pan: .5, motion: 'still', tone: .4, rate: .7 }), layer('recorded-hands', { level: .25, pan: -.5, motion: 'still', tone: .45, pressure: .3 })] }) },
   ...asmrExperiences,
   ...asmrRoutines,
+  ...asmrGesturePresets,
 ];

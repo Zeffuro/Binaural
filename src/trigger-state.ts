@@ -1,7 +1,8 @@
-export const triggerStyles = ['kaleidoscope', 'scan', 'torch'] as const;
+export const triggerStyles = ['kaleidoscope', 'scan', 'torch', 'gesture'] as const;
+export const triggerGestures = ['auto', 'follow', 'brush', 'tap', 'trace', 'inspect', 'ear', 'drop'] as const;
 export const triggerMotifs = ['beads', 'prism', 'petals', 'stars'] as const;
 export const triggerPaths = ['orbit', 'horizontal', 'vertical', 'figure-eight', 'manual'] as const;
-export const triggerPresetIds = ['prism-lantern', 'rose-glass', 'blue-hour', 'amber-facets', 'mint-prism', 'violet-jewels', 'rose-window', 'crystal-stars', 'red-scan', 'red-orbit', 'blue-scan', 'amber-scan', 'soft-torch', 'wandering-light', 'quiet-focus', 'bright-prism', 'very-bright-prism', 'bright-torch', 'very-bright-torch', 'custom'] as const;
+export const triggerPresetIds = ['prism-lantern', 'rose-glass', 'blue-hour', 'amber-facets', 'mint-prism', 'violet-jewels', 'rose-window', 'crystal-stars', 'red-scan', 'red-orbit', 'blue-scan', 'amber-scan', 'soft-torch', 'wandering-light', 'quiet-focus', 'bright-prism', 'very-bright-prism', 'bright-torch', 'very-bright-torch', 'gesture-follow', 'gesture-brush', 'gesture-tap', 'gesture-trace', 'gesture-inspect', 'gesture-ear', 'gesture-drop', 'custom'] as const;
 export interface TriggerSettings {
   preset: string;
   style: typeof triggerStyles[number]; motif: typeof triggerMotifs[number]; layout: 'tiled' | 'radial';
@@ -9,6 +10,7 @@ export interface TriggerSettings {
   symmetry: number; density: number; zoom: number; speed: number; rotation: number; drift: number;
   depth: number; softness: number; glow: number; brightness: number; light: number; lightSpeed: number;
   size: number; trail: number; reaction: number; offsetX: number; offsetY: number; seed: number;
+  syncAsmr?: boolean; gesture?: typeof triggerGestures[number];
 }
 
 export const triggerRanges = {
@@ -19,7 +21,7 @@ export const triggerRanges = {
 
 export const defaultTriggerSettings = (): TriggerSettings => ({ preset: 'prism-lantern', style: 'kaleidoscope', motif: 'beads', layout: 'tiled', path: 'orbit',
   color: '#ee73af', accent: '#45bfc7', lampColor: '#c4edff', symmetry: 6, density: 14, zoom: 1.1, speed: .03, rotation: 0, drift: .12, depth: .45,
-  softness: .2, glow: .35, brightness: .55, light: .8, lightSpeed: .32, size: .32, trail: .2, reaction: 0, offsetX: 0, offsetY: 0, seed: 47 });
+  softness: .2, glow: .35, brightness: .55, light: .8, lightSpeed: .32, size: .32, trail: .2, reaction: 0, offsetX: 0, offsetY: 0, seed: 47, syncAsmr: false, gesture: 'auto' });
 
 export function parseTriggerSettings(value: unknown): TriggerSettings {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid light trigger settings.');
@@ -31,6 +33,9 @@ export function parseTriggerSettings(value: unknown): TriggerSettings {
   parsed.style = choice('style', triggerStyles); parsed.motif = choice('motif', triggerMotifs);
   parsed.layout = choice('layout', ['tiled', 'radial']); parsed.path = choice('path', triggerPaths);
   parsed.preset = choice('preset', triggerPresetIds);
+  if (state.syncAsmr !== undefined && typeof state.syncAsmr !== 'boolean') throw new Error('Invalid ASMR light sync switch.');
+  parsed.syncAsmr = state.syncAsmr as boolean | undefined ?? false;
+  parsed.gesture = state.gesture === undefined ? 'auto' : choice('gesture', triggerGestures);
   for (const key of ['color', 'accent', 'lampColor'] as const) {
     if (typeof state[key] !== 'string' || !/^#[\da-f]{6}$/i.test(state[key])) throw new Error('Use a six-digit light color.');
     parsed[key] = state[key].toLowerCase();

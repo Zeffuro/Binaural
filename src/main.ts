@@ -11,6 +11,7 @@ import { initialSession, makeLayer, MAX_LAYERS, parseSession, type Layer, type S
 import { downloadPreset, loadPresets, storePresets } from './storage';
 import { builtinView, frequencyView, layerView, layout, savedView } from './views';
 import { setupExplorer, frequencyDetail } from './explorer';
+import { asmrPresetLight } from './asmr-explorer';
 import { setupVisuals } from './visuals';
 import { readBwg } from './import-review';
 import { setupBackgrounds } from './background-controls';
@@ -40,18 +41,19 @@ let saved: Session[] = [];
 let busy = false;
 let stopping: Promise<void> | undefined;
 let transportRevision = 0;
+let experienceRevision = 0;
 let musicBusy = false;
 let backgroundBusy = false;
 let videoExport: ReturnType<typeof setupVideoExport> | undefined;
 let noticeTimer: ReturnType<typeof setTimeout>;
 const engine = new AudioEngine();
 const history = new EditHistory<{ session: Session; saved: Session[] }>();
-const visual = setupVisuals(() => engine.visualFrame(), () => { session.visual = visual.getState(); session.version = 2; }, checkpoint);
+const visual = setupVisuals(() => engine.visualFrame(), () => { session.visual = visual.getState(); session.version = 2; }, () => { experienceRevision++; checkpoint(); });
 const controls = setupStudioControls({
   playPause: () => { void playPause().catch(report); }, stop: () => { void stop().catch(report); }, mute: toggleMute,
-  visual: () => { checkpoint(); visual.toggle(); }, fullscreen: () => { checkpoint(); visual.fullscreen(); }, next: direction => { checkpoint(); visual.next(direction); },
+  visual: () => { experienceRevision++; checkpoint(); visual.toggle(); }, fullscreen: () => { checkpoint(); visual.fullscreen(); }, next: direction => { experienceRevision++; checkpoint(); visual.next(direction); },
   undo: () => { void undoEdit(false); }, redo: () => { void undoEdit(true); },
-  emergency: () => { visual.stop(); document.querySelectorAll<HTMLDialogElement>('dialog[open]').forEach(dialog => dialog.close()); void stop().catch(report); },
+  emergency: () => { experienceRevision++; visual.stop(); document.querySelectorAll<HTMLDialogElement>('dialog[open]').forEach(dialog => dialog.close()); void stop().catch(report); },
 });
 const immersiveAudio = setupImmersiveAudio({ playPause: () => { void playPause().catch(report); }, stop: () => { void stop().catch(report); }, mute: toggleMute, volume: setMaster });
 const offline = setupOffline({ isPlaying: () => busy || engine.playing || !!videoExport?.active() });
@@ -66,7 +68,14 @@ videoExport = setupVideoExport({ visual, session: () => snapshot().session, rema
   notify: message => notice(message) });
 const backgrounds = setupBackgrounds({ session: () => session, notify: message => notice(message),
   busy: value => { backgroundBusy = value; renderTransport(); }, source: value => { session.bwgBackgroundSource = value; } });
-setupExplorer(async (preset, play) => { await useSession(preset.session); if (play) await playPause(); });
+setupExplorer(async (preset, play) => {
+  const revision = ++experienceRevision, current = () => revision === experienceRevision;
+  const light = asmrPresetLight(preset.id), approved = visual.asmrApproved();
+  await useSession(preset.session, current);
+  if (!current()) return;
+  if (light) await visual.applyAsmrTrigger(light, approved);
+  if (play && current()) await playPause();
+});
 setupSessionGuide({ load: useSession, start: playPause });
 const asmr = setupAsmr({ get: () => session.asmr, beforeEdit: checkpoint, busy: () => busy || musicBusy || backgroundBusy,
   enabled: () => !!modeGains(listeningMode(session)).asmr,
@@ -220,10 +229,11 @@ function stop(): Promise<void> {
   stopping = engine.stop().finally(() => { stopping = undefined; busy = false; renderTransport(); });
   return stopping;
 }
-async function useSession(next: Session): Promise<void> {
+async function useSession(next: Session, current: () => boolean = () => true): Promise<void> {
   if (busy) throw new Error('Playback is still changing. Wait a moment, then load this preset again.');
   const parsed = parseSession(next); checkpoint();
   await stop();
+  if (!current()) return;
   session = parsed;
   visual.restore(session.visual);
   renderSession();

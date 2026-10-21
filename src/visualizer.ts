@@ -9,7 +9,7 @@ import { captureSurface, type VisualCapture } from './visual-capture';
 
 export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | undefined, changed: () => void, dock?: VisualDock, beforeEdit: () => void = () => {}, reduced = matchMedia('(prefers-reduced-motion: reduce)')) {
   host.innerHTML = `<div class="scene-heading"><h3>Visualizations</h3><span class="small-muted">For music or a quiet moment</span></div>
-    <label for="scene-mode">Scene</label><select id="scene-mode"><option value="off">Off</option><optgroup label="Music patterns"><option value="spectrum">Spectrum</option><option value="scope">Oscilloscope</option><option value="orbits">Orbital trails</option></optgroup><optgroup label="Moodscapes"><option value="aurora">Aurora</option><option value="water">Quiet water</option><option value="local">Your photo or video</option></optgroup><optgroup label="Light triggers"><option value="triggers">Kaleidoscope and light triggers</option></optgroup>${libraryOptions}</select>
+    <label for="scene-mode">Scene</label><select id="scene-mode"><option value="off">Off</option><optgroup label="Music patterns"><option value="spectrum">Spectrum</option><option value="scope">Oscilloscope</option><option value="orbits">Orbital trails</option></optgroup><optgroup label="Moodscapes"><option value="aurora">Aurora</option><option value="water">Quiet water</option><option value="local">Your photo or video</option></optgroup><optgroup label="Light triggers"><option value="triggers">Light triggers and gestures</option></optgroup>${libraryOptions}</select>
     <div id="scene-preview"><div class="scene-viewport" hidden><div class="scene-media"></div><canvas class="scene-drawing" aria-label="Music visualization"></canvas></div></div>${libraryControls}
     <label class="visual-toggle" for="scene-independent"><span>Animate without audio</span><input id="scene-independent" type="checkbox" /></label>
     <div class="scene-actions"><button id="scene-fullscreen" class="secondary-button" disabled>Open visualization ↗</button><button id="scene-export" class="text-button">Save PNG still</button><button id="scene-file-button" class="text-button">Choose photo or video</button><input id="scene-file" type="file" accept="image/*,video/*" hidden /><button id="scene-clear" class="text-button" hidden>Remove file</button><button id="scene-mute-tones" class="text-button">Mute tone layers</button></div>
@@ -105,7 +105,7 @@ export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | un
       canvas.width = Math.round(width * ratio); canvas.height = Math.round(height * ratio);
     }
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-    if (running && drawing) lastFrame = audio();
+    if (running && drawing) { const current = audio(); lastFrame = current ? { ...current } : undefined; }
     const frame = lastFrame;
     library.render(mode.value, frame, delta, elapsed, captureSize(), drawing);
     const waveform = frame?.waveform;
@@ -122,8 +122,11 @@ export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | un
       const rms = (samples?: Uint8Array) => samples ? Math.sqrt(samples.reduce((sum, value) => sum + ((value - 128) / 128) ** 2, 0) / samples.length) : 0;
       const left = rms(frame?.left), right = rms(frame?.right);
       if (drawing) pan += ((right - left) / Math.max(.05, left + right) - pan) * .06;
-      triggerRenderer.render(ctx, width, height, settings, { glass: glassPhase, light: lightPhase, energy, pan });
+      triggerRenderer.render(ctx, width, height, settings, { glass: glassPhase, light: lightPhase, energy, pan, cues: frame?.asmr });
       canvas.dataset.glass = glassPhase.toFixed(4); canvas.dataset.light = lightPhase.toFixed(4);
+      canvas.dataset.cues = String(frame?.asmr?.length ?? 0);
+      canvas.dataset.cuePan = (frame?.asmr?.[0]?.pan ?? 0).toFixed(3);
+      canvas.dataset.cueTime = (frame?.asmr?.[0]?.time ?? 0).toFixed(3);
     } else if (mode.value === 'spectrum') {
       const gap = width / bands.length;
       for (let i = 0; i < bands.length; i++) {
@@ -314,7 +317,10 @@ export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | un
     } catch (error) { status.textContent = error instanceof Error ? error.message : 'This scene cannot be captured. Try a music pattern or photo.'; }
   });
   refresh();
-  return { transport(value: boolean) { if (value !== running) { running = value; refresh(); } },
+  return { transport(value: boolean) {
+      const clearFrame = !value && !!lastFrame && !audio();
+      if (value !== running || clearFrame) { running = value; if (clearFrame) lastFrame = undefined; refresh(); }
+    },
     createCapture(width: number, height: number, fps = 30): VisualCapture {
       captureSource();
       const surface = captureSurface(width, height, fps);
@@ -350,10 +356,11 @@ export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | un
     },
     choose(scene: string) { triggers.generic(); mode.value = scene; refresh(); },
     applyTrigger(id: string) { triggers.generic(); mode.value = 'triggers'; triggers.apply(id); refresh(); },
-    applyAsmrTrigger(id: string, accepted: () => void) { return triggers.applyAsmr(id, () => { mode.value = 'triggers'; accepted(); refresh(); }); },
+    asmrApproved: triggers.approved,
+    applyAsmrTrigger(id: string, accepted: () => void, approved = false) { return triggers.applyAsmr(id, () => { mode.value = 'triggers'; accepted(); refresh(); }, approved); },
     cancelPending: triggers.cancelPending,
     fullscreen() { void fullscreen(); },
     next,
     toggleIndependent() { triggers.cancelPending(); independent.checked = !independent.checked; refresh(); changed(); },
-    stop() { triggers.cancelPending(); running = false; independent.checked = false; refresh(); if (stage.open) void close(); } };
+    stop() { triggers.disable(); running = false; independent.checked = false; lastFrame = undefined; refresh(); if (stage.open) void close(); } };
 }

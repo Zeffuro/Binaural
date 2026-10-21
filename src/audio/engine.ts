@@ -45,6 +45,8 @@ export class AudioEngine {
   private asmr?: AsmrMixer;
   private asmrRevision = 0;
   private asmrPending = false;
+  private visualGain = 0;
+  private visualFadeIn = .5;
   private captures = new Set<AudioCaptureLease>();
   get loadingAsmr(): boolean { return this.asmrPending; }
   failure?: string;
@@ -55,7 +57,19 @@ export class AudioEngine {
   get state(): string { return this.context?.state ?? 'stopped'; }
   get paused(): boolean { return this.isPaused; }
   get selectedMusicFile(): File | undefined { return this.musicFile; }
-  visualFrame(): VisualFrame | undefined { return this.analysis?.read(); }
+  visualFrame(): VisualFrame | undefined {
+    const frame = this.analysis?.read(), context = this.context;
+    if (!frame || !context) return frame;
+    const audible = !this.stopping && !this.isPaused && context.state === 'running' && !this.asmrPending &&
+      this.visualGain > 0 && (this.endAt === undefined || context.currentTime < this.endAt);
+    if (!audible) { this.asmr?.clearCues(); frame.asmr = []; }
+    else {
+      const fadeIn = Math.min(1, (context.currentTime - this.origin) / this.visualFadeIn);
+      const fadeOut = this.endAt === undefined ? 1 : Math.min(1, (this.endAt - context.currentTime) / Math.min(2, (this.endAt - this.origin) / 2));
+      frame.asmr = this.asmr?.readCues(this.visualGain * Math.max(0, Math.min(fadeIn, fadeOut)), frame.time) ?? [];
+    }
+    return frame;
+  }
   captureAudio(): AudioCaptureLease {
     const context = this.context, transport = this.transport;
     if (!context || !transport || this.stopping || this.isPaused || context.state !== 'running') {
@@ -105,6 +119,7 @@ export class AudioEngine {
       const bwg = session.bwg ? decodeBwg(session.bwg).preset : undefined;
       this.continues = !!bwg && bwgContinues(bwg);
       const duration = session.timelineDuration ?? session.minutes * 60;
+      this.visualFadeIn = duration > 0 ? Math.min(.5, duration / 4) : .5;
       if (duration > 0) this.sequenceEnd = context.currentTime + duration;
       this.gate.gain.setValueAtTime(0, context.currentTime);
       this.gate.gain.linearRampToValueAtTime(1, context.currentTime + (duration > 0 ? Math.min(0.5, duration / 4) : 0.5));
@@ -158,6 +173,7 @@ export class AudioEngine {
     const context = this.context;
     if (!context || !this.master || !this.musicGain) return;
     smooth(this.master.gain, session.master, context.currentTime);
+    this.visualGain = session.master;
     const gains = modeGains(listeningMode(session));
     if (this.toneBus) smooth(this.toneBus.gain, session.tonesMuted ? 0 : gains.tones, context.currentTime);
     for (const [id, voice] of this.voices) {
@@ -332,6 +348,7 @@ export class AudioEngine {
     const context = this.context;
     if (!context || this.stopping) return;
     this.stopping = true;
+    this.visualGain = 0; this.asmr?.clearCues();
     ++this.asmrRevision; this.asmrPending = false;
     if (this.gate && context.state === 'running') {
       hold(this.gate.gain, context.currentTime);

@@ -9,11 +9,11 @@ async function settle(page: Page) {
   await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
 }
 
-test('light triggers have explicit opt-in, nineteen presets and a silent static preview', async ({ page }) => {
+test('light triggers have explicit opt-in, twenty-six presets and a silent static preview', async ({ page }) => {
   await choose(page);
   await expect(page.getByLabel('Enable light triggers', { exact: true })).not.toBeChecked();
   await expect(page.locator('#visual-dock-fullscreen')).toBeDisabled(); await expect(page.locator('.scene-drawing')).not.toBeVisible();
-  await expect(page.locator('#trigger-preset option:not([disabled])')).toHaveCount(19);
+  await expect(page.locator('#trigger-preset option:not([disabled])')).toHaveCount(26);
   await page.getByLabel('Enable light triggers', { exact: true }).check();
   await expect(page.locator('#visual-dock .scene-drawing')).toBeVisible(); await settle(page);
   const first = await page.locator('.scene-drawing').getAttribute('data-light');

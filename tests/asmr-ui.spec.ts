@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { setSources } from './helpers/listening-sources';
+import { loadAsmrExperience } from './helpers/asmr-discovery';
 
 async function adjust(page: Page, index = 0) {
   const details = page.locator('.asmr-advanced').nth(index);
@@ -14,10 +15,8 @@ test('ASMR mixes load silently, explicitly approve paired lights once, and keep 
   await setSources(page, 'asmr');
   await expect(page.locator('#asmr-controls')).toBeVisible();
   await expect(page.locator('[data-asmr]')).toHaveCount(1);
-  await page.locator('#asmr-more-experiences > summary').click();
-  await expect(page.locator('#asmr-preset option')).toHaveCount(46);
   for (const id of ['glass-lantern', 'red-sweep', 'rose-brushes', 'paper-prism', 'blue-droplets', 'torch-whisper']) {
-    await page.locator('#asmr-preset').selectOption(id); await page.locator('#asmr-pair').click();
+    await loadAsmrExperience(page, id);
     if (id === 'glass-lantern') await page.getByRole('dialog', { name: 'Moving visual trigger', exact: true }).getByRole('button', { name: 'Start visual', exact: true }).click();
     await expect(page.getByRole('dialog', { name: 'Moving visual trigger', exact: true })).toHaveCount(0);
     await expect(page.locator('[data-asmr]')).toHaveCount(2); await expect(page.locator('#scene-mode')).toHaveValue('triggers');
@@ -58,8 +57,7 @@ test('six sound layers can be edited, duplicated, removed and undone without sta
 
 test('saved and shared experiences retain ASMR and soft lights while restored visual consent stays off', async ({ page }) => {
   await page.goto('/'); await setSources(page, 'asmr');
-  await page.locator('#asmr-more-experiences > summary').click();
-  await page.locator('#asmr-preset').selectOption('glass-lantern'); await page.locator('#asmr-pair').click();
+  await loadAsmrExperience(page, 'glass-lantern');
   await page.getByRole('dialog', { name: 'Moving visual trigger', exact: true }).getByRole('button', { name: 'Start visual', exact: true }).click();
   await expect(page.getByLabel('Enable light triggers', { exact: true })).toBeChecked();
   await adjust(page);
@@ -100,7 +98,7 @@ test('saved and shared experiences retain ASMR and soft lights while restored vi
 
 test('ASMR controls remain usable in both themes at 320px with no accessibility violations', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 800 }); await page.goto('/');
-  await setSources(page, 'asmr'); await page.locator('#asmr-more-experiences > summary').click(); await page.locator('#asmr-load').click();
+  await setSources(page, 'asmr'); await page.locator('[data-asmr-preset=hands-close]').click();
   for (const theme of ['light', 'dark']) {
     await page.getByLabel('Appearance', { exact: true }).selectOption(theme);
     await page.locator('.asmr-advanced').evaluateAll(nodes => nodes.forEach(node => { (node as HTMLDetailsElement).open = true; }));

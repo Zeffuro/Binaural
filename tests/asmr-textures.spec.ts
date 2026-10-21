@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { setSources } from './helpers/listening-sources';
+import { loadAsmrExperience } from './helpers/asmr-discovery';
 
 const textureIds = ['fingertip-taps', 'keyboard', 'comb', 'fabric', 'rain-stick', 'soft-clicks'];
 const originalPresetIds = [
@@ -16,6 +17,7 @@ const experienceIds = [
   'hollow-wood', 'glass-and-grain', 'tapping-contrast', 'paper-folds', 'crinkle-left', 'little-water-bowl',
 ];
 const routineIds = ['pages-evening', 'hairbrush-unhurried', 'water-preparation', 'pencil-notes', 'unhurried-salon', 'quiet-desk-journey'];
+const gestureIds = ['follow-my-light', 'brush-in-front', 'tap-and-follow', 'pencil-trace', 'close-object-study', 'ear-attention-lights', 'water-light-ritual'];
 interface RecipeSummary {
   id: string; group: string; validLight: boolean; canonical: boolean; repeatable: boolean; freshIds: boolean;
   layerCount: number; sources: string[]; spatialCount: number; knownSources: boolean;
@@ -59,7 +61,7 @@ test('six original textures fill deterministically and retain the caller normali
   for (const rate of [24000, 48000]) expect(new Set(results.textures.filter(item => item.rate === rate).map(item => item.signature)).size).toBe(6);
 });
 
-test('all 46 ASMR recipes are canonical, cover every source, and reference existing lights', async ({ page }) => {
+test('all 53 ASMR recipes are canonical, cover every source, and reference existing lights', async ({ page }) => {
   await page.goto('/');
   const result = await page.evaluate(async () => {
     const statePath = '/src/asmr-state.ts', presetPath = '/src/asmr-presets.ts', lightPath = '/src/trigger-presets.ts', extraPath = '/src/asmr-textures.ts';
@@ -80,10 +82,10 @@ test('all 46 ASMR recipes are canonical, cover every source, and reference exist
         };
       }) as RecipeSummary[] };
   });
-  expect(result.generated).toBe(15); expect(result.recordings).toBe(9); expect(result.lightCount).toBe(19);
+  expect(result.generated).toBe(15); expect(result.recordings).toBe(9); expect(result.lightCount).toBe(26);
   expect(result.textures).toEqual(textureIds);
-  expect(result.presets.map(preset => preset.id)).toEqual([...originalPresetIds, ...sensoryPresetIds, ...experienceIds, ...routineIds]);
-  expect(new Set(result.presets.map(preset => preset.id)).size).toBe(46);
+  expect(result.presets.map(preset => preset.id)).toEqual([...originalPresetIds, ...sensoryPresetIds, ...experienceIds, ...routineIds, ...gestureIds]);
+  expect(new Set(result.presets.map(preset => preset.id)).size).toBe(53);
   expect([...new Set(result.presets.flatMap(preset => preset.sources))].sort()).toEqual([...result.sources].sort());
   const sensory = result.presets.filter(preset => preset.group === 'Sensory textures');
   expect(sensory.map(preset => preset.id)).toEqual(sensoryPresetIds);
@@ -116,7 +118,7 @@ test('every recipe renders finite non-silent bounded offline stereo through the 
     }
     return results;
   });
-  expect(results.map(preset => preset.id)).toEqual([...originalPresetIds, ...sensoryPresetIds, ...experienceIds, ...routineIds]);
+  expect(results.map(preset => preset.id)).toEqual([...originalPresetIds, ...sensoryPresetIds, ...experienceIds, ...routineIds, ...gestureIds]);
   for (const result of results) {
     expect(result.finite, result.id).toBe(true); expect(result.energy, result.id).toBeGreaterThan(0); expect(result.peak, result.id).toBeLessThan(1);
   }
@@ -125,9 +127,6 @@ test('every recipe renders finite non-silent bounded offline stereo through the 
 test('all twelve sensory recipes load sounds and approved soft paired lights without starting playback', async ({ page }) => {
   test.setTimeout(60000);
   await page.goto('/'); await setSources(page, 'asmr');
-  await page.locator('#asmr-more-experiences > summary').click();
-  await page.locator('#asmr-filter').selectOption('Sensory textures');
-  await expect(page.locator('.asmr-library-card')).toHaveCount(12);
   const pairedSeeds = await page.evaluate(async () => {
     const presetPath = '/src/asmr-presets.ts', lightPath = '/src/trigger-presets.ts';
     const { asmrPresets } = await import(presetPath), { triggerPresets } = await import(lightPath);
@@ -135,11 +134,7 @@ test('all twelve sensory recipes load sounds and approved soft paired lights wit
       seed: triggerPresets.find((light: { id: string }) => light.id === preset.light).settings.seed }));
   });
   for (const id of sensoryPresetIds) {
-    const card = page.locator(`[data-asmrlibrary="${id}"]`);
-    await card.locator('[data-library-action="load"]').click();
-    await expect(page.locator('#asmr-preset')).toHaveValue(id);
-    await expect(page.locator('#status')).toHaveText('Ready when you are');
-    await card.locator('[data-library-action="pair"]').click();
+    await loadAsmrExperience(page, id);
     if (id === sensoryPresetIds[0]) await page.getByRole('dialog', { name: 'Moving visual trigger', exact: true }).getByRole('button', { name: 'Start visual', exact: true }).click();
     await expect(page.getByRole('dialog', { name: 'Moving visual trigger', exact: true })).toHaveCount(0);
     await expect(page.getByLabel('Enable light triggers', { exact: true })).toBeChecked();

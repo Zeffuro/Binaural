@@ -26,7 +26,8 @@ test('quick sounds stay available with ASMR off and focus an existing sound with
   await expect(quick.getByRole('button')).toHaveText(['Brush', 'Tapping', 'Fabric', 'Crinkle', 'Air', 'Water']);
   await expect(page.locator('#asmr-mixer')).not.toHaveAttribute('open', '');
   await expect(page.getByRole('group', { name: 'Starter experiences', exact: true }).getByRole('button')).toHaveCount(6);
-  await expect(page.locator('#asmr-more-experiences')).not.toHaveAttribute('open', '');
+  await expect(page.locator('#asmr-browse')).toBeVisible();
+  await expect(page.locator('#asmr-preset, #asmr-search, #asmr-library-list')).toHaveCount(0);
   await quick.getByRole('button', { name: 'Brush', exact: true }).click();
   await expect(page.getByRole('button', { name: /^Tones (?:On|Off)$/ })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByRole('button', { name: /^ASMR (?:On|Off)$/ })).toHaveAttribute('aria-pressed', 'true');
@@ -120,9 +121,10 @@ test('starter experiences use the existing mixes and the compact and expanded wo
     expect(session.asmr.level).toBe(expected.level);
     expect(session.asmr.layers.map(({ id: _id, ...layer }: { id: string }) => layer)).toEqual(expected.layers.map(({ id: _id, ...layer }: { id: string }) => layer));
   }
-  await page.locator('#asmr-more-experiences > summary').click();
-  await expect(page.locator('#asmr-preset option')).toHaveCount(46);
-  await expect(page.locator('.asmr-library-card')).toHaveCount(46);
+  await page.locator('#asmr-browse').click();
+  await expect(page.locator('#preset-category')).toHaveValue('ASMR');
+  await expect(page.locator('.explore-card')).toHaveCount(53);
+  await page.locator('#close-explorer').click();
   await page.locator('.asmr-advanced').evaluateAll(nodes => nodes.forEach(node => { (node as HTMLDetailsElement).open = true; }));
   for (const theme of ['light', 'dark']) {
     await page.getByLabel('Appearance', { exact: true }).selectOption(theme);

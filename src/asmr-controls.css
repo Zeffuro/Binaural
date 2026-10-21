@@ -1,4 +1,3 @@
-.asmr-recipes { margin-block: 12px 16px; }
 .asmr-actions, .asmr-flags { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-block: 12px; }
 .asmr-featured { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .asmr-featured button { white-space: normal; min-height: 44px; }
@@ -22,16 +21,10 @@
 .asmr-advanced { margin-top: 14px; }
 .asmr-advanced summary { cursor: pointer; padding-block: 8px; font-size: 13px; }
 .asmr-position { border-left: 2px solid var(--line); padding-left: 12px; margin-top: 14px; min-width: 0; }
-.asmr-library { border: 1px solid var(--line); border-radius: 9px; padding: 12px; margin-block: 16px; min-width: 0; }
-.asmr-library summary { cursor: pointer; padding-block: 6px; }
-.asmr-library input[type=search] { width: 100%; min-width: 0; box-sizing: border-box; }
-.asmr-library-card { border-top: 1px solid var(--line); padding-top: 12px; min-width: 0; }
-.asmr-library-card h3 { margin: 0; font-size: 15px; }
-.asmr-library-card p { margin-block: 8px; overflow-wrap: anywhere; }
-.asmr-library-card .asmr-actions { margin-top: 8px; }
-.asmr-library-card [aria-pressed=true] { font-weight: 700; }
 #asmr-controls input[type=range] { width: 100%; margin-bottom: 12px; }
 #asmr-controls output { white-space: nowrap; }
 #asmr-controls .section-heading { flex-wrap: wrap; gap: 10px; }
 #asmr-controls .fine-print { overflow-wrap: anywhere; }
 @media (max-width: 390px) { .asmr-layer-top { grid-template-columns: minmax(0, 1fr) 32px; } .asmr-layer-top label { grid-column: 1 / -1; } }
+
+#asmr-browse { width: 100%; margin-block: 12px 4px; white-space: normal; min-height: 44px; }

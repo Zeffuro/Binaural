@@ -21,7 +21,8 @@ test('source switches preserve the mix, keep controls discoverable and never aut
   await page.locator('[data-asmr-preset=ear-cupping]').click();
   await page.locator('.asmr-advanced').first().locator('summary').click();
   await expect(page.getByLabel('Sound 1 ear cupping', { exact: true })).toHaveValue('0.85');
-  await expect(page.locator('#asmr-preset option')).toHaveCount(46);
+  await expect(page.locator('#asmr-browse')).toBeVisible();
+  await expect(page.locator('#asmr-preset')).toHaveCount(0);
   await expect(page.getByLabel('Sound 1 trigger', { exact: true }).locator('option')).toHaveCount(24);
   for (const selected of ['mixed', 'binaural', 'ambient', 'asmr'] as const) {
     await setSources(page, selected);

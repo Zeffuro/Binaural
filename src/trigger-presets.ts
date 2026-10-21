@@ -21,4 +21,16 @@ export const triggerPresets = [
   preset('very-bright-prism', 'Very bright prism', 'High exposure and a narrow white backlight create intense highlights between colored facets. Choose a lower intensity whenever you prefer.', { motif: 'prism', lampColor: '#ffffff', brightness: 3, light: .8, size: .15, lightSpeed: .14, glow: .6, seed: 331 }),
   preset('bright-torch', 'Bright white torch', 'A large white lamp with a bright center and a slow wandering halo.', { style: 'torch', color: '#ffffff', accent: '#e9f5ff', lampColor: '#ffffff', brightness: 2, size: .7, lightSpeed: .16, softness: .45, depth: .1, glow: .5 }),
   preset('very-bright-torch', 'Very bright white torch', 'A broad, intense white lamp with smooth movement and no strobe.', { style: 'torch', color: '#ffffff', accent: '#ffffff', lampColor: '#ffffff', brightness: 4, size: 1, lightSpeed: .12, softness: .25, depth: 0, glow: .7 }),
+  ...([
+    ['follow', 'Follow the light', '#e8c59f', '#b4cfe0'],
+    ['brush', 'Brush pass', '#edaeba', '#bdacd8'],
+    ['tap', 'Points of contact', '#eac798', '#9dc7cb'],
+    ['trace', 'Light tracing', '#b7d8ce', '#dec59b'],
+    ['inspect', 'Closer inspection', '#b8b0e1', '#e1b5c3'],
+    ['ear', 'Ear attention', '#edbb91', '#ca9fb4'],
+    ['drop', 'Quiet ripples', '#9ccddf', '#b9b8e0'],
+  ] as const).map(([gesture, name, color, accent]) => preset(`gesture-${gesture}`, name,
+    'An abstract close-up gesture follows the side and activity of your ASMR sounds. Quiet when no trigger is playing.',
+    { style: 'gesture', gesture, syncAsmr: true, color, accent, brightness: .3, softness: .3, glow: .2,
+      speed: .01, drift: .03, lightSpeed: .025, size: .3, reaction: 0 })),
 ];

@@ -58,7 +58,7 @@ try {
         await expect(page.locator('#status')).toHaveText('Ready when you are');
         await page.getByRole('button', { name: 'Explore all presets' }).click();
         await page.getByLabel('With visual settings', { exact: true }).check();
-        await expect(page.locator('.explore-card')).toHaveCount(6);
+        await expect(page.locator('.explore-card')).toHaveCount(59);
         await page.locator('[data-load-preset="forest-clearing"]').click();
         await expect(page.locator('#ambient')).toHaveValue('wind');
         await expect(page.locator('#status')).toHaveText('Ready when you are');
@@ -70,15 +70,14 @@ try {
         await expect(page.locator('#timeline-info')).toBeVisible();
         await expect(page.locator('#status')).toHaveText('Ready when you are');
         await setSources(page, 'asmr');
-        await page.locator('#asmr-more-experiences > summary').click();
         for (const id of ['glass-lantern', 'red-sweep', 'rose-brushes', 'paper-prism', 'blue-droplets', 'torch-whisper']) {
-          await page.locator('#asmr-preset').selectOption(id); await page.locator('#asmr-pair').click();
+          await page.locator('#asmr-browse').click(); await page.locator(`[data-load-preset="asmr-${id}"]`).click();
           if (id === 'glass-lantern') await page.getByRole('dialog', { name: 'Moving visual trigger', exact: true }).getByRole('button', { name: 'Start visual', exact: true }).click();
           await expect(page.getByRole('dialog', { name: 'Moving visual trigger', exact: true })).toHaveCount(0);
           await expect(page.locator('[data-asmr]')).toHaveCount(2);
           await expect(page.getByLabel('Enable light triggers', { exact: true })).toBeChecked();
         }
-        await page.locator('#asmr-preset').selectOption('hands-close'); await page.locator('#asmr-load').click();
+        await page.locator('#asmr-browse').click(); await page.locator('[data-load-preset="asmr-hands-close"]').click();
         const recording = page.waitForResponse(origin + prefix + 'audio/asmr/hand-rubbing.ogg');
         await page.locator('#asmr-only').click(); await page.locator('#play').click();
         const recordedResponse = await recording;
@@ -86,7 +85,7 @@ try {
         await expect(page.locator('#status')).toHaveText('● Listening');
         await page.locator('#pause').click(); await expect(page.locator('#status')).toHaveText('Ⅱ Paused');
         await page.locator('#play').click();
-        await page.locator('#asmr-preset').selectOption('hairbrush-unhurried'); await page.locator('#asmr-load').click();
+        await page.locator('#asmr-browse').click(); await page.locator('[data-load-preset="asmr-hairbrush-unhurried"]').click();
         await expect(page.locator('#asmr-flow')).toHaveValue('natural');
         const hairRecording = page.waitForResponse(origin + prefix + 'audio/asmr/hair-brushing.mp3');
         await page.locator('#play').click();
@@ -96,7 +95,13 @@ try {
         await page.locator('#pause').click(); await expect(page.locator('#status')).toHaveText('Ⅱ Paused');
         await page.locator('#play').click();
         await page.locator('#asmr-flow').selectOption('steady');
-        await page.locator('#asmr-preset').selectOption('hands-close'); await page.locator('#asmr-load').click();
+        await page.locator('#asmr-browse').click(); await page.locator('[data-load-preset="asmr-brush-in-front"]').click();
+        await expect(page.locator('#trigger-sync-asmr')).toBeChecked();
+        await page.locator('#play').click(); await page.locator('.scene-drawing').scrollIntoViewIfNeeded();
+        await expect.poll(async () => Number(await page.locator('.scene-drawing').getAttribute('data-cues'))).toBeGreaterThan(0);
+        await page.locator('#pause').click(); await expect(page.locator('#status')).toHaveText('Ⅱ Paused');
+        await page.locator('#play').click();
+        await page.locator('#asmr-browse').click(); await page.locator('[data-load-preset="asmr-hands-close"]').click();
         await page.getByLabel('Enable light triggers', { exact: true }).uncheck();
         await page.locator('[data-visual-quick=calm]').click();
         await expect(page.locator('#visual-dock .scene-drawing')).toBeVisible();
@@ -104,7 +109,7 @@ try {
         await expect(page.locator('#visual-dock-fullscreen')).toBeDisabled();
         await page.getByLabel('Enable light triggers', { exact: true }).check();
         const triggerIds = await page.locator('#trigger-preset option:not([disabled])').evaluateAll(nodes => nodes.map(node => node.value));
-        expect(triggerIds).toHaveLength(19);
+        expect(triggerIds).toHaveLength(26);
         for (const id of triggerIds) {
           await page.locator('#trigger-preset').selectOption(id);
           await expect(page.locator('.scene-drawing')).toBeVisible();
@@ -235,7 +240,7 @@ try {
         const links = await page.locator('a[href]').evaluateAll(nodes => nodes.map(node => node.href).filter(href => href.startsWith(location.origin)));
         for (const link of links) expect((await page.request.get(link)).status(), link).toBe(200);
         expect(errors).toEqual([]); expect(outside).toEqual([]); expect(badResponses).toEqual([]);
-        console.log(`${name}: ${prefix} 19 light triggers, 6 generated ASMR mixes and recorded Ogg playback, timeline, inline/fullscreen workspace, guide, soundscapes, assets, 6 MilkDrop presets, 3 photos, shared session, ordinary/native BWGen WAV, export worker, worklet, pause and credits passed`);
+        console.log(`${name}: ${prefix} 26 light triggers, shared ASMR discovery, synced gestures, Ogg/MP3 playback, timeline, fullscreen, guide, soundscapes, 6 MilkDrop presets, 3 photos, share, ordinary/native WAV, workers, pause and credits passed`);
       } finally { await browser.close(); }
     }
   }
