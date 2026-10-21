@@ -25,6 +25,7 @@ test('every known background resolves to an original approximation without impor
         new DataView(bytes.buffer).setUint32(1316, entry.id, true);
         const preset = parseBwg(bytes), reference = backgroundReference(preset);
         const background = await assets.resolve(preset);
+        if (!reference || !background) throw new Error(`Missing generated background ${file}:${entry.id}.`);
         results.push({ id: reference.approximation, name: background.name, kind: background.kind,
           interval: background.interval, expectedInterval: reference.interval,
           rate: background.sample.rate, nonzero: background.sample.channels[0].some(value => value !== 0),
@@ -52,14 +53,17 @@ test('automatic source prefers imported recordings and explicit choices survive 
     const assets = new BackgroundAssets(), preset = parseBwg(new Uint8Array(data));
     await assets.bindWave(preset, new File([new Uint8Array(wave)], 'own.wav'));
     const auto = await assets.resolve(preset), generated = await assets.resolve(preset, 'generated'), recording = await assets.resolve(preset, 'recording');
+    if (!auto || !generated || !recording) throw new Error('Expected all three background source choices.');
     const session = importBwg(new Uint8Array(data)).session;
     const policies = ['auto', 'generated', 'recording'].map(source => parseSession(JSON.parse(JSON.stringify({ ...session, bwgBackgroundSource: source }))).bwgBackgroundSource);
     const rejects = [null, false, {}, ['auto'], 'other'].map(source => {
       try { parseSession({ ...session, bwgBackgroundSource: source }); return false; } catch { return true; }
     });
     await assets.clear();
+    const fallback = await assets.resolve(preset);
+    if (!fallback) throw new Error('Expected a generated fallback after clearing recordings.');
     return { auto: auto.kind, generated: generated.kind, recording: recording.kind, count: assets.count, policies, rejects,
-      fallback: (await assets.resolve(preset)).kind, missing: !await assets.resolve(preset, 'recording') };
+      fallback: fallback.kind, missing: !await assets.resolve(preset, 'recording') };
   }, { data: preset(), wave: makeWaveFixture().bytes });
   expect(result).toEqual({ auto: 'recording', generated: 'generated', recording: 'recording', count: 0,
     policies: ['auto', 'generated', 'recording'], rejects: [true, true, true, true, true], fallback: 'generated', missing: true });
@@ -104,6 +108,7 @@ test('download-free approximation reaches the AudioWorklet and obeys finite comp
     const preset = decodeBwg(importBwg(bytes).session.bwg).preset;
     const assets = new BackgroundAssets(); await assets.clear();
     const background = await assets.resolve(preset);
+    if (!background) throw new Error('Expected a generated background for native playback.');
     const context = new OfflineAudioContext(2, 48000, 48000);
     await context.audioWorklet.addModule(url);
     const node = new AudioWorkletNode(context, 'bwg-sequence', { numberOfInputs: 0,
@@ -128,6 +133,7 @@ test('normal ambience uses the generated PCM and retains pause and audio-clock s
     const enginePath = '/src/audio/engine.ts', modelPath = '/src/model.ts';
     const { AudioEngine } = await import(enginePath), { initialSession } = await import(modelPath);
     const { makeGeneratedBackground } = await import('/src/audio/generated-backgrounds.ts');
+    const clockPath = '/tests/helpers/audio-clock.ts', { waitForAudioTime } = await import(clockPath);
     const session = initialSession(); session.ambient = 'wind'; session.ambientLevel = 1; session.minutes = 0.02;
     const engine = new AudioEngine(); await engine.start(session);
     const context = engine.context, source = engine.noise;
@@ -135,7 +141,7 @@ test('normal ambience uses the generated PCM and retains pause and audio-clock s
     await engine.pause(); const before = context.currentTime;
     await new Promise(resolve => setTimeout(resolve, 150)); const frozen = context.currentTime === before;
     await engine.resume();
-    await new Promise(resolve => setTimeout(resolve, 1400));
+    await waitForAudioTime(context, context.currentTime + engine.remaining);
     const finished = engine.remaining === 0;
     await engine.stop(); return { match, frozen, finished };
   });

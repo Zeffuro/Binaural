@@ -439,7 +439,8 @@ test('@live recording includes native BWGen, stereo local music and ASMR with li
     const engine = new AudioEngine(), session = importBwg(new Uint8Array(bwg)).session;
     session.mode = 'mixed'; session.master = .2; session.musicLevel = .8; session.ambient = 'none';
     session.asmr = { level: .7, layers: [{ ...makeAsmrLayer('air'), level: .7, tone: 1, pan: 0, motion: 'still' }] };
-    const frames = 4800, wave = new Uint8Array(44 + frames * 4), view = new DataView(wave.buffer);
+    // Avoid media-element loop boundaries across recorder startup and spectral windows.
+    const frames = 48000 * 16, wave = new Uint8Array(44 + frames * 4), view = new DataView(wave.buffer);
     const text = (at: number, value: string) => wave.set(new TextEncoder().encode(value), at);
     text(0, 'RIFF'); view.setUint32(4, wave.length - 8, true); text(8, 'WAVEfmt '); view.setUint32(16, 16, true);
     view.setUint16(20, 1, true); view.setUint16(22, 2, true); view.setUint32(24, 48000, true);
@@ -475,8 +476,17 @@ test('@live recording includes native BWGen, stereo local music and ASMR with li
     }
     return 2 * Math.hypot(re, im) / weights;
   };
-  expect(spectrum(0, 430)).toBeGreaterThan(.002); expect(spectrum(1, 700)).toBeGreaterThan(.002);
-  expect(spectrum(0, output.nativeHz)).toBeGreaterThan(.003);
   const band = (start: number) => Math.sqrt(Array.from({ length: 33 }, (_, i) => spectrum(0, 2000 + i * 125, start) ** 2).reduce((sum, value) => sum + value, 0));
-  expect(band(.7)).toBeGreaterThan(band(2) * 2 + .00001);
+  const musicBefore = [spectrum(0, 430), spectrum(1, 700)], musicAfter = [spectrum(0, 430, 2), spectrum(1, 700, 2)];
+  const nativeBefore = spectrum(0, output.nativeHz), nativeAfter = spectrum(0, output.nativeHz, 2);
+  const asmrBefore = band(.7), asmrAfter = band(2);
+  console.log(JSON.stringify({ musicBefore, musicAfter, nativeHz: output.nativeHz, nativeBefore, nativeAfter, asmrBefore, asmrAfter }));
+  for (const [index, ear] of ['left', 'right'].entries()) {
+    expect(musicBefore[index], `${ear} music before ASMR edit`).toBeGreaterThan(.002);
+    expect(musicAfter[index], `${ear} music after ASMR edit`).toBeGreaterThan(.002);
+  }
+  expect(spectrum(0, 700, 2), 'right music stays out of the left channel').toBeLessThan(musicAfter[0] * .2);
+  expect(spectrum(1, 430, 2), 'left music stays out of the right channel').toBeLessThan(musicAfter[1] * .2);
+  expect(nativeBefore).toBeGreaterThan(.003); expect(nativeAfter).toBeGreaterThan(.003);
+  expect(asmrBefore).toBeGreaterThan(asmrAfter * 2 + .00001);
 });

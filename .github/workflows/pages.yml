@@ -57,8 +57,8 @@ jobs:
         run: npm run build
         env:
           VITE_SOURCE_URL: https://github.com/${{ github.repository }}/tree/${{ github.sha }}
-      - name: Check video recording codecs
-        run: xvfb-run -a node scripts/test-browser.mjs --full tests/video-recording.spec.ts --grep "recorded canvas and stereo engine mix independently decode" --forbid-only --workers=1 --reporter=list,html
+      - name: Check video codecs and live audio clocks
+        run: xvfb-run -a node scripts/test-browser.mjs --full tests/video-recording.spec.ts tests/generated-background-ui.spec.ts --grep "recorded canvas and stereo engine mix independently decode|recording includes native BWGen, stereo local music and ASMR|normal ambience uses the generated PCM and retains pause and audio-clock stop" --forbid-only --workers=1 --reporter=list,html
         env:
           PLAYWRIGHT_HTML_OPEN: never
       - name: Check listening workspace and visual controls
@@ -66,7 +66,7 @@ jobs:
         env:
           PLAYWRIGHT_HTML_OPEN: never
       - name: Run Chromium, Firefox and accessibility smoke tests
-        run: xvfb-run -a node scripts/test-browser.mjs --full --grep-invert "recorded canvas and stereo engine mix independently decode|(?:accessibility|discovery|asmr-ui|asmr-visuals|asmr-workspace|asmr-modes|asmr-library|asmr-spatial-ui|listening-sources|light-triggers|visual-workspace|visualizer)\.spec\.ts" --forbid-only --workers=1 --reporter=list,html
+        run: xvfb-run -a node scripts/test-browser.mjs --full --grep-invert "recorded canvas and stereo engine mix independently decode|recording includes native BWGen, stereo local music and ASMR|normal ambience uses the generated PCM and retains pause and audio-clock stop|(?:accessibility|discovery|asmr-ui|asmr-visuals|asmr-workspace|asmr-modes|asmr-library|asmr-spatial-ui|listening-sources|light-triggers|visual-workspace|visualizer)\.spec\.ts" --forbid-only --workers=1 --reporter=list,html
         env:
           PLAYWRIGHT_HTML_OPEN: never
       - name: Preserve Linux test reports and failure traces
