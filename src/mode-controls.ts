@@ -3,7 +3,7 @@ import './mode-controls.css';
 
 export function setupListeningMode(options: { get: () => ListeningMode; change: (mode: ListeningMode) => void; busy: () => boolean }) {
   const host = document.createElement('div'); host.className = 'listening-modes';
-  host.innerHTML = `<div role="group" aria-label="Sound sources">${['tones', 'asmr'].map(source => `<button class="secondary-button" data-source="${source}" aria-label="${source === 'tones' ? 'Tones' : 'ASMR'}" aria-pressed="false"><span>${source === 'tones' ? 'Tones' : 'ASMR'}</span><span data-source-status></span></button>`).join('')}</div><p id="mode-description" class="fine-print"></p>`;
+  host.innerHTML = `<div role="group" aria-label="Sound sources">${['tones', 'asmr'].map(source => `<button class="secondary-button" data-source="${source}" aria-pressed="false"><span>${source === 'tones' ? 'Tones' : 'ASMR'}</span> <span data-source-status></span></button>`).join('')}</div><p id="mode-description" class="fine-print"></p>`;
   document.querySelector('.transport-controls')!.before(host);
   const tones = document.querySelector<HTMLElement>('#tone-controls')!;
   const add = tones.querySelector<HTMLButtonElement>('#add-layer')!;
@@ -29,6 +29,7 @@ export function setupListeningMode(options: { get: () => ListeningMode; change: 
     const mode = options.get(), gains = modeGains(mode), enabled = !!gains.tones;
     host.querySelectorAll<HTMLButtonElement>('[data-source]').forEach(button => {
       const on = button.dataset.source === 'tones' ? enabled : !!gains.asmr;
+      button.setAttribute('aria-label', `${button.dataset.source === 'tones' ? 'Tones' : 'ASMR'} ${on ? 'On' : 'Off'}`);
       button.setAttribute('aria-pressed', String(on)); button.disabled = options.busy();
       button.querySelector('[data-source-status]')!.textContent = on ? 'On' : 'Off';
     });

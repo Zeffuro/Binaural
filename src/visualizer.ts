@@ -7,7 +7,7 @@ import { setupTriggerControls } from './trigger-controls';
 import { TriggerRenderer } from './trigger-renderer';
 import { captureSurface, type VisualCapture } from './visual-capture';
 
-export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | undefined, changed: () => void, dock?: VisualDock, beforeEdit: () => void = () => {}) {
+export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | undefined, changed: () => void, dock?: VisualDock, beforeEdit: () => void = () => {}, reduced = matchMedia('(prefers-reduced-motion: reduce)')) {
   host.innerHTML = `<div class="scene-heading"><h3>Visualizations</h3><span class="small-muted">For music or a quiet moment</span></div>
     <label for="scene-mode">Scene</label><select id="scene-mode"><option value="off">Off</option><optgroup label="Music patterns"><option value="spectrum">Spectrum</option><option value="scope">Oscilloscope</option><option value="orbits">Orbital trails</option></optgroup><optgroup label="Moodscapes"><option value="aurora">Aurora</option><option value="water">Quiet water</option><option value="local">Your photo or video</option></optgroup><optgroup label="Light triggers"><option value="triggers">Kaleidoscope and light triggers</option></optgroup>${libraryOptions}</select>
     <div id="scene-preview"><div class="scene-viewport" hidden><div class="scene-media"></div><canvas class="scene-drawing" aria-label="Music visualization"></canvas></div></div>${libraryControls}
@@ -25,7 +25,6 @@ export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | un
   const fileInput = host.querySelector<HTMLInputElement>('#scene-file')!;
   const status = host.querySelector<HTMLElement>('#scene-status')!;
   const clear = host.querySelector<HTMLButtonElement>('#scene-clear')!;
-  const reduced = matchMedia('(prefers-reduced-motion: reduce)');
   const stage = document.createElement('dialog');
   stage.className = 'scene-stage';
   stage.setAttribute('aria-label', 'Immersive visualization');
@@ -86,6 +85,7 @@ export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | un
     const effectiveQuality = library.effectiveQuality(), interval = 1000 / visualBudget(effectiveQuality).fps;
     if (timestamp && nextDraw && timestamp < nextDraw - .1 && active()) { raf = requestAnimationFrame(render); return; }
     const drawing = active(), drawInterval = previous && timestamp ? timestamp - previous : 0;
+    if (video && (!drawing || mode.value !== 'local')) video.pause();
     const measuring = drawing && library.quality() === 'auto' && library.qualityReady(mode.value);
     const started = measuring ? performance.now() : 0;
     if (timestamp) nextDraw = nextDraw ? nextDraw + (Math.floor(Math.max(0, timestamp - nextDraw) / interval) + 1) * interval : timestamp + interval;

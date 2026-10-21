@@ -11,8 +11,10 @@ declare global {
 async function mount(page: Page) {
   await page.goto('/credits.html');
   await page.evaluate(async () => {
-    const css = '/src/style.css'; await import(css);
-    document.body.innerHTML = '<main><h1>Visual controls</h1><div class="transport"></div><div id="visual-controls"></div></main><style>.scene-viewport{width:100%;height:200px}[hidden]{display:none!important}</style>';
+    for (const name of ['style', 'experience', 'scrollbar', 'theme', 'studio-controls', 'accessibility']) {
+      const css = `/src/${name}.css`; await import(css);
+    }
+    document.body.innerHTML = '<div id="app"><main><h1>Visual controls</h1><div class="transport"></div><div id="visual-controls"></div></main></div><style>.scene-viewport{width:100%;height:200px}[hidden]{display:none!important}</style>';
     const path = '/src/visuals.ts';
     const { setupVisuals } = await import(path) as typeof import('../src/visuals');
     window.asmrVisualTest = { visual: setupVisuals(() => undefined), results: [] };
@@ -143,6 +145,8 @@ test('consent and ASMR controls fit 320px with accessible controls', async ({ pa
   await page.setViewportSize({ width: 320, height: 844 }); await mount(page); await pair(page);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await expect(dialog(page).getByRole('button', { name: 'Start visual', exact: true })).toBeFocused();
+  const consentResult = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
+  expect(consentResult.violations.filter(item => item.impact === 'serious' || item.impact === 'critical')).toEqual([]);
   await dialog(page).getByRole('button', { name: 'Start visual', exact: true }).click();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   const result = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();

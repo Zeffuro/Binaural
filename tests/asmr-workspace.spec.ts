@@ -28,8 +28,8 @@ test('quick sounds stay available with ASMR off and focus an existing sound with
   await expect(page.getByRole('group', { name: 'Starter experiences', exact: true }).getByRole('button')).toHaveCount(6);
   await expect(page.locator('#asmr-more-experiences')).not.toHaveAttribute('open', '');
   await quick.getByRole('button', { name: 'Brush', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Tones', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByRole('button', { name: 'ASMR', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: /^Tones (?:On|Off)$/ })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: /^ASMR (?:On|Off)$/ })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('.asmr-layer')).toHaveCount(1);
   await expect(page.getByLabel('Sound 1 trigger', { exact: true })).toBeFocused();
   await quick.getByRole('button', { name: 'Brush', exact: true }).click();

@@ -42,7 +42,7 @@ export function setupVisuals(audio: () => VisualFrame | undefined, changed: () =
   setupControlsPreference(dock.controls);
   const immersive = setupImmersiveControls(stage, stage.querySelector('.light-field')!, stage.querySelector('.light-overlay')!, () => { void fullscreen(); }, () => { void closeStage(); });
   const edit = () => { syncQuick(); changed(); };
-  const scenes = setupVisualizer(document.querySelector('#scene-controls')!, audio, edit, dock, beforeEdit);
+  const scenes = setupVisualizer(document.querySelector('#scene-controls')!, audio, edit, dock, beforeEdit, reduced);
   function syncQuick(): void {
     const scene = scenes.getState().scene;
     const selected = scene === 'off' ? (input('#visuals').checked ? '' : 'off') : ['milkdrop', 'triggers'].includes(scene) ? scene : scene.startsWith('nature:') ? 'nature' : ['aurora', 'water'].includes(scene) ? 'calm' : ['spectrum', 'scope', 'orbits'].includes(scene) ? 'reactive' : '';

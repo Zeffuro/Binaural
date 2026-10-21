@@ -33,7 +33,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
 
 test('skip links expose and focus each major control group with the keyboard', async ({ page }) => {
   await page.goto('/');
-  const targets = ['transport', 'tone-controls', 'atmosphere', 'visual-controls'];
+  const targets = ['transport', 'tone-controls', 'asmr-controls', 'atmosphere', 'visual-controls'];
   await page.keyboard.press('Tab');
   await expect(page.locator('.skip-links a').first()).toBeFocused();
   const first = await page.locator('.skip-links a').first().boundingBox();

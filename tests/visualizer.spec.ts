@@ -123,7 +123,9 @@ test('local video is muted, pauses when hidden, and respects reduced motion', as
   await page.getByLabel('Scene', { exact: true }).selectOption('local');
   await expect.poll(() => video.evaluate((node: HTMLVideoElement) => node.paused)).toBe(false);
   await page.emulateMedia({ reducedMotion: 'reduce' });
+  await expect.poll(() => page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(true);
   await expect.poll(() => video.evaluate((node: HTMLVideoElement) => node.paused)).toBe(true);
+  await expect(page.locator('#visual-dock-status')).toHaveText('Reduced motion is active. The preview stays still.');
   const time = await video.evaluate((node: HTMLVideoElement) => node.currentTime);
   await page.waitForTimeout(150);
   expect(await video.evaluate((node: HTMLVideoElement) => node.currentTime)).toBe(time);

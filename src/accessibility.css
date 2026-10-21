@@ -1,8 +1,8 @@
 .skip-links { position: absolute; inset: 12px auto auto 12px; z-index: 30; display: flex; flex-wrap: wrap; gap: 8px; max-width: calc(100% - 24px); pointer-events: none; }
 .skip-links a { position: absolute; transform: translateY(-200%); padding: 12px 16px; background: #172b29; color: #fff; border: 2px solid currentColor; border-radius: 5px; white-space: nowrap; pointer-events: auto; }
 .skip-links a:focus { position: static; transform: none; }
-:is(#transport, #tone-controls, #atmosphere, #visual-controls) { scroll-margin-block: 20px; }
-:is(#transport, #tone-controls, #atmosphere, #visual-controls):focus { outline: 3px solid #b08a4f; outline-offset: 5px; }
+:is(#transport, #tone-controls, #asmr-controls, #atmosphere, #visual-controls) { scroll-margin-block: 20px; }
+:is(#transport, #tone-controls, #asmr-controls, #atmosphere, #visual-controls):focus { outline: 3px solid #b08a4f; outline-offset: 5px; }
 button, select, input:not([type=hidden]), summary { min-height: 24px; }
 button, input[type=checkbox] { min-width: 24px; }
 input[type=checkbox] { height: 24px; width: 24px; flex-shrink: 0; }
@@ -27,13 +27,13 @@ input[type=checkbox] { height: 24px; width: 24px; flex-shrink: 0; }
   .layer-heading { gap: 5px; }
   .color-presets button { width: 44px; height: 44px; }
   .appearance-control select { min-height: 44px; }
-  :is(#transport, #tone-controls, #atmosphere, #visual-controls) { scroll-margin-bottom: 110px; }
+  :is(#transport, #tone-controls, #asmr-controls, #atmosphere, #visual-controls) { scroll-margin-bottom: 110px; }
 }
 
 @media (forced-colors: active) {
   :root { --green: LinkText; --line: ButtonBorder; }
   :is(button, input, select, summary, a):focus-visible,
-  :is(#transport, #tone-controls, #atmosphere, #visual-controls):focus { outline-color: Highlight; }
+  :is(#transport, #tone-controls, #asmr-controls, #atmosphere, #visual-controls):focus { outline-color: Highlight; }
   :is(.panel, .tone-layer, .frequency-chips button, .explore-card, .preset-card, dialog, .notice) { border: 1px solid ButtonBorder; }
   :is(.preset-card.selected, button[aria-pressed=true]) { outline: 2px solid Highlight; outline-offset: -3px; }
   input[type=range] { forced-color-adjust: auto; }

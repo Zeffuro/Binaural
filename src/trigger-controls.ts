@@ -58,6 +58,7 @@ export function setupTriggerControls(host: HTMLElement, redraw: () => void, chan
     + '<p class="fine-print">Soft, slow paired lights. Advanced visual settings include all presets, colors and brighter lights. Manual lets you drag the preview or use the advanced position controls.</p>';
   panel.querySelector('h3')!.after(simple);
   function context(value: boolean): void {
+    if (asmrContext === value) return;
     asmrContext = value; simple.hidden = !value;
     details.querySelector('summary')!.textContent = value ? 'Advanced visual settings' : 'More settings: color, glass and light';
     for (const control of richControls) {

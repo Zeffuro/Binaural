@@ -5,8 +5,8 @@ import { setSources } from './helpers/listening-sources';
 
 test('source switches preserve the mix, keep controls discoverable and never autoplay', async ({ page }) => {
   await page.goto('/');
-  const tones = page.getByRole('button', { name: 'Tones', exact: true });
-  const asmr = page.getByRole('button', { name: 'ASMR', exact: true });
+  const tones = page.getByRole('button', { name: /^Tones (?:On|Off)$/ });
+  const asmr = page.getByRole('button', { name: /^ASMR (?:On|Off)$/ });
   await expect(tones).toHaveAttribute('aria-pressed', 'true');
   await expect(asmr).toHaveAttribute('aria-pressed', 'false');
   await setSources(page, 'asmr');
@@ -81,11 +81,11 @@ test('legacy ASMR links keep Mixed mode when cleared and unknown modes are rejec
     return { link: sessionLink(session), rejected };
   });
   expect(result.rejected).toBe(true); await page.goto(result.link);
-  await expect(page.getByRole('button', { name: 'Tones', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByRole('button', { name: 'ASMR', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: /^Tones (?:On|Off)$/ })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: /^ASMR (?:On|Off)$/ })).toHaveAttribute('aria-pressed', 'true');
   await page.locator('#asmr-clear').click();
-  await expect(page.getByRole('button', { name: 'Tones', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByRole('button', { name: 'ASMR', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: /^Tones (?:On|Off)$/ })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: /^ASMR (?:On|Off)$/ })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#asmr-controls')).toBeVisible();
 });
 

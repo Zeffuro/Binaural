@@ -68,8 +68,9 @@ test('manual placement is reversible and the active light can export a real PNG'
   await page.locator('#trigger-controls details').evaluate((node: HTMLDetailsElement) => { node.open = true; });
   await expect(page.getByRole('slider', { name: 'Horizontal position', exact: true })).toHaveValue('0.5');
   await page.keyboard.press('Control+z');
-  await expect(page.getByRole('slider', { name: 'Horizontal position', exact: true })).toHaveValue('0');
   await expect(page.getByLabel('Enable light triggers', { exact: true })).not.toBeChecked();
+  await expect(page.locator('#trigger-controls details')).toHaveAttribute('open', '');
+  await expect(page.getByRole('slider', { name: 'Horizontal position', exact: true })).toHaveValue('0');
   await page.getByLabel('Enable light triggers', { exact: true }).check();
   const download = page.waitForEvent('download'); await page.getByRole('button', { name: 'Save PNG still', exact: true }).click();
   const bytes = await readFile((await (await download).path())!);

@@ -62,8 +62,12 @@ jobs:
         run: xvfb-run -a node scripts/test-browser.mjs --full tests/video-recording.spec.ts --grep "recorded canvas and stereo engine mix independently decode" --forbid-only --workers=1 --reporter=list,html
         env:
           PLAYWRIGHT_HTML_OPEN: never
+      - name: Check listening workspace and visual controls
+        run: xvfb-run -a node scripts/test-browser.mjs --full tests/accessibility.spec.ts tests/discovery.spec.ts tests/asmr-ui.spec.ts tests/asmr-visuals.spec.ts tests/asmr-workspace.spec.ts tests/asmr-modes.spec.ts tests/asmr-library.spec.ts tests/asmr-spatial-ui.spec.ts tests/listening-sources.spec.ts tests/light-triggers.spec.ts tests/visual-workspace.spec.ts tests/visualizer.spec.ts --forbid-only --workers=1 --reporter=list,html
+        env:
+          PLAYWRIGHT_HTML_OPEN: never
       - name: Run Chromium, Firefox and accessibility smoke tests
-        run: xvfb-run -a node scripts/test-browser.mjs --full --grep-invert "recorded canvas and stereo engine mix independently decode" --forbid-only --workers=1 --reporter=list,html
+        run: xvfb-run -a node scripts/test-browser.mjs --full --grep-invert "recorded canvas and stereo engine mix independently decode|(?:accessibility|discovery|asmr-ui|asmr-visuals|asmr-workspace|asmr-modes|asmr-library|asmr-spatial-ui|listening-sources|light-triggers|visual-workspace|visualizer)\.spec\.ts" --forbid-only --workers=1 --reporter=list,html
         env:
           PLAYWRIGHT_HTML_OPEN: never
       - name: Preserve Linux test reports and failure traces
