@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { setSources } from './helpers/listening-sources';
 
 const textureIds = ['fingertip-taps', 'keyboard', 'comb', 'fabric', 'rain-stick', 'soft-clicks'];
 const originalPresetIds = [
@@ -116,19 +117,29 @@ test('every recipe renders finite non-silent bounded offline stereo through the 
   }
 });
 
-test('all twelve sensory recipes load sounds and paired lights without starting playback or restoring light consent', async ({ page }) => {
+test('all twelve sensory recipes load sounds and approved soft paired lights without starting playback', async ({ page }) => {
   test.setTimeout(60000);
-  await page.goto('/'); await page.locator('button[data-listening-mode="asmr"]').click();
-  await page.getByText('Explore ASMR mixes', { exact: true }).click();
+  await page.goto('/'); await setSources(page, 'asmr');
+  await page.locator('#asmr-more-experiences > summary').click();
   await page.locator('#asmr-filter').selectOption('Sensory textures');
   await expect(page.locator('.asmr-library-card')).toHaveCount(12);
+  const pairedSeeds = await page.evaluate(async () => {
+    const presetPath = '/src/asmr-presets.ts', lightPath = '/src/trigger-presets.ts';
+    const { asmrPresets } = await import(presetPath), { triggerPresets } = await import(lightPath);
+    return asmrPresets.map((preset: { id: string; light: string }) => ({ id: preset.id,
+      seed: triggerPresets.find((light: { id: string }) => light.id === preset.light).settings.seed }));
+  });
   for (const id of sensoryPresetIds) {
     const card = page.locator(`[data-asmrlibrary="${id}"]`);
     await card.locator('[data-library-action="load"]').click();
     await expect(page.locator('#asmr-preset')).toHaveValue(id);
     await expect(page.locator('#status')).toHaveText('Ready when you are');
     await card.locator('[data-library-action="pair"]').click();
-    await expect(page.getByLabel('Enable light triggers', { exact: true })).not.toBeChecked();
+    if (id === sensoryPresetIds[0]) await page.getByRole('dialog', { name: 'Moving visual trigger', exact: true }).getByRole('button', { name: 'Start visual', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Moving visual trigger', exact: true })).toHaveCount(0);
+    await expect(page.getByLabel('Enable light triggers', { exact: true })).toBeChecked();
+    await expect(page.locator('#trigger-preset')).toHaveValue('custom');
+    await expect(page.locator('#trigger-seed')).toHaveValue(String(pairedSeeds.find((pair: { id: string }) => pair.id === id).seed));
     await expect(page.locator('#status')).toHaveText('Ready when you are');
   }
 });

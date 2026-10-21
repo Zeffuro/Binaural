@@ -33,7 +33,7 @@ export function setupVisuals(audio: () => VisualFrame | undefined, changed: () =
   let raf = 0;
   let closing = false;
   const reduced = matchMedia('(prefers-reduced-motion: reduce)');
-  const picker = setupColorPicker(document.querySelector('#light-picker')!, value => { color = value; phase = 0; refresh(); changed(); });
+  const picker = setupColorPicker(document.querySelector('#light-picker')!, value => { scenes.cancelPending(); color = value; phase = 0; refresh(); changed(); });
   let lastChoice = 'aurora';
   const quick = document.querySelector<HTMLElement>('#visual-quick') ?? document.querySelector('.transport')!.appendChild(document.createElement('div'));
   quick.classList.add('visual-quick'); quick.setAttribute('aria-label', 'Visual Quick Start'); quick.setAttribute('role', 'group');
@@ -98,6 +98,7 @@ export function setupVisuals(audio: () => VisualFrame | undefined, changed: () =
   document.querySelector('#visual-controls')!.addEventListener('input', event => {
     const control = event.target as HTMLInputElement;
     if (control.closest('#light-picker, #scene-controls')) return;
+    scenes.cancelPending();
     if (control.id === 'visual-hue') { color.hue = Number(control.value); phase = 0; }
     if (control.id === 'visual-brightness') color.level = Number(control.value);
     refresh(); changed();
@@ -167,6 +168,7 @@ export function setupVisuals(audio: () => VisualFrame | undefined, changed: () =
     },
     fullscreen() { void fullscreen(); },
     applyTrigger(id: string) { input('#visuals').checked = false; scenes.applyTrigger(id); lastChoice = 'triggers'; refresh(); changed(); dock.reveal(); },
+    applyAsmrTrigger(id: string): Promise<boolean> { return scenes.applyAsmrTrigger(id, () => { input('#visuals').checked = false; lastChoice = 'triggers'; refresh(); changed(); dock.reveal(); }); },
     toggle() { const scene = scenes.getState().scene; if (scene !== 'off') lastChoice = scene; const enabled = scene !== 'off' || input('#visuals').checked; input('#visuals').checked = false; scenes.choose(enabled ? 'off' : lastChoice); refresh(); changed(); },
     next(direction = 1) { scenes.next(direction); },
     toggleIndependent() { scenes.toggleIndependent(); },

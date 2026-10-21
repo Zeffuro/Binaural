@@ -196,10 +196,11 @@ export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | un
     }
     if (!viewport.hidden) render();
   }
-  mode.addEventListener('change', refresh); independent.addEventListener('change', () => { refresh(); changed(); });
+  mode.addEventListener('change', () => { triggers.generic(); refresh(); }); independent.addEventListener('change', () => { triggers.cancelPending(); refresh(); changed(); });
   host.addEventListener('change', event => {
     const target = event.target as HTMLInputElement;
     if (target === fileInput) return;
+    triggers.cancelPending();
     if (target.type === 'number') target.value = String(Math.min(Number(target.max), Math.max(Number(target.min), Number(target.value) || Number(target.min))));
     refresh(); changed();
   });
@@ -209,7 +210,7 @@ export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | un
   host.querySelector('#scene-file-button')!.addEventListener('click', () => fileInput.click());
   fileInput.addEventListener('change', async () => {
     const file = fileInput.files?.[0]; fileInput.value = ''; if (!file) return;
-    const ticket = ++loading;
+    triggers.generic(); const ticket = ++loading;
     if (!/^(image|video)\//.test(file.type) || file.size > 128 * 1024 * 1024) { status.textContent = 'Choose an image or video under 128 MB.'; return; }
     const nextUrl = URL.createObjectURL(file);
     const element = file.type.startsWith('video/') ? document.createElement('video') : new Image();
@@ -226,11 +227,12 @@ export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | un
       const old = media.firstElementChild as HTMLImageElement | HTMLVideoElement | null;
       if (old && url) release(old, url);
       url = nextUrl; video = element instanceof HTMLVideoElement ? element : undefined;
-      media.replaceChildren(element); mode.value = 'local'; clear.hidden = false;
+      triggers.generic(); media.replaceChildren(element); mode.value = 'local'; clear.hidden = false;
       status.textContent = `${file.name}. Local files are not saved with presets. Use still images if you prefer less motion.`; refresh(); changed();
     } catch (error) { release(element, nextUrl); if (ticket === loading) status.textContent = (error as Error).message; }
   });
   clear.addEventListener('click', () => {
+    triggers.generic();
     loading++; const old = media.firstElementChild as HTMLImageElement | HTMLVideoElement | null;
     if (old && url) release(old, url);
     video = undefined; media.replaceChildren(); url = undefined; clear.hidden = true;
@@ -250,9 +252,11 @@ export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | un
   stage.querySelector('.scene-close')!.addEventListener('click', () => { void close(); });
   function next(direction = 1): void {
     beforeEdit();
+    triggers.cancelPending();
     if (mode.value === 'milkdrop') library.next(direction);
     else if (mode.value === 'triggers') triggers.next(direction);
     else {
+      triggers.generic();
       const options = [...mode.options].filter(option => !['off', 'local', 'milkdrop', 'triggers'].includes(option.value));
       const index = options.findIndex(option => option.value === mode.value);
       const target = index < 0 ? (direction > 0 ? 0 : options.length - 1) : (index + direction + options.length) % options.length;
@@ -338,10 +342,12 @@ export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | un
       triggers.restore(state.triggers); glassPhase = lightPhase = pan = 0; triggerPreset = ''; triggerRenderer.reset(); refresh();
       if (mode.value === 'local' && !url) status.textContent = 'Choose your local photo or video again. Local files are excluded from saved experiences.';
     },
-    choose(scene: string) { mode.value = scene; refresh(); },
-    applyTrigger(id: string) { mode.value = 'triggers'; triggers.apply(id); refresh(); },
+    choose(scene: string) { triggers.generic(); mode.value = scene; refresh(); },
+    applyTrigger(id: string) { triggers.generic(); mode.value = 'triggers'; triggers.apply(id); refresh(); },
+    applyAsmrTrigger(id: string, accepted: () => void) { return triggers.applyAsmr(id, () => { mode.value = 'triggers'; accepted(); refresh(); }); },
+    cancelPending: triggers.cancelPending,
     fullscreen() { void fullscreen(); },
     next,
-    toggleIndependent() { independent.checked = !independent.checked; refresh(); changed(); },
-    stop() { running = false; independent.checked = false; refresh(); if (stage.open) void close(); } };
+    toggleIndependent() { triggers.cancelPending(); independent.checked = !independent.checked; refresh(); changed(); },
+    stop() { triggers.cancelPending(); running = false; independent.checked = false; refresh(); if (stage.open) void close(); } };
 }

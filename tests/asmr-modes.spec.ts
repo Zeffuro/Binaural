@@ -1,37 +1,46 @@
 import { expect, test } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { makeBwgFixture } from './helpers/bwg';
+import { setSources } from './helpers/listening-sources';
 
-test('listening modes preserve the mix, expose the right controls and never autoplay', async ({ page }) => {
+test('source switches preserve the mix, keep controls discoverable and never autoplay', async ({ page }) => {
   await page.goto('/');
-  const mode = (name: string) => page.locator(`button[data-listening-mode=${name}]`);
-  await expect(mode('binaural')).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('#asmr-controls')).toBeHidden();
-  await mode('asmr').click();
-  await expect(page.locator('#tone-controls')).toBeHidden();
-  await expect(page.locator('.frequency-panel')).toBeHidden();
+  const tones = page.getByRole('button', { name: 'Tones', exact: true });
+  const asmr = page.getByRole('button', { name: 'ASMR', exact: true });
+  await expect(tones).toHaveAttribute('aria-pressed', 'true');
+  await expect(asmr).toHaveAttribute('aria-pressed', 'false');
+  await setSources(page, 'asmr');
+  await expect(page.locator('#tone-controls')).toBeVisible();
+  await expect(page.locator('.frequency-panel')).toBeVisible();
+  await expect(page.locator('#tone-settings')).not.toHaveAttribute('open', '');
+  await expect(page.locator('#frequency-browser')).not.toHaveAttribute('open', '');
   await expect(page.locator('#asmr-controls')).toBeVisible();
+  await expect(page.locator('.asmr-layer')).toHaveCount(1);
+  await expect(page.getByLabel('Sound 1 trigger', { exact: true })).toHaveValue('brush');
   await expect(page.getByRole('link', { name: 'Skip to ASMR', exact: true })).toHaveAttribute('href', '#asmr-controls');
   await page.locator('[data-asmr-preset=ear-cupping]').click();
+  await page.locator('.asmr-advanced').first().locator('summary').click();
   await expect(page.getByLabel('Sound 1 ear cupping', { exact: true })).toHaveValue('0.85');
   await expect(page.locator('#asmr-preset option')).toHaveCount(28);
   await expect(page.getByLabel('Sound 1 trigger', { exact: true }).locator('option')).toHaveCount(20);
-  for (const selected of ['mixed', 'binaural', 'asmr']) {
-    await mode(selected).click();
-    await expect(mode(selected)).toHaveAttribute('aria-pressed', 'true');
+  for (const selected of ['mixed', 'binaural', 'ambient', 'asmr'] as const) {
+    await setSources(page, selected);
+    await expect(tones).toHaveAttribute('aria-pressed', String(selected === 'mixed' || selected === 'binaural'));
+    await expect(asmr).toHaveAttribute('aria-pressed', String(selected === 'mixed' || selected === 'asmr'));
     await expect(page.locator('#ambient-level')).toHaveValue('0.2');
     await expect(page.locator('#music-level')).toHaveValue('0.4');
     await expect(page.locator('#status')).toHaveText('Ready when you are');
   }
   await expect(page.getByLabel('Sound 1 ear cupping', { exact: true })).toHaveValue('0.85');
-  await mode('mixed').click();
+  await tones.click();
   await expect(page.locator('#tone-controls')).toBeVisible();
   await expect(page.locator('#asmr-controls')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Skip to tones', exact: true })).toHaveAttribute('href', '#tone-controls');
   await page.locator('#undo-edit').click();
-  await expect(mode('asmr')).toHaveAttribute('aria-pressed', 'true');
+  await expect(tones).toHaveAttribute('aria-pressed', 'false');
+  await expect(asmr).toHaveAttribute('aria-pressed', 'true');
   await page.locator('#asmr-clear').click();
-  await expect(mode('asmr')).toHaveAttribute('aria-pressed', 'true');
+  await expect(asmr).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#asmr-controls')).toBeVisible();
 });
 
@@ -44,13 +53,13 @@ test('WAV modes isolate actual tone and ASMR channels while keeping shared atmos
     session.layers[0] = { ...session.layers[0], left: 660, right: 660, route: 'right', level: .8 };
     session.asmr = { level: 1, layers: [{ ...makeAsmrLayer('air'), level: 1, pan: -1, motion: 'still' }] };
     const results: Record<string, number[]> = {};
-    for (const mode of ['binaural', 'asmr', 'mixed']) {
+    for (const mode of ['binaural', 'asmr', 'mixed', 'ambient']) {
       session.mode = mode;
       const view = new DataView(await (await renderWav(session, 1)).arrayBuffer()), sums = [0, 0];
       for (let frame = 28665; frame < 41895; frame++) for (let ear = 0; ear < 2; ear++) sums[ear] += (view.getInt16(44 + frame * 4 + ear * 2, true) / 32768) ** 2;
       results[mode] = sums.map(sum => Math.sqrt(sum / 13230));
     }
-    session.mode = 'asmr'; session.asmr.layers = []; session.ambient = 'pink'; session.ambientLevel = .5;
+    session.mode = 'ambient'; session.ambient = 'pink'; session.ambientLevel = .5;
     const shared = new DataView(await (await renderWav(session, 1)).arrayBuffer()); let energy = 0;
     for (let i = 44 + 28665 * 4; i < shared.byteLength; i += 2) energy += Math.abs(shared.getInt16(i, true));
     return { results, energy };
@@ -58,6 +67,7 @@ test('WAV modes isolate actual tone and ASMR channels while keeping shared atmos
   expect(result.results.binaural[0]).toBe(0); expect(result.results.binaural[1]).toBeGreaterThan(.02);
   expect(result.results.asmr[0]).toBeGreaterThan(.001); expect(result.results.asmr[1]).toBe(0);
   expect(Math.min(...result.results.mixed)).toBeGreaterThan(.001);
+  expect(result.results.ambient).toEqual([0, 0]);
   expect(result.energy).toBeGreaterThan(10000);
 });
 
@@ -71,9 +81,11 @@ test('legacy ASMR links keep Mixed mode when cleared and unknown modes are rejec
     return { link: sessionLink(session), rejected };
   });
   expect(result.rejected).toBe(true); await page.goto(result.link);
-  await expect(page.locator('button[data-listening-mode=mixed]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: 'Tones', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: 'ASMR', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await page.locator('#asmr-clear').click();
-  await expect(page.locator('button[data-listening-mode=mixed]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: 'Tones', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: 'ASMR', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#asmr-controls')).toBeVisible();
 });
 
@@ -285,11 +297,16 @@ test('failed recording loads can retry and ASMR-only native sessions can export'
     try { await prepareAsmrRecordings(settings); } catch { failed = true; }
     const cachedAfterFailure = asmrRecordingsReady(settings); await prepareAsmrRecordings(settings);
     const session = importBwg(new Uint8Array(fixture)).session;
-    session.mode = 'asmr'; session.asmr = settings; session.master = 1;
+    session.mode = 'asmr'; session.asmr = settings; session.master = 1; session.ambient = 'none';
     const view = new DataView(await (await renderWav(session, 2)).arrayBuffer()); let left = 0, right = 0;
     for (let i = 44 + 22050 * 4; i < view.byteLength; i += 4) { left += Math.abs(view.getInt16(i, true)); right += Math.abs(view.getInt16(i + 2, true)); }
-    return { failed, cachedAfterFailure, cachedAfterRetry: asmrRecordingsReady(settings), left, right };
+    session.mode = 'ambient';
+    const muted = new DataView(await (await renderWav(session, 1)).arrayBuffer());
+    let ambientEnergy = 0;
+    for (let i = 44; i < muted.byteLength; i += 2) ambientEnergy += Math.abs(muted.getInt16(i, true));
+    return { failed, cachedAfterFailure, cachedAfterRetry: asmrRecordingsReady(settings), left, right, ambientEnergy };
   }, makeBwgFixture());
   expect(attempts).toBe(2); expect(result.failed).toBe(true); expect(result.cachedAfterFailure).toBe(false); expect(result.cachedAfterRetry).toBe(true);
   expect(result.left).toBe(0); expect(result.right).toBeGreaterThan(1000);
+  expect(result.ambientEnergy).toBe(0);
 });

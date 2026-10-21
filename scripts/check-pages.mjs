@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium, firefox, expect } from '@playwright/test';
 import { browserLaunchOptions } from './browser-options.mjs';
 import { makeBwgFixture } from '../tests/helpers/bwg.ts';
+import { setSources } from '../tests/helpers/listening-sources.ts';
 
 const root = resolve(fileURLToPath(new URL('../dist/', import.meta.url)));
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.webp': 'image/webp', '.png': 'image/png', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json', '.txt': 'text/plain', '.ogg': 'audio/ogg' };
@@ -68,11 +69,14 @@ try {
         await page.getByRole('button', { name: 'Apply timeline', exact: true }).click();
         await expect(page.locator('#timeline-info')).toBeVisible();
         await expect(page.locator('#status')).toHaveText('Ready when you are');
-        await page.locator('button[data-listening-mode="asmr"]').click();
+        await setSources(page, 'asmr');
+        await page.locator('#asmr-more-experiences > summary').click();
         for (const id of ['glass-lantern', 'red-sweep', 'rose-brushes', 'paper-prism', 'blue-droplets', 'torch-whisper']) {
           await page.locator('#asmr-preset').selectOption(id); await page.locator('#asmr-pair').click();
+          if (id === 'glass-lantern') await page.getByRole('dialog', { name: 'Moving visual trigger', exact: true }).getByRole('button', { name: 'Start visual', exact: true }).click();
+          await expect(page.getByRole('dialog', { name: 'Moving visual trigger', exact: true })).toHaveCount(0);
           await expect(page.locator('[data-asmr]')).toHaveCount(2);
-          await expect(page.getByLabel('Enable light triggers', { exact: true })).not.toBeChecked();
+          await expect(page.getByLabel('Enable light triggers', { exact: true })).toBeChecked();
         }
         await page.locator('#asmr-preset').selectOption('hands-close'); await page.locator('#asmr-load').click();
         const recording = page.waitForResponse(origin + prefix + 'audio/asmr/hand-rubbing.ogg');
@@ -82,6 +86,7 @@ try {
         await expect(page.locator('#status')).toHaveText('● Listening');
         await page.locator('#pause').click(); await expect(page.locator('#status')).toHaveText('Ⅱ Paused');
         await page.locator('#play').click();
+        await page.getByLabel('Enable light triggers', { exact: true }).uncheck();
         await page.locator('[data-visual-quick=calm]').click();
         await expect(page.locator('#visual-dock .scene-drawing')).toBeVisible();
         await page.locator('[data-visual-quick=triggers]').click();
@@ -134,6 +139,7 @@ try {
         await page.goto(shared);
         await expect(page.getByLabel('Scene', { exact: true })).toHaveValue('milkdrop');
         await expect(page.getByLabel('Enable MilkDrop visuals')).not.toBeChecked();
+        await expect(page.getByLabel('Enable light triggers', { exact: true })).not.toBeChecked();
         await expect(page.locator('#status')).toHaveText('Ready when you are');
         await page.locator('#render-audio').click();
         await page.getByRole('dialog', { name: 'Export audio', exact: true }).getByLabel('Duration in seconds', { exact: false }).fill('1');
@@ -142,6 +148,7 @@ try {
         expectShortWav(wav);
         await page.locator('#import-file').setInputFiles({ name: 'synthetic.bwg', mimeType: 'application/octet-stream', buffer: Buffer.from(makeBwgFixture()) });
         await page.getByRole('button', { name: 'Load imported session' }).click();
+        await expect(page.getByLabel('Enable light triggers', { exact: true })).not.toBeChecked();
         await page.locator('#render-audio').click();
         const nativeExport = page.getByRole('dialog', { name: 'Export audio', exact: true });
         await nativeExport.getByLabel('Duration in seconds', { exact: true }).fill('1');

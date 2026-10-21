@@ -6,6 +6,7 @@ import { chromium, firefox, expect } from '@playwright/test';
 import { browserLaunchOptions } from '../scripts/browser-options.mjs';
 import AxeBuilder from '@axe-core/playwright';
 import { makeBwgFixture } from './helpers/bwg.ts';
+import { setSources } from './helpers/listening-sources.ts';
 
 const root = fileURLToPath(new URL('../dist/', import.meta.url));
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.txt': 'text/plain', '.ogg': 'audio/ogg' };
@@ -81,10 +82,14 @@ try {
         })), files);
         expect(offlineAssets.every(Boolean)).toBe(true);
         expect(await page.evaluate(() => fetch('./private-local-file.json').then(() => true, () => false))).toBe(false);
-        await page.locator('button[data-listening-mode="asmr"]').click();
+        await setSources(page, 'asmr');
+        await page.locator('#asmr-more-experiences > summary').click();
         for (const id of ['glass-lantern', 'red-sweep', 'rose-brushes', 'paper-prism', 'blue-droplets', 'torch-whisper']) {
           await page.locator('#asmr-preset').selectOption(id); await page.locator('#asmr-pair').click();
+          if (id === 'glass-lantern') await page.getByRole('dialog', { name: 'Moving visual trigger', exact: true }).getByRole('button', { name: 'Start visual', exact: true }).click();
+          await expect(page.getByRole('dialog', { name: 'Moving visual trigger', exact: true })).toHaveCount(0);
           await expect(page.locator('[data-asmr]')).toHaveCount(2);
+          await expect(page.getByLabel('Enable light triggers', { exact: true })).toBeChecked();
         }
         await page.locator('#asmr-preset').selectOption('hands-close'); await page.locator('#asmr-load').click();
         const recording = page.waitForResponse(origin + prefix + 'audio/asmr/hand-rubbing.ogg');
@@ -95,6 +100,7 @@ try {
         await expect(page.locator('#status')).toHaveText('● Listening');
         await page.locator('#pause').click(); await expect(page.locator('#status')).toHaveText('Ⅱ Paused');
         await page.locator('#play').click();
+        await page.getByLabel('Enable light triggers', { exact: true }).uncheck();
         await page.locator('[data-visual-quick=triggers]').click();
         await page.getByLabel('Enable light triggers', { exact: true }).check();
         for (const id of ['prism-lantern', 'red-scan', 'soft-torch']) {
@@ -120,9 +126,11 @@ try {
         await page.goto(shared);
         await expect(page.getByLabel('Scene', { exact: true })).toHaveValue('milkdrop');
         await expect(page.getByLabel('Enable MilkDrop visuals')).not.toBeChecked();
+        await expect(page.getByLabel('Enable light triggers', { exact: true })).not.toBeChecked();
         await expect(page.locator('#status')).toHaveText('Ready when you are');
         await page.locator('#import-file').setInputFiles({ name: 'synthetic.bwg', mimeType: 'application/octet-stream', buffer: Buffer.from(makeBwgFixture()) });
         await page.getByRole('button', { name: 'Load imported session' }).click();
+        await expect(page.getByLabel('Enable light triggers', { exact: true })).not.toBeChecked();
         await page.locator('#render-audio').click();
         const nativeExport = page.getByRole('dialog', { name: 'Export audio', exact: true });
         await nativeExport.getByLabel('Duration in seconds', { exact: true }).fill('1');

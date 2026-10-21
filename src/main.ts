@@ -26,9 +26,9 @@ import { favoriteFrequencies, frequencyKey, isFrequencyFavoriteStorage, toggleFr
 import { setupTimelineEditor } from './timeline-editor';
 import { setupImmersiveAudio } from './immersive-audio';
 import { setupAsmr } from './asmr-controls';
-import { listeningMode, type ListeningMode } from './listening-mode';
+import { listeningMode, modeForSources, modeGains, type ListeningMode } from './listening-mode';
 import { setupListeningMode } from './mode-controls';
-import { asmrPresets } from './asmr-presets';
+import { defaultAsmr, makeAsmrLayer } from './asmr-state';
 
 const $ = <T extends HTMLElement = HTMLElement>(selector: string): T => document.querySelector<T>(selector)!;
 $('#app').innerHTML = layout;
@@ -69,12 +69,14 @@ const backgrounds = setupBackgrounds({ session: () => session, notify: message =
 setupExplorer(async (preset, play) => { await useSession(preset.session); if (play) await playPause(); });
 setupSessionGuide({ load: useSession, start: playPause });
 const asmr = setupAsmr({ get: () => session.asmr, beforeEdit: checkpoint, busy: () => busy || musicBusy || backgroundBusy,
+  enabled: () => !!modeGains(listeningMode(session)).asmr,
+  enable() { session.mode = modeForSources(!!modeGains(listeningMode(session)).tones, true); session.version = 2; engine.update(session); modes.refresh(); },
   update(value, light) {
     const previousMode = listeningMode(session);
     session.asmr = value; session.version = 2;
-    session.mode = previousMode === 'binaural' && value.layers.length ? 'asmr' : previousMode;
+    session.mode = previousMode;
     engine.update(session);
-    if (light) visual.applyTrigger(light);
+    if (light) void visual.applyAsmrTrigger(light).then(enabled => { notice(enabled ? 'Sounds and lights ready. Start listening when you want.' : 'Sounds loaded. Your visual is unchanged.'); }).catch(report);
     modes.refresh();
   },
   isolate() { session.mode = 'asmr'; engine.update(session); renderSession(); },
@@ -85,7 +87,7 @@ const modes = setupListeningMode({ get: () => listeningMode(session), change: se
 function setListeningMode(mode: ListeningMode): void {
   if (busy || musicBusy || backgroundBusy || mode === listeningMode(session)) return;
   checkpoint(); session.mode = mode; session.version = 2;
-  if (mode !== 'binaural' && !session.asmr?.layers.length) session.asmr = asmrPresets[0].make();
+  if (modeGains(mode).asmr && !session.asmr?.layers.length) session.asmr = { ...(session.asmr ?? defaultAsmr()), layers: [makeAsmrLayer('brush')] };
   engine.update(session); renderSession();
 }
 $('#frequency-count').textContent = `${frequencies.length} frequencies to explore`;
@@ -229,8 +231,9 @@ async function useSession(next: Session): Promise<void> {
 }
 function addLayer(layer: Layer): void {
   if (session.layers.length >= MAX_LAYERS) { notice(`Up to ${MAX_LAYERS} layers fit in a session.`); return; }
-  checkpoint(); session.layers.push(layer);
+  checkpoint(); session.layers.push(layer); session.mode = modeForSources(true, !!modeGains(listeningMode(session)).asmr); session.version = 2;
   renderLayers();
+  modes.refresh();
   engine.update(session);
 }
 

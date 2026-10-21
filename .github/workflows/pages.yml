@@ -3,13 +3,14 @@ name: Deploy GitHub Pages
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -80,8 +81,10 @@ jobs:
       - name: Check offline playback and safe app updates
         run: xvfb-run -a npm run check:offline
       - name: Configure Pages
+        if: github.ref == 'refs/heads/main'
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
       - name: Upload site
+        if: github.ref == 'refs/heads/main'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
           path: dist
@@ -119,6 +122,7 @@ jobs:
           retention-days: 14
 
   deploy:
+    if: github.ref == 'refs/heads/main'
     needs: [build, windows-audio]
     runs-on: ubuntu-latest
     permissions:

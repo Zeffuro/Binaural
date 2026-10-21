@@ -2,3 +2,7 @@
 .listening-modes [role=group] { display: flex; flex-wrap: wrap; gap: 8px; }
 .listening-modes button { flex: 1 1 80px; min-height: 44px; }
 .listening-modes [aria-pressed=true] { outline: 2px solid currentColor; outline-offset: -2px; font-weight: 600; }
+.listening-modes button { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.listening-modes [data-source-status] { font-size: 13px; }
+.source-settings > summary { cursor: pointer; padding-block: 10px; font-size: 13px; }
+.source-off { margin-block: 0 8px; }

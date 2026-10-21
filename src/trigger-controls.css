@@ -26,4 +26,14 @@
 .trigger-dialog .trigger-grid { grid-template-columns: minmax(0, 1fr); }
 .trigger-manual { cursor: crosshair; touch-action: none !important; }
 .trigger-controls button { min-height: 36px; white-space: normal; }
+.asmr-visual-simple { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(130px, 100%), 1fr)); gap: 12px; }
+.asmr-visual-simple p { grid-column: 1 / -1; margin: 0; }
+.asmr-visual-consent { box-sizing: border-box; width: min(480px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); padding: 24px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface, #f5f5ef); color: inherit; overflow: auto; }
+.asmr-visual-consent::backdrop { background: #08171499; }
+.asmr-visual-consent h2 { margin-top: 0; font-size: 20px; }
+.asmr-visual-consent p { line-height: 1.6; }
+.asmr-visual-remember { display: flex; align-items: flex-start; gap: 10px; line-height: 1.5; }
+.asmr-visual-remember input { flex: 0 0 auto; margin-top: 5px; }
+.asmr-visual-consent-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+.asmr-visual-consent-actions button { min-height: 44px; white-space: normal; }
 @media (max-width: 720px) { .trigger-controls button { min-height: 44px; } .trigger-dialog { padding: 20px; } }

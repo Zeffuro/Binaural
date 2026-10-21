@@ -1,9 +1,10 @@
 import { expect, test } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import { setSources } from './helpers/listening-sources';
 
 test('ASMR library searches sources, filters all recipes and loads silently with optional lights', async ({ page }) => {
-  await page.goto('/'); await page.locator('button[data-listening-mode="asmr"]').click();
-  await page.getByText('Explore ASMR mixes', { exact: true }).click();
+  await page.goto('/'); await setSources(page, 'asmr');
+  await page.locator('#asmr-more-experiences > summary').click();
   await expect(page.locator('.asmr-library-card')).toHaveCount(28);
   for (const [group, count] of [['Ear focus', 5], ['Recorded textures', 5], ['Layered mixes', 6], ['Sensory textures', 12]] as const) {
     await page.locator('#asmr-filter').selectOption(group);
@@ -17,8 +18,10 @@ test('ASMR library searches sources, filters all recipes and loads silently with
   await expect(page.locator('#asmr-preset')).toHaveValue('cloth-cocoon');
   await expect(page.getByLabel('Sound 1 trigger', { exact: true })).toHaveValue('recorded-cloth');
   await page.getByRole('button', { name: 'Load sounds + lights: Soft cloth cocoon', exact: true }).click();
-  await expect(page.locator('#trigger-preset')).toHaveValue('rose-glass');
-  await expect(page.getByLabel('Enable light triggers', { exact: true })).not.toBeChecked();
+  await page.getByRole('dialog', { name: 'Moving visual trigger', exact: true }).getByRole('button', { name: 'Start visual', exact: true }).click();
+  await expect(page.locator('#trigger-preset')).toHaveValue('custom');
+  await expect(page.locator('#trigger-seed')).toHaveValue('73');
+  await expect(page.getByLabel('Enable light triggers', { exact: true })).toBeChecked();
   await expect(page.locator('#status')).toHaveText('Ready when you are');
   await page.locator('#asmr-search').fill('  LEFT  attention ');
   await expect(page.locator('.asmr-library-card h3')).toHaveText(['Left ear attention', 'Left soft attention']);
@@ -27,11 +30,11 @@ test('ASMR library searches sources, filters all recipes and loads silently with
 });
 
 test('ASMR favorites persist separately, synchronize tabs and tolerate blocked storage', async ({ page, context }) => {
-  await page.goto('/'); await page.locator('button[data-listening-mode="asmr"]').click();
-  await page.getByText('Explore ASMR mixes', { exact: true }).click();
+  await page.goto('/'); await setSources(page, 'asmr');
+  await page.locator('#asmr-more-experiences > summary').click();
   await page.getByRole('button', { name: 'Favorite: Left ear attention', exact: true }).click();
-  await page.reload(); await page.locator('button[data-listening-mode="asmr"]').click();
-  await page.getByText('Explore ASMR mixes', { exact: true }).click();
+  await page.reload(); await setSources(page, 'asmr');
+  await page.locator('#asmr-more-experiences > summary').click();
   await page.locator('#asmr-filter').selectOption('favorites');
   await expect(page.locator('.asmr-library-card h3')).toHaveText('Left ear attention');
   const other = await context.newPage(); await other.goto('/');
@@ -49,8 +52,8 @@ test('ASMR favorites persist separately, synchronize tabs and tolerate blocked s
     Storage.prototype.getItem = () => { throw new Error('blocked'); };
     Storage.prototype.setItem = () => { throw new Error('blocked'); };
   });
-  await page.reload(); await page.locator('button[data-listening-mode="asmr"]').click();
-  await page.getByText('Explore ASMR mixes', { exact: true }).click();
+  await page.reload(); await setSources(page, 'asmr');
+  await page.locator('#asmr-more-experiences > summary').click();
   await page.getByRole('button', { name: 'Favorite: Warm ear cups', exact: true }).click();
   await expect(page.locator('#asmr-status')).toContainText('kept for this tab');
   await page.locator('#asmr-filter').selectOption('favorites');
@@ -59,8 +62,8 @@ test('ASMR favorites persist separately, synchronize tabs and tolerate blocked s
 
 test('expanded ASMR library fits small screens and remains accessible in both themes', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 800 });
-  await page.goto('/'); await page.locator('button[data-listening-mode="asmr"]').click();
-  await page.getByText('Explore ASMR mixes', { exact: true }).click();
+  await page.goto('/'); await setSources(page, 'asmr');
+  await page.locator('#asmr-more-experiences > summary').click();
   for (const theme of ['light', 'dark']) {
     await page.evaluate(value => { document.documentElement.dataset.theme = value; }, theme);
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

@@ -1,5 +1,11 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import { setSources } from './helpers/listening-sources';
+
+async function adjust(page: Page, index = 0) {
+  const details = page.locator('.asmr-advanced').nth(index);
+  if (await details.getAttribute('open') === null) await details.locator('summary').click();
+}
 
 async function range(input: Locator, value: string) {
   await input.focus();
@@ -18,7 +24,7 @@ async function sharedMix(page: Page) {
 }
 
 test('3D controls retain stereo settings and save, share and undo complete positions without autoplay', async ({ page }) => {
-  await page.goto('/'); await page.locator('button[data-listening-mode=asmr]').click();
+  await page.goto('/'); await setSources(page, 'asmr'); await adjust(page);
   await range(page.getByLabel('Sound 1 left / right', { exact: true }), '.4');
   await page.getByLabel('Sound 1 sound space', { exact: true }).selectOption('hrtf');
   await expect(page.getByLabel('Sound 1 direction', { exact: true })).toHaveValue('36');
@@ -26,7 +32,6 @@ test('3D controls retain stereo settings and save, share and undo complete posit
   await range(page.getByLabel('Sound 1 direction', { exact: true }), '-45');
   await range(page.getByLabel('Sound 1 distance', { exact: true }), '1.25');
   await page.getByLabel('Sound 1 3D movement', { exact: true }).selectOption('orbit');
-  await page.locator('.asmr-advanced summary').first().click();
   await range(page.getByLabel('Sound 1 height', { exact: true }), '30');
   await page.locator('#preset-name').fill('Around my chair'); await page.locator('#save-preset').click();
   await expect(page.locator('#notice')).toContainText('saved');
@@ -38,20 +43,24 @@ test('3D controls retain stereo settings and save, share and undo complete posit
   await expect(page.getByLabel('Sound 1 left / right', { exact: true })).toHaveValue('0.4');
   await expect(page.getByLabel('Sound 1 movement', { exact: true })).toHaveValue('sweep');
   await page.locator('#undo-edit').click();
+  await adjust(page);
   await expect(page.getByLabel('Sound 1 sound space', { exact: true })).toHaveValue('hrtf');
   await expect(page.getByLabel('Sound 1 direction', { exact: true })).toHaveValue('-45');
   await page.reload(); await page.locator('[data-saved]').click();
+  await adjust(page);
   await expect(page.getByLabel('Sound 1 distance', { exact: true })).toHaveValue('1.25');
   await expect(page.getByLabel('Sound 1 height', { exact: true })).toHaveValue('30');
   await page.goto(link);
+  await adjust(page);
   await expect(page.getByLabel('Sound 1 3D movement', { exact: true })).toHaveValue('orbit');
   await expect(page.locator('#status')).toHaveText('Ready when you are');
   await expect(page.getByLabel('Enable light triggers', { exact: true })).not.toBeChecked();
 });
 
 test('duplicated 3D sounds keep independent positions through subsequent edits and serialization', async ({ page }) => {
-  await page.goto('/'); await page.locator('button[data-listening-mode=asmr]').click();
+  await page.goto('/'); await setSources(page, 'asmr');
   await page.locator('#asmr-clear').click(); await page.locator('#asmr-add').click();
+  await adjust(page);
   await page.getByLabel('Sound 1 sound space', { exact: true }).selectOption('hrtf');
   await page.getByRole('button', { name: 'Duplicate sound 1', exact: true }).click();
   await range(page.getByLabel('Sound 1 direction', { exact: true }), '-80');
@@ -62,7 +71,7 @@ test('duplicated 3D sounds keep independent positions through subsequent edits a
     { azimuth: -80, elevation: 0, distance: .6, motion: 'still' },
     { azimuth: 0, elevation: 15, distance: .6, motion: 'still' },
   ]);
-  await page.locator('button[data-listening-mode=mixed]').click();
+  await setSources(page, 'mixed');
   await expect(page.getByLabel('Sound 2 direction', { exact: true })).toHaveValue('0');
   await expect(page.getByLabel('Sound 1 height', { exact: true })).toHaveValue('0');
   await expect(page.locator('#status')).toHaveText('Ready when you are');
@@ -70,7 +79,8 @@ test('duplicated 3D sounds keep independent positions through subsequent edits a
 
 test('3D controls fit 320px screens and remain accessible in both themes', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 800 }); await page.goto('/');
-  await page.locator('button[data-listening-mode=asmr]').click();
+  await setSources(page, 'asmr');
+  await page.locator('#asmr-more-experiences > summary').click();
   await page.locator('#asmr-preset').selectOption('around-your-head'); await page.locator('#asmr-load').click();
   for (const theme of ['light', 'dark']) {
     await page.getByLabel('Appearance', { exact: true }).selectOption(theme);

@@ -1,12 +1,22 @@
-.asmr-recipes { padding: 14px; border: 1px solid var(--line); border-radius: 9px; margin-block: 16px; }
+.asmr-recipes { margin-block: 12px 16px; }
 .asmr-actions, .asmr-flags { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-block: 12px; }
 .asmr-featured { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .asmr-featured button { white-space: normal; min-height: 44px; }
+.asmr-starter-label { margin-block: 14px 8px; font-size: 13px; }
+.asmr-quick, .asmr-placement { display: flex; flex-wrap: wrap; gap: 6px; }
+.asmr-quick button { flex: 1 1 70px; }
+.asmr-placement button { flex: 1 1 76px; min-width: 0; white-space: normal; }
+.asmr-placement [aria-pressed=true] { background: var(--green); color: white; border-color: var(--green); }
+:root[data-theme=dark] #asmr-controls .asmr-placement [aria-pressed=true] { background: #aec58e; color: #142516; }
+.asmr-mixer > summary { cursor: pointer; padding-block: 10px; }
+.asmr-mixer > summary span { font-size: 13px; }
 .asmr-actions > button { flex: 1 1 130px; white-space: normal; }
-.asmr-layer { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 16px; min-width: 0; }
+.asmr-layer { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 14px; min-width: 0; }
 .asmr-layer-top { display: grid; grid-template-columns: auto minmax(0, 1fr) 32px; gap: 10px; align-items: center; }
 .asmr-layer-top label { margin: 0; white-space: nowrap; }
 .asmr-layer-top select { min-width: 0; }
+.asmr-layer > .range-heading { margin-top: 12px; }
+.asmr-layer > .asmr-flags { margin-block: 0 8px; }
 .asmr-flags [aria-pressed=true] { background: var(--green); color: white; border-color: var(--green); }
 :root[data-theme=dark] #asmr-controls .asmr-flags [aria-pressed=true] { background: #aec58e; color: #142516; }
 .asmr-advanced { margin-top: 14px; }

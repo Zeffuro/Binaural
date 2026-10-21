@@ -2,6 +2,7 @@ import { setupColorPicker } from './color-picker';
 import { fromHex, toHex } from './visual-color';
 import { defaultTriggerSettings, parseTriggerSettings, triggerRanges, type TriggerSettings } from './trigger-state';
 import { triggerPresets } from './trigger-presets';
+import { setupAsmrVisualConsent } from './asmr-visual-consent';
 import './trigger-controls.css';
 
 type Numeric = keyof typeof triggerRanges;
@@ -20,6 +21,9 @@ const intensities = [['Comfortable', .55], ['Bright', 1.5], ['Very bright', 4]] 
 
 export function setupTriggerControls(host: HTMLElement, redraw: () => void, changed: () => void, beforeEdit: () => void) {
   let state = defaultTriggerSettings(), basePreset = state.preset;
+  let asmrContext = false, manualPosition = false, revision = 0;
+  const approval = setupAsmrVisualConsent();
+  const cancelPending = () => { revision++; approval.cancel(); };
   const panel = document.createElement('section'); panel.className = 'trigger-controls'; panel.id = 'trigger-controls'; panel.hidden = true;
   panel.setAttribute('aria-label', 'Light trigger controls');
   panel.innerHTML = `<h3>Light triggers</h3><div class="trigger-featured" aria-label="Featured light presets">${featured.map(id => {
@@ -44,6 +48,23 @@ export function setupTriggerControls(host: HTMLElement, redraw: () => void, chan
   const preset = panel.querySelector<HTMLSelectElement>('#trigger-preset')!;
   const details = panel.querySelector('details')!;
   const description = panel.querySelector('#trigger-description')!;
+  const richControls = [...panel.children].filter(child => child.tagName !== 'H3' && child !== details);
+  const advanced = document.createElement('div'); details.querySelector('summary')!.after(advanced);
+  const simple = document.createElement('div'); simple.className = 'asmr-visual-simple'; simple.hidden = true;
+  const quickSelect = (field: string, label: string, values: [string, string][]) => `<label>${label}<select aria-label="ASMR ${label.toLowerCase()}" data-asmr-visual="${field}">${options(values)}<option value="custom" disabled>Custom</option></select></label>`;
+  simple.innerHTML = quickSelect('intensity', 'Intensity', [['soft', 'Soft'], ['normal', 'Normal'], ['focused', 'Focused']])
+    + quickSelect('pace', 'Pace', [['still', 'Still'], ['very-slow', 'Very slow'], ['slow', 'Slow']])
+    + quickSelect('position', 'Position', [['follow', 'Follow'], ['left', 'Left'], ['center', 'Center'], ['right', 'Right'], ['manual', 'Manual']])
+    + '<p class="fine-print">Soft, slow paired lights. Advanced visual settings include all presets, colors and brighter lights. Manual lets you drag the preview or use the advanced position controls.</p>';
+  panel.querySelector('h3')!.after(simple);
+  function context(value: boolean): void {
+    asmrContext = value; simple.hidden = !value;
+    details.querySelector('summary')!.textContent = value ? 'Advanced visual settings' : 'More settings: color, glass and light';
+    for (const control of richControls) {
+      if (value) advanced.append(control); else panel.insertBefore(control, details);
+    }
+    details.open = false;
+  }
   const dialog = document.createElement('dialog'); dialog.className = 'trigger-dialog'; dialog.setAttribute('aria-label', 'Adjust light triggers');
   dialog.innerHTML = '<div class="trigger-dialog-heading"><h2>Adjust light triggers</h2><button type="button" class="secondary-button">Close light settings (Esc)</button></div><p class="fine-print">Changes update the preview immediately.</p>';
   document.body.append(dialog);
@@ -76,10 +97,15 @@ export function setupTriggerControls(host: HTMLElement, redraw: () => void, chan
     panel.querySelector<HTMLInputElement>('[data-trigger=depth]')!.disabled = state.style === 'scan';
     for (const key of ['offsetX', 'offsetY']) panel.querySelector<HTMLInputElement>(`[data-trigger=${key}]`)!.disabled = state.path !== 'manual';
     pickers.forEach(({ key, picker }) => picker.update(fromHex(state[key], 0)));
+    const quickValue = (field: string, value: string) => { simple.querySelector<HTMLSelectElement>(`[data-asmr-visual=${field}]`)!.value = value; };
+    quickValue('intensity', state.brightness === .3 ? 'soft' : state.brightness === .5 ? 'normal' : state.brightness === .65 ? 'focused' : 'custom');
+    quickValue('pace', !state.speed && !state.drift && !state.lightSpeed ? 'still' : state.speed <= .008 && state.drift <= .03 && state.lightSpeed <= .025 ? 'very-slow' : state.speed <= .015 && state.drift <= .06 && state.lightSpeed <= .05 ? 'slow' : 'custom');
+    quickValue('position', state.path !== 'manual' ? 'follow' : manualPosition ? 'manual' : state.offsetY === 0 && state.offsetX === -.65 ? 'left' : state.offsetY === 0 && state.offsetX === .65 ? 'right' : state.offsetY === 0 && state.offsetX === 0 ? 'center' : 'manual');
   }
-  function customize(): void { state.preset = 'custom'; sync(); redraw(); changed(); }
+  function customize(): void { cancelPending(); state.preset = 'custom'; sync(); redraw(); changed(); }
   function apply(id: string): void {
     const selected = triggerPresets.find(item => item.id === id); if (!selected) return;
+    cancelPending();
     state = structuredClone(selected.settings); basePreset = selected.id; sync(); redraw(); changed();
   }
   function next(direction = 1): void {
@@ -96,12 +122,28 @@ export function setupTriggerControls(host: HTMLElement, redraw: () => void, chan
     try { state = parseTriggerSettings({ ...state, [key]: value }); customize(); } catch { sync(); }
   });
   panel.addEventListener('change', event => { event.stopPropagation(); if (event.target === preset) apply(preset.value); });
+  simple.addEventListener('change', event => {
+    const input = event.target as HTMLSelectElement;
+    beforeEdit();
+    if (input.dataset.asmrVisual === 'intensity') state.brightness = ({ soft: .3, normal: .5, focused: .65 } as Record<string, number>)[input.value];
+    if (input.dataset.asmrVisual === 'pace') {
+      const pace = ({ still: [0, 0, 0], 'very-slow': [.008, .03, .025], slow: [.015, .06, .05] } as Record<string, number[]>)[input.value];
+      [state.speed, state.drift, state.lightSpeed] = pace;
+      if (input.value === 'still') state.reaction = 0;
+    }
+    if (input.dataset.asmrVisual === 'position') {
+      manualPosition = input.value === 'manual';
+      state.path = input.value === 'follow' ? 'horizontal' : 'manual'; state.reaction = 0;
+      if (input.value !== 'manual') { state.offsetX = input.value === 'left' ? -.65 : input.value === 'right' ? .65 : 0; state.offsetY = 0; }
+    }
+    customize();
+  });
   panel.querySelector('[data-trigger-prev]')!.addEventListener('click', () => { beforeEdit(); next(-1); });
   panel.querySelector('[data-trigger-next]')!.addEventListener('click', () => { beforeEdit(); next(); });
   panel.querySelector('[data-trigger-reset]')!.addEventListener('click', () => { beforeEdit(); apply(state.preset === 'custom' ? basePreset : state.preset); });
   panel.querySelectorAll<HTMLButtonElement>('[data-trigger-preset]').forEach(button => button.addEventListener('click', () => { beforeEdit(); apply(button.dataset.triggerPreset!); }));
   panel.querySelectorAll<HTMLButtonElement>('[data-trigger-intensity]').forEach(button => button.addEventListener('click', () => { beforeEdit(); state.brightness = Number(button.dataset.triggerIntensity); customize(); }));
-  consent.addEventListener('change', redraw);
+  consent.addEventListener('change', () => { cancelPending(); if (!consent.checked) approval.revoke(); redraw(); });
   dialog.querySelector('button')!.addEventListener('click', () => dialog.close());
   dialog.addEventListener('cancel', event => { event.preventDefault(); event.stopPropagation(); dialog.close(); });
   dialog.addEventListener('close', () => { if (returnParent) returnParent.append(panel); details.open = previousOpen; });
@@ -111,8 +153,23 @@ export function setupTriggerControls(host: HTMLElement, redraw: () => void, chan
     state: () => structuredClone(state),
     select(mode: string) { panel.hidden = consentBox.hidden = mode !== 'triggers'; },
     next, apply,
-    restore(value: TriggerSettings) { state = parseTriggerSettings(value); basePreset = state.preset === 'custom' ? 'prism-lantern' : state.preset; consent.checked = false; sync(); },
+    cancelPending,
+    generic() { cancelPending(); if (asmrContext) context(false); },
+    async applyAsmr(id: string, accepted: () => void): Promise<boolean> {
+      cancelPending();
+      const selected = triggerPresets.find(item => item.id === id); if (!selected) return false;
+      const current = revision;
+      const decision = consent.checked || approval.remembered() ? { allowed: true, remember: false } : await approval.request();
+      if (!decision.allowed || current !== revision) return false;
+      if (decision.remember) approval.remember();
+      state = structuredClone(selected.settings); basePreset = selected.id;
+      manualPosition = false; state.brightness = .3; state.speed = Math.min(.015, state.speed);
+      state.drift = Math.min(.06, state.drift); state.lightSpeed = Math.min(.05, state.lightSpeed);
+      state.reaction = Math.min(.2, state.reaction); state.preset = 'custom';
+      consent.checked = true; context(true); sync(); accepted(); return true;
+    },
+    restore(value: TriggerSettings) { cancelPending(); context(false); state = parseTriggerSettings(value); basePreset = state.preset === 'custom' ? 'prism-lantern' : state.preset; consent.checked = false; sync(); },
     open() { if (panel.hidden || dialog.open) return; returnParent = panel.parentElement!; previousOpen = details.open; details.open = true; dialog.append(panel); dialog.showModal(); },
-    position(x: number, y: number) { state.offsetX = Math.max(-1, Math.min(1, x)); state.offsetY = Math.max(-1, Math.min(1, y)); customize(); },
+    position(x: number, y: number) { manualPosition = true; state.offsetX = Math.max(-1, Math.min(1, x)); state.offsetY = Math.max(-1, Math.min(1, y)); customize(); },
   };
 }

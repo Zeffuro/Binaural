@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import { listeningMode, modeGains } from '../src/listening-mode.ts';
+import { listeningMode, modeGains, modeForSources, listeningModes } from '../src/listening-mode.ts';
 import { makeAsmrLayer, parseAsmr, recordedAsmrSounds, generatedAsmrSounds } from '../src/asmr-state.ts';
 import { cuppingParameters, cuppingWave } from '../src/audio/ear-cupping.ts';
 import { createAsmrAssetStore, finishRecordedBuffer } from '../src/audio/asmr-asset-store.ts';
@@ -16,6 +16,13 @@ test('modes isolate the appropriate bus and preserve legacy sessions and mix val
   assert.deepEqual(modeGains(listeningMode(session)), { tones: 0, asmr: 1 });
   assert.deepEqual(modeGains('binaural'), { tones: 1, asmr: 0 });
   assert.deepEqual(modeGains('mixed'), { tones: 1, asmr: 1 });
+  assert.deepEqual(modeGains('ambient'), { tones: 0, asmr: 0 });
+  for (const tones of [false, true]) for (const asmr of [false, true]) {
+    const mode = modeForSources(tones, asmr);
+    assert.ok(listeningModes.includes(mode));
+    assert.equal(listeningMode({ mode, asmr: { layers: [{}] } }), mode);
+    assert.deepEqual(modeGains(mode), { tones: Number(tones), asmr: Number(asmr) });
+  }
   assert.deepEqual(session, copy);
 });
 

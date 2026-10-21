@@ -4,7 +4,7 @@ import { generatedBackgrounds } from './audio/generated-backgrounds';
 import { frequencyKey } from './frequency-favorites';
 
 export const layout = `
-  <nav class="skip-links" aria-label="Skip to section"><a href="#transport">Skip to playback</a><a href="#tone-controls">Skip to tones</a><a href="#atmosphere">Skip to atmosphere</a><a href="#visual-controls">Skip to visuals</a></nav>
+  <nav class="skip-links" aria-label="Skip to section"><a href="#transport">Skip to playback</a><a href="#tone-controls">Skip to tones</a><a href="#asmr-controls">Skip to ASMR</a><a href="#atmosphere">Skip to atmosphere</a><a href="#visual-controls">Skip to visuals</a></nav>
   <aside class="sidebar">
     <a class="brand" href="./" aria-label="Binaural home"><span class="brand-mark">◖◗</span> binaural<span class="brand-dot">.</span></a>
     <p class="eyebrow sidebar-label">YOUR LISTENING SPACE</p>
