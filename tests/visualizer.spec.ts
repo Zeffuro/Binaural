@@ -148,3 +148,25 @@ test('a pending play aborted by removal cannot replace the removal status', asyn
   await expect(page.locator('#scene-status')).toHaveText('File removed.');
 });
 
+test('rendered reduced-motion status catches up when the media change event is delayed', async ({ page }) => {
+  await page.addInitScript(() => {
+    const original = window.matchMedia.bind(window);
+    Object.assign(window, { delayedReducedMotion: false });
+    window.matchMedia = query => {
+      const media = original(query);
+      if (query === '(prefers-reduced-motion: reduce)') Object.defineProperty(media, 'matches', {
+        get: () => (window as unknown as { delayedReducedMotion: boolean }).delayedReducedMotion,
+      });
+      return media;
+    };
+  });
+  await page.goto('/');
+  await page.locator('#scene-file').setInputFiles(fileURLToPath(new URL('./fixtures/moodscape.webm', import.meta.url)));
+  const video = page.locator('.scene-media video');
+  await page.getByLabel('Animate without audio').check();
+  await expect.poll(() => video.evaluate((node: HTMLVideoElement) => node.paused)).toBe(false);
+  await page.evaluate(() => { (window as unknown as { delayedReducedMotion: boolean }).delayedReducedMotion = true; });
+  await expect.poll(() => video.evaluate((node: HTMLVideoElement) => node.paused)).toBe(true);
+  await expect(page.locator('#visual-dock-status')).toHaveText('Reduced motion is active. The preview stays still.');
+});
+

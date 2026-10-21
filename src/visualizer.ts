@@ -61,6 +61,11 @@ export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | un
   }
 
   const active = () => mode.value !== 'off' && allowed() && (running || independent.checked) && !reduced.matches && !document.hidden && (onscreen || stage.open || captures.size > 0);
+  let reducedState = reduced.matches;
+  function syncDock(): void {
+    reducedState = reduced.matches;
+    dock?.scene({ mode: mode.value, label: mode.selectedOptions[0].text, allowed: !open.disabled, running, independent: independent.checked, reduced: reducedState });
+  }
   const captureSize = () => [...captures].sort((a, b) => b.width * b.height - a.width * a.height)[0];
   function captureSource(): HTMLCanvasElement | HTMLImageElement | HTMLVideoElement {
     if (mode.value === 'off') throw new Error('Choose a visual or enable ambient light before recording.');
@@ -80,6 +85,7 @@ export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | un
     return canvas;
   }
   function render(timestamp = 0): void {
+    if (reducedState !== reduced.matches) syncDock();
     const cadence = timestamp && previousTick ? timestamp - previousTick : 0;
     previousTick = timestamp;
     const effectiveQuality = library.effectiveQuality(), interval = 1000 / visualBudget(effectiveQuality).fps;
@@ -186,7 +192,7 @@ export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | un
     stage.querySelector<HTMLElement>('.scene-trigger-settings')!.hidden = mode.value !== 'triggers';
     viewport.classList.toggle('trigger-manual', mode.value === 'triggers' && triggers.state().path === 'manual');
     if (mode.value === 'triggers') status.textContent = triggers.enabled() ? 'Light settings are below the preview. Glass and backlight move independently.' : 'Enable light triggers beside the preview to display this scene.';
-    dock?.scene({ mode: mode.value, label: mode.selectedOptions[0].text, allowed: !open.disabled, running, independent: independent.checked, reduced: reduced.matches });
+    syncDock();
     if (video) {
       const currentVideo = video;
       if (active() && mode.value === 'local') void currentVideo.play().catch(error => {

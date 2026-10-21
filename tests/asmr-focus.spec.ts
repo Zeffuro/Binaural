@@ -152,6 +152,11 @@ test('@live ASMR focus waits for recorded sounds to become audible', async ({ pa
       Object.assign(window, { focusFixture: { engine, session } });
       session.asmr.layers = [makeAsmrLayer('recorded-cloth')]; engine.update(session);
       await waitForAudioTime(engine.context, engine.context.currentTime + .5);
+      const settleDeadline = performance.now() + 3000;
+      while (engine.asmr.bus.gain.value > .000005) {
+        if (performance.now() > settleDeadline) throw new Error('The pending ASMR bus did not fade out.');
+        await waitForAudioTime(engine.context, engine.context.currentTime + .05);
+      }
       return { loading: engine.loadingAsmr, music: engine.musicGain.gain.value, bus: engine.asmr.bus.gain.value };
     });
     await seen;

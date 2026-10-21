@@ -72,7 +72,7 @@ test('expanded ASMR library fits small screens and remains accessible in both th
 });
 
 test('main explorer finds all ASMR experiences without showing dormant tone settings', async ({ page }) => {
-  await page.goto('/'); await page.getByRole('button', { name: 'Explore all presets', exact: true }).click();
+  await page.goto('/'); await page.locator('#explore-presets').click();
   await page.locator('#preset-category').selectOption('ASMR');
   await expect(page.locator('.explore-card')).toHaveCount(40);
   await expect(page.locator('#preset-results')).not.toContainText('Hz');
@@ -108,7 +108,7 @@ test('new close attention and object experiences load complete mixes from the ma
   });
   expect(recipes).toHaveLength(12);
   for (const recipe of recipes) {
-    await page.getByRole('button', { name: 'Explore all presets', exact: true }).click();
+    await page.locator('#explore-presets').click();
     await page.locator('#preset-category').selectOption('ASMR');
     await page.locator(`[data-load-preset="asmr-${recipe.id}"]`).click();
     await expect(page.locator('#playing-title')).toHaveText(recipe.name);
