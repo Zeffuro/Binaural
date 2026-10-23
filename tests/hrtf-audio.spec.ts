@@ -369,16 +369,26 @@ test('profile changes crossfade paired filters while retaining the same input hi
 
 test('@live custom profile edits reuse bounded nodes and a processor failure silences and disposes the graph', async ({ page }) => {
   test.setTimeout(60_000);
-  await page.goto('/');
+  await page.goto('/'); await page.locator('h1').click();
   const result = await page.evaluate(async () => {
-    const loaderPath = '/src/audio/hrtf-audio.ts', positionPath = '/src/audio/asmr-position.ts';
+    const loaderPath = '/src/audio/hrtf-audio.ts', positionPath = '/src/audio/asmr-position.ts', clockPath = '/tests/helpers/audio-clock.ts';
     const { prepareHrtfAudio, preparedHrtfPack } = await import(loaderPath), { AsmrPosition } = await import(positionPath);
+    const { waitForAudioTime } = await import(clockPath);
     const context = new AudioContext(), original = window.AudioWorkletNode;
-    const worklets: AudioWorkletNode[] = []; let panners = 0, failures = 0;
+    const worklets: AudioWorkletNode[] = [], workletNames: string[] = [], errors: string[] = [];
+    const errorEvents: { name: string; type: string; targetMatches: boolean; time: number; message: string }[] = [];
+    let panners = 0, failures = 0, onFault: ((node: AudioWorkletNode) => void) | undefined;
     const realPanner = context.createPanner.bind(context);
     context.createPanner = () => { panners++; return realPanner(); };
     window.AudioWorkletNode = class extends original {
-      constructor(...args: ConstructorParameters<typeof AudioWorkletNode>) { super(...args); worklets.push(this); }
+      constructor(...args: ConstructorParameters<typeof AudioWorkletNode>) {
+        super(...args); worklets.push(this); workletNames.push(args[1]);
+        this.addEventListener('processorerror', event => {
+          errors.push(args[1]); errorEvents.push({ name: args[1], type: event.type, targetMatches: event.target === this,
+            time: context.currentTime, message: (event as ErrorEvent).message ?? '' });
+          onFault?.(this);
+        }, { capture: true });
+      }
     };
     let position: any, source: OscillatorNode | undefined;
     try {
@@ -388,35 +398,51 @@ test('@live custom profile edits reuse bounded nodes and a processor failure sil
       const level = context.createGain(); level.gain.value = .03; source.connect(level);
       const base = { azimuth: 70, elevation: 25, distance: .6, motion: 'orbit' };
       position = new AsmrPosition(context, level, context.destination, base, 2, undefined, 0, () => { failures++; });
-      const output = position.outputNode, analyser = context.createAnalyser(); analyser.fftSize = 1024; output.connect(analyser);
-      source.start();
+      const output = position.outputNode, splitter = context.createChannelSplitter(2), analysers = [context.createAnalyser(), context.createAnalyser()];
+      output.connect(splitter); analysers.forEach((analyser, ear) => { analyser.fftSize = 1024; splitter.connect(analyser, ear); });
+      source.start(); const sourceStartedAt = context.currentTime;
       for (let i = 0; i < 30; i++) {
         position.update({ ...base, ...(i % 3 === 0 ? {} : { profile: i % 3 === 1 ? 'sadie-d1' : 'sadie-h10' }) }, 2);
       }
       const deadline = performance.now() + 2000;
       while ((position.profilePending || position.queuedPack) && performance.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10));
       const protocolIdle = !position.profilePending && !position.queuedPack;
-      await new Promise(resolve => setTimeout(resolve, 250));
-      const values = new Float32Array(1024); analyser.getFloatTimeDomainData(values);
-      const energy = values.reduce((sum, value) => sum + value ** 2, 0), stableOutput = position.outputNode === output;
-      const node = worklets[0], pack = preparedHrtfPack(context, 'sadie-d1'), beforeFailure = failures;
+      await waitForAudioTime(context, context.currentTime + .15);
+      const values = [new Float32Array(1024), new Float32Array(1024)]; analysers.forEach((analyser, ear) => analyser.getFloatTimeDomainData(values[ear]!));
+      const earEnergy = values.map(channel => channel.reduce((sum, value) => sum + value ** 2, 0));
+      const energy = earEnergy.reduce((sum, value) => sum + value, 0), stableOutput = position.outputNode === output;
+      const before = { state: context.state, time: context.currentTime, sourceStartedAt,
+        nativeGain: position.nativeGain.gain.value, customGain: position.customGain.gain.value, outputGain: output.gain.value };
+      const node: AudioWorkletNode = position.custom, pack = preparedHrtfPack(context, 'sadie-d1'), beforeFailure = failures;
+      if (!(energy > .000001)) return { worklets: worklets.length, workletNames, targetMatchesFirst: node === worklets[0],
+        panners, energy, earEnergy, before, errors, errorEvents, stableOutput, protocolIdle, processorFailed: false, beforeFailure,
+        failures, silent: true, disposed: position.disposed, armed: false };
       const stopped = new Promise<boolean>(resolve => {
-        node.addEventListener('processorerror', () => resolve(true), { once: true }); setTimeout(() => resolve(false), 2500);
+        onFault = processor => { if (processor === node) resolve(true); };
+        setTimeout(() => resolve(false), 2500);
       });
       node.port.postMessage({ pack: { ...pack, inverse: new Float64Array(pack.inverse.length).fill(NaN) } });
       const processorFailed = await stopped;
-      await new Promise(resolve => setTimeout(resolve, 100));
-      analyser.getFloatTimeDomainData(values);
-      const silent = values.every(value => value === 0), disposed = position.disposed;
+      await waitForAudioTime(context, context.currentTime + .05);
+      analysers.forEach((analyser, ear) => analyser.getFloatTimeDomainData(values[ear]!));
+      const silent = values.every(channel => channel.every(value => value === 0)), disposed = position.disposed;
+      splitter.disconnect(); analysers.forEach(analyser => analyser.disconnect());
       position.dispose(); position.dispose();
-      return { worklets: worklets.length, panners, energy, stableOutput, protocolIdle, processorFailed, beforeFailure, failures, silent, disposed };
+      return { worklets: worklets.length, workletNames, targetMatchesFirst: node === worklets[0], panners, energy, earEnergy, before, errors, errorEvents,
+        stableOutput, protocolIdle, processorFailed, beforeFailure, failures, silent, disposed, armed: true };
     } finally {
       position?.dispose(); source?.stop(); window.AudioWorkletNode = original; await context.close();
     }
   });
   await test.info().attach('hrtf-live-disposal.json', { body: JSON.stringify(result, null, 2), contentType: 'application/json' });
   expect(result.worklets).toBe(2); expect(result.panners).toBe(1); expect(result.stableOutput).toBe(true); expect(result.protocolIdle).toBe(true);
+  expect(result.workletNames).toEqual(['asmr-hrtf', 'asmr-hrtf-motion']); expect(result.targetMatchesFirst).toBe(true);
+  expect(result.before.state).toBe('running'); expect(result.before.time - result.before.sourceStartedAt).toBeGreaterThanOrEqual(.15);
   expect(result.energy).toBeGreaterThan(.000001); expect(result.beforeFailure).toBe(0);
+  expect(result.earEnergy.every(energy => energy > .000001)).toBe(true);
+  expect(result.armed).toBe(true);
+  expect(result.errors).toEqual(['asmr-hrtf']);
+  expect(result.errorEvents.every(event => event.targetMatches && event.type === 'processorerror')).toBe(true);
   expect(result.processorFailed).toBe(true); expect(result.failures).toBe(1); expect(result.silent).toBe(true); expect(result.disposed).toBe(true);
 });
 
