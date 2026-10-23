@@ -34,16 +34,19 @@ test('@live boost doubles quiet playback and preserves master mute', async ({ pa
     const internals = engine as unknown as { context: AudioContext; gate: GainNode };
     const analyser = internals.context.createAnalyser(); analyser.fftSize = 8192; internals.gate.connect(analyser);
     const read = async (): Promise<number> => {
-      await waitForAudioTime(internals.context, Math.max(.9, internals.context.currentTime + .4));
+      await waitForAudioTime(internals.context, internals.context.currentTime + 1.25);
       const samples = new Float32Array(analyser.fftSize); analyser.getFloatTimeDomainData(samples); return energy(samples);
     };
     try {
-      const normalLive = await read(); session.master = 2; engine.update(session);
-      const boostedLive = await read(); session.master = 0; engine.update(session);
-      return { normalLive, boostedLive, muted: await read() };
+      const normalLive = await read(), normalTime = internals.context.currentTime;
+      session.master = 2; engine.update(session);
+      const boostedLive = await read(), boostedTime = internals.context.currentTime;
+      session.master = 0; engine.update(session);
+      return { normalLive, boostedLive, normalTime, boostedTime, muted: await read() };
     } finally { analyser.disconnect(); await engine.stop(); }
   });
-  expect(result.normalLive).toBeGreaterThan(.001); expect(result.boostedLive / result.normalLive).toBeCloseTo(2, 1);
+  expect(result.normalLive).toBeGreaterThan(.001);
+  expect(result.boostedLive / result.normalLive, JSON.stringify(result)).toBeCloseTo(2, 1);
   expect(result.muted).toBeLessThan(.00001);
 });
 

@@ -58,7 +58,7 @@ jobs:
         env:
           VITE_SOURCE_URL: https://github.com/${{ github.repository }}/tree/${{ github.sha }}
       - name: Check video codecs and live audio clocks
-        run: xvfb-run -a node scripts/test-browser.mjs --full tests/video-recording.spec.ts tests/generated-background-ui.spec.ts --grep "recorded canvas and stereo engine mix independently decode|recording includes native BWGen, stereo local music and ASMR|normal ambience uses the generated PCM and retains pause and audio-clock stop" --forbid-only --workers=1 --reporter=list,html
+        run: xvfb-run -a node scripts/test-browser.mjs --full tests/video-recording.spec.ts tests/generated-background-ui.spec.ts tests/audio-export.spec.ts --grep "recorded canvas and stereo engine mix independently decode|recording includes native BWGen, stereo local music and ASMR|normal ambience uses the generated PCM and retains pause and audio-clock stop|boost doubles quiet" --forbid-only --workers=1 --reporter=list,html
         env:
           PLAYWRIGHT_HTML_OPEN: never
       - name: Check ASMR playback, gestures and discovery
@@ -70,7 +70,7 @@ jobs:
         env:
           PLAYWRIGHT_HTML_OPEN: never
       - name: Run Chromium, Firefox and accessibility smoke tests
-        run: xvfb-run -a node scripts/test-browser.mjs --full --grep-invert "recorded canvas and stereo engine mix independently decode|recording includes native BWGen, stereo local music and ASMR|normal ambience uses the generated PCM and retains pause and audio-clock stop|(?:accessibility|discovery|asmr-ui|asmr-visuals|asmr-workspace|asmr-modes|asmr-library|asmr-focus|asmr-phrases|asmr-variation-ui|asmr-cues|asmr-gestures|visual-timing|experience|asmr-spatial-ui|listening-sources|light-triggers|visual-workspace|visualizer)\.spec\.ts" --forbid-only --workers=1 --reporter=list,html
+        run: xvfb-run -a node scripts/test-browser.mjs --full --grep-invert "recorded canvas and stereo engine mix independently decode|recording includes native BWGen, stereo local music and ASMR|normal ambience uses the generated PCM and retains pause and audio-clock stop|boost doubles quiet|(?:accessibility|discovery|asmr-ui|asmr-visuals|asmr-workspace|asmr-modes|asmr-library|asmr-focus|asmr-phrases|asmr-variation-ui|asmr-cues|asmr-gestures|visual-timing|experience|asmr-spatial-ui|listening-sources|light-triggers|visual-workspace|visualizer)\.spec\.ts" --forbid-only --workers=1 --reporter=list,html
         env:
           PLAYWRIGHT_HTML_OPEN: never
       - name: Preserve Linux test reports and failure traces
