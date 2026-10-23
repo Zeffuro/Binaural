@@ -16,6 +16,7 @@ export class AsmrSpace {
   update(settings: AsmrSpaceSettings = defaultAsmrSpace()): void {
     if (this.disposed) return;
     const cutoff = Math.min(this.context.sampleRate * .2, 8000 * (1000 / 8000) ** settings.warmth);
+    const creating = !this.bank && settings.amount > 0;
     if (!this.bank && settings.amount > 0) {
       const direct = this.context.createGain(), wet = this.context.createGain(), damping = this.context.createBiquadFilter();
       direct.gain.value = 1; wet.gain.value = 0;
@@ -37,13 +38,14 @@ export class AsmrSpace {
       this.bank = { direct, wet, damping, delays, taps };
     }
     if (this.bank) {
-      const time = this.context.currentTime, { direct, wet, damping, delays } = this.bank;
+      // Tick-zero ramps can lose their explicit start value when Firefox first activates a silent node.
+      const time = Math.max(this.context.currentTime, 1 / this.context.sampleRate), { direct, wet, damping, delays } = this.bank;
       if (settings.amount !== this.settings.amount) {
         smooth(direct.gain, 1 - settings.amount, time);
         smooth(wet.gain, settings.amount, time);
       }
-      if (settings.warmth !== this.settings.warmth) smooth(damping.frequency, cutoff, time);
-      if (settings.size !== this.settings.size) delays.forEach((delay, index) => smooth(delay.delayTime, arrivals[index] * settings.size, time));
+      if (!creating && settings.warmth !== this.settings.warmth) smooth(damping.frequency, cutoff, time);
+      if (!creating && settings.size !== this.settings.size) delays.forEach((delay, index) => smooth(delay.delayTime, arrivals[index] * settings.size, time));
     }
     this.settings = { ...settings };
   }

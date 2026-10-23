@@ -57,6 +57,7 @@ test('room impulse keeps zero-latency direct sound, three scaled arrivals, dampi
       const buffer = context.createBuffer(2, rate, rate); buffer.getChannelData(0)[onset] = 1;
       source.buffer = buffer;
       const room = new AsmrSpace(context, source, context.destination); room.update({ amount: .35, size, warmth });
+      const initial = { delays: room.bank.delays.map((delay: DelayNode) => delay.delayTime.value), cutoff: room.bank.damping.frequency.value, q: room.bank.damping.Q.value };
       source.start(); const output = await context.startRendering(); room.dispose(); room.dispose();
       const left = output.getChannelData(0), right = output.getChannelData(1);
       const arrivals = [.011, .023, .037].map(delay => {
@@ -74,13 +75,13 @@ test('room impulse keeps zero-latency direct sound, three scaled arrivals, dampi
         if (frame > onset + rate * .1) tail = Math.max(tail, Math.abs(left[frame]));
         sum += Math.abs(left[frame]); rightPeak = Math.max(rightPeak, Math.abs(right[frame]));
       }
-      return { arrivals, direct: left[onset], before, tail, sum, rightPeak, finite: left.every(Number.isFinite) && right.every(Number.isFinite) };
+      return { rate, size, warmth, initial, arrivals, direct: left[onset], before, tail, sum, rightPeak, finite: left.every(Number.isFinite) && right.every(Number.isFinite) };
     }
     return { small: await impulse(.5, 0), large: await impulse(1.5, 1), bright: await impulse(1.5, 0),
       rates: await Promise.all([8000, 24000, 44100].map(rate => impulse(1.5, 0, rate))) };
   });
   for (const room of [result.small, result.large, result.bright, ...result.rates]) {
-    expect(room.direct).toBeCloseTo(.65, 5); expect(room.before).toBe(0); expect(room.tail).toBeLessThan(1e-8);
+    expect(room.direct, JSON.stringify(result)).toBeCloseTo(.65, 5); expect(room.before, JSON.stringify(result)).toBe(0); expect(room.tail).toBeLessThan(1e-8);
     expect(room.rightPeak).toBe(0); expect(room.sum).toBeLessThan(1.00001); expect(room.finite).toBe(true);
     for (const arrival of room.arrivals) { expect(Math.abs(arrival.offset - arrival.expected)).toBeLessThanOrEqual(1); expect(arrival.energy).toBeGreaterThan(1e-7); }
   }
@@ -92,7 +93,7 @@ test('dry room is exact PCM with no wet allocation and normalized wet summing re
   await page.goto('/');
   const result = await page.evaluate(async () => {
     const path = '/src/audio/asmr-space.ts', { AsmrSpace } = await import(path);
-    async function render(stage: 'reference' | 'dry' | 'wet' | 'disposed', rate = 48000) {
+    async function render(stage: 'reference' | 'dry' | 'wet' | 'disposed', rate = 48000, start = 0) {
       const context = new OfflineAudioContext(2, rate, rate), source = context.createBufferSource();
       const buffer = context.createBuffer(2, rate, rate), left = buffer.getChannelData(0), right = buffer.getChannelData(1);
       for (let frame = 0; frame < rate; frame++) {
@@ -111,11 +112,13 @@ test('dry room is exact PCM with no wet allocation and normalized wet summing re
         room = new AsmrSpace(context, source, context.destination); room.update(stage === 'dry' ? undefined : { amount: .35, size: 1.5, warmth: 1 });
         if (stage === 'disposed') { room.dispose(); room.dispose(); room.update({ amount: .35, size: .5, warmth: 0 }); }
       }
-      source.start(); const output = await context.startRendering(); room?.dispose();
-      return { channels: [output.getChannelData(0), output.getChannelData(1)], delays, filters };
+      source.start(start); const output = await context.startRendering(); room?.dispose();
+      const channels = [output.getChannelData(0), output.getChannelData(1)]; let peak = 0, peakFrame = 0;
+      channels[0].forEach((value, frame) => { if (Math.abs(value) > peak) { peak = Math.abs(value); peakFrame = frame; } });
+      return { channels, delays, filters, peak: { rate, start, peak, peakFrame, samples: [...channels[0].slice(Math.max(0, peakFrame - 3), peakFrame + 4)] } };
     }
     const reference = await render('reference'), dry = await render('dry'), wet = await render('wet'), disposed = await render('disposed');
-    const lowerRate = await render('wet', 24000);
+    const lowerRate = await render('wet', 24000), delayed = await render('wet', 48000, .1);
     let dryError = 0, disposedError = 0, oppositeError = 0, peak = 0, referenceEnergy = 0, retainedEnergy = 0;
     for (let frame = 0; frame < 48000; frame++) {
       for (let ear = 0; ear < 2; ear++) {
@@ -126,14 +129,15 @@ test('dry room is exact PCM with no wet allocation and normalized wet summing re
       }
       oppositeError = Math.max(oppositeError, Math.abs(wet.channels[0][frame] + wet.channels[1][frame]));
     }
-    for (const channel of lowerRate.channels) for (const value of channel) peak = Math.max(peak, Math.abs(value));
+    for (const channel of [...lowerRate.channels, ...delayed.channels]) for (const value of channel) peak = Math.max(peak, Math.abs(value));
     return { dryError, disposedError, oppositeError, peak, referenceEnergy, retainedEnergy, dryDelays: dry.delays, dryFilters: dry.filters, wetDelays: wet.delays,
-      settled: wet.channels[0][47000], lowerRateSettled: lowerRate.channels[0][23500],
-      finite: [...wet.channels, ...lowerRate.channels].every(channel => channel.every(Number.isFinite)) };
+      settled: wet.channels[0][47000], lowerRateSettled: lowerRate.channels[0][23500], delayedSettled: delayed.channels[0][47000],
+      peaks: [wet.peak, lowerRate.peak, delayed.peak], finite: [...wet.channels, ...lowerRate.channels, ...delayed.channels].every(channel => channel.every(Number.isFinite)) };
   });
   expect(result.dryError).toBe(0); expect(result.disposedError).toBe(0); expect(result.dryDelays).toBe(0); expect(result.dryFilters).toBe(0); expect(result.wetDelays).toBe(3);
   expect(result.referenceEnergy).toBeGreaterThan(1000); expect(result.retainedEnergy).toBeGreaterThan(1000); expect(result.lowerRateSettled).toBeCloseTo(.8, 5);
-  expect(result.oppositeError).toBe(0); expect(result.peak).toBeLessThanOrEqual(.80001); expect(result.settled).toBeCloseTo(.8, 5); expect(result.finite).toBe(true);
+  expect(result.delayedSettled).toBeCloseTo(.8, 5);
+  expect(result.oppositeError).toBe(0); expect(result.peak, JSON.stringify(result)).toBeLessThanOrEqual(.80001); expect(result.settled).toBeCloseTo(.8, 5); expect(result.finite).toBe(true);
 });
 
 test('actual ASMR mixer applies room to generated, recorded stereo and native HRTF while explicit Dry stays exact', async ({ page }) => {
