@@ -383,11 +383,6 @@ test('@live custom profile edits reuse bounded nodes and a processor failure sil
     window.AudioWorkletNode = class extends original {
       constructor(...args: ConstructorParameters<typeof AudioWorkletNode>) {
         super(...args); worklets.push(this); workletNames.push(args[1]);
-        this.addEventListener('processorerror', event => {
-          errors.push(args[1]); errorEvents.push({ name: args[1], type: event.type, targetMatches: event.target === this,
-            time: context.currentTime, message: (event as ErrorEvent).message ?? '' });
-          onFault?.(this);
-        }, { capture: true });
       }
     };
     let position: any, source: OscillatorNode | undefined;
@@ -401,6 +396,17 @@ test('@live custom profile edits reuse bounded nodes and a processor failure sil
       const output = position.outputNode, splitter = context.createChannelSplitter(2), analysers = [context.createAnalyser(), context.createAnalyser()];
       output.connect(splitter); analysers.forEach((analyser, ear) => { analyser.fftSize = 1024; splitter.connect(analyser, ear); });
       source.start(); const sourceStartedAt = context.currentTime;
+      position.update({ ...base, profile: 'sadie-d1' }, 2);
+      worklets.forEach((processor, index) => {
+        const productionHandler = processor.onprocessorerror;
+        if (!productionHandler) throw new Error('Missing production HRTF processor failure handler.');
+        processor.onprocessorerror = function (event) {
+          errors.push(workletNames[index]!); errorEvents.push({ name: workletNames[index]!, type: event.type,
+            targetMatches: event.target === processor, time: context.currentTime, message: (event as ErrorEvent).message ?? '' });
+          onFault?.(processor);
+          return productionHandler.call(this, event);
+        };
+      });
       for (let i = 0; i < 30; i++) {
         position.update({ ...base, ...(i % 3 === 0 ? {} : { profile: i % 3 === 1 ? 'sadie-d1' : 'sadie-h10' }) }, 2);
       }
