@@ -20,7 +20,7 @@ test('room state validates every bound, preserves omitted legacy shape and round
   const result = await page.evaluate(async () => {
     const roomPath = '/src/asmr-space.ts', statePath = '/src/asmr-state.ts', modelPath = '/src/model.ts', sharePath = '/src/share.ts';
     const { defaultAsmrSpace, parseAsmrSpace, asmrSpacePresets } = await import(roomPath);
-    const { parseAsmr } = await import(statePath), { initialSession, parseSession } = await import(modelPath);
+    const { defaultAsmr, parseAsmr } = await import(statePath), { initialSession, parseSession } = await import(modelPath);
     const { sessionLink, readSharedSession } = await import(sharePath);
     const base = defaultAsmrSpace(), bad: unknown[] = [undefined, null, [], false, 1, 'room', {}];
     for (const [field, values] of Object.entries({ amount: [-.001, .351, NaN, Infinity, '.1', null], size: [.499, 1.501], warmth: [-.001, 1.001] })) {
@@ -34,7 +34,7 @@ test('room state validates every bound, preserves omitted legacy shape and round
     const boundaries = [0, .35].flatMap(amount => [.5, 1.5].flatMap(size => [0, 1].map(warmth => parseAsmrSpace({ amount, size, warmth }))));
     const presets: { id: string; settings: AsmrSpaceSettings }[] = asmrSpacePresets;
     const rooms = presets.map(preset => {
-      const session = initialSession(); session.asmr.space = preset.settings;
+      const session = initialSession(); session.asmr = { ...defaultAsmr(), space: preset.settings };
       return { id: preset.id, settings: preset.settings, json: parseSession(JSON.parse(JSON.stringify(session))).asmr.space,
         share: readSharedSession(new URL(sessionLink(session)).hash).asmr.space };
     });
@@ -54,7 +54,8 @@ test('room impulse keeps zero-latency direct sound, three scaled arrivals, dampi
     async function impulse(size: number, warmth: number, rate = 48000) {
       const onset = rate / 2;
       const context = new OfflineAudioContext(2, rate, rate), source = context.createBufferSource();
-      source.buffer = context.createBuffer(2, rate, rate); source.buffer.getChannelData(0)[onset] = 1;
+      const buffer = context.createBuffer(2, rate, rate); buffer.getChannelData(0)[onset] = 1;
+      source.buffer = buffer;
       const room = new AsmrSpace(context, source, context.destination); room.update({ amount: .35, size, warmth });
       source.start(); const output = await context.startRendering(); room.dispose(); room.dispose();
       const left = output.getChannelData(0), right = output.getChannelData(1);
@@ -93,11 +94,12 @@ test('dry room is exact PCM with no wet allocation and normalized wet summing re
     const path = '/src/audio/asmr-space.ts', { AsmrSpace } = await import(path);
     async function render(stage: 'reference' | 'dry' | 'wet' | 'disposed', rate = 48000) {
       const context = new OfflineAudioContext(2, rate, rate), source = context.createBufferSource();
-      source.buffer = context.createBuffer(2, rate, rate);
+      const buffer = context.createBuffer(2, rate, rate), left = buffer.getChannelData(0), right = buffer.getChannelData(1);
       for (let frame = 0; frame < rate; frame++) {
         const sample = frame >= rate / 4 ? .8 : .6 * Math.sin(frame * .27);
-        source.buffer.getChannelData(0)[frame] = sample; source.buffer.getChannelData(1)[frame] = -sample;
+        left[frame] = sample; right[frame] = -sample;
       }
+      source.buffer = buffer;
       let delays = 0, filters = 0;
       const createDelay = context.createDelay.bind(context), createFilter = context.createBiquadFilter.bind(context);
       context.createDelay = (...args) => { delays++; return createDelay(...args); };
@@ -114,20 +116,23 @@ test('dry room is exact PCM with no wet allocation and normalized wet summing re
     }
     const reference = await render('reference'), dry = await render('dry'), wet = await render('wet'), disposed = await render('disposed');
     const lowerRate = await render('wet', 24000);
-    let dryError = 0, disposedError = 0, oppositeError = 0, peak = 0;
+    let dryError = 0, disposedError = 0, oppositeError = 0, peak = 0, referenceEnergy = 0, retainedEnergy = 0;
     for (let frame = 0; frame < 48000; frame++) {
       for (let ear = 0; ear < 2; ear++) {
         dryError = Math.max(dryError, Math.abs(reference.channels[ear][frame] - dry.channels[ear][frame]));
         disposedError = Math.max(disposedError, Math.abs(reference.channels[ear][frame] - disposed.channels[ear][frame]));
+        referenceEnergy += reference.channels[ear][frame] ** 2; retainedEnergy += disposed.channels[ear][frame] ** 2;
         peak = Math.max(peak, Math.abs(wet.channels[ear][frame]));
       }
       oppositeError = Math.max(oppositeError, Math.abs(wet.channels[0][frame] + wet.channels[1][frame]));
     }
     for (const channel of lowerRate.channels) for (const value of channel) peak = Math.max(peak, Math.abs(value));
-    return { dryError, disposedError, oppositeError, peak, dryDelays: dry.delays, dryFilters: dry.filters, wetDelays: wet.delays,
-      settled: wet.channels[0][47000], finite: wet.channels.every(channel => channel.every(Number.isFinite)) };
+    return { dryError, disposedError, oppositeError, peak, referenceEnergy, retainedEnergy, dryDelays: dry.delays, dryFilters: dry.filters, wetDelays: wet.delays,
+      settled: wet.channels[0][47000], lowerRateSettled: lowerRate.channels[0][23500],
+      finite: [...wet.channels, ...lowerRate.channels].every(channel => channel.every(Number.isFinite)) };
   });
   expect(result.dryError).toBe(0); expect(result.disposedError).toBe(0); expect(result.dryDelays).toBe(0); expect(result.dryFilters).toBe(0); expect(result.wetDelays).toBe(3);
+  expect(result.referenceEnergy).toBeGreaterThan(1000); expect(result.retainedEnergy).toBeGreaterThan(1000); expect(result.lowerRateSettled).toBeCloseTo(.8, 5);
   expect(result.oppositeError).toBe(0); expect(result.peak).toBeLessThanOrEqual(.80001); expect(result.settled).toBeCloseTo(.8, 5); expect(result.finite).toBe(true);
 });
 

@@ -10,9 +10,9 @@ export function setupAsmrSpaceControls(host: HTMLElement, options: {
     <select id="asmr-listening-space" aria-describedby="asmr-space-help">${asmrSpacePresets.map(preset => `<option value="${preset.id}">${preset.name}</option>`).join('')}<option value="custom" disabled>Custom room</option></select>
     <p id="asmr-space-help" class="fine-print">Short, soft reflections for the ASMR mix. Dry keeps sounds close.</p>
     <details id="asmr-room-settings"><summary>Adjust room</summary>
-      <label class="range-heading" for="asmr-room-amount">Reflections <output id="asmr-room-amount-value" aria-hidden="true"></output></label><input id="asmr-room-amount" type="range" min="0" max=".35" step=".01" data-room="amount" />
-      <label class="range-heading" for="asmr-room-size">Room size <output id="asmr-room-size-value" aria-hidden="true"></output></label><input id="asmr-room-size" type="range" min=".5" max="1.5" step=".05" data-room="size" />
-      <label class="range-heading" for="asmr-room-warmth">Warmth <output id="asmr-room-warmth-value" aria-hidden="true"></output></label><input id="asmr-room-warmth" type="range" min="0" max="1" step=".01" data-room="warmth" />
+      <label class="range-heading" for="asmr-room-amount">Reflections <output id="asmr-room-amount-value" aria-hidden="true"></output></label><input id="asmr-room-amount" aria-label="Reflections" type="range" min="0" max=".35" step=".01" data-room="amount" />
+      <label class="range-heading" for="asmr-room-size">Room size <output id="asmr-room-size-value" aria-hidden="true"></output></label><input id="asmr-room-size" aria-label="Room size" type="range" min=".5" max="1.5" step=".05" data-room="size" />
+      <label class="range-heading" for="asmr-room-warmth">Warmth <output id="asmr-room-warmth-value" aria-hidden="true"></output></label><input id="asmr-room-warmth" aria-label="Warmth" type="range" min="0" max="1" step=".01" data-room="warmth" />
     </details>`;
   const choice = host.querySelector<HTMLSelectElement>('#asmr-listening-space')!;
   const controls = [...host.querySelectorAll<HTMLInputElement>('[data-room]')];
