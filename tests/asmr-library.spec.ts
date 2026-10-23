@@ -33,8 +33,9 @@ test('one explorer opens all families by default and ASMR browse resets stale fi
 test('shared discovery searches source descriptions and loads complete ASMR with optional soft lights silently', async ({ page }) => {
   await page.goto('/'); await page.locator('#asmr-browse').click();
   await page.locator('#preset-search').fill('blankets');
-  await expect(page.locator('.explore-card')).toHaveCount(7);
+  await expect(page.locator('.explore-card')).toHaveCount(8);
   await expect(page.locator('.explore-card h3').filter({ hasText: 'Soft cloth cocoon' })).toHaveCount(1);
+  await expect(page.locator('.explore-card h3').filter({ hasText: 'Linen room' })).toHaveCount(1);
   await page.locator('#preset-search').fill('  LEFT  attention ');
   await expect(page.locator('.explore-card h3')).toHaveText(['Left ear attention', 'Left soft attention', 'Temple brushing']);
   await page.locator('#preset-search').fill('200');
@@ -372,7 +373,7 @@ test('all six quiet rooms preserve complete space mixes through favorites, save,
     expect(canonical(reloaded.asmr), recipe.id).toEqual(canonical(recipe.settings));
     expect(reloaded.visual, recipe.id).toEqual(shared.visual);
     await page.getByRole('button', { name: 'Close share', exact: true }).click();
-    await page.locator('#asmr-level').fill('.11');
+    await page.locator('#asmr-level').fill('0.11');
     await page.locator('#asmr-listening-space').selectOption('dry');
     await expect(page.locator('#asmr-listening-space')).toHaveValue('dry');
     await page.locator('#import-file').setInputFiles({ name: `${recipe.id}.json`, mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(json)) });
