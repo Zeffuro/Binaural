@@ -63,7 +63,7 @@ scope.onmessage = event => {
     }
     if (channels.some(channel => !channel.every(Number.isFinite))) throw new Error('BWGen export produced non-finite audio.');
     const end = message.startFrame + message.frames;
-    const nextStart = Math.max(0, end - rate * BWG_EXPORT_HISTORY_SECONDS);
+    const nextStart = Math.max(0, end - Math.floor(rate * BWG_EXPORT_HISTORY_SECONDS));
     const next: [Float32Array, Float32Array] = [new Float32Array(end - nextStart), new Float32Array(end - nextStart)];
     for (let ear = 0; ear < 2; ear++) {
       const retained = Math.max(0, message.startFrame - nextStart);

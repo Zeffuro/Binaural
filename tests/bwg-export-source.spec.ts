@@ -87,18 +87,27 @@ test('BWGen worker enforces sequential bounded ranges and one pending read witho
       try { await source.read(0, 1); } catch (error) { errors.push((error as Error).message); }
       await first;
       for (const [start, frames] of [[0, 32000], [32001, 1], [32000, 0], [32000, 320001],
-        [32000.5, 1], [32000, Number.NaN], [32000, 1.5], [8000, 23999]]) {
+        [32000.5, 1], [32000, Number.NaN], [32000, 1.5], [8000, 23999], [3999, 32000]]) {
         try { await source.read(start, frames); } catch (error) { errors.push((error as Error).name); }
       }
-      const next = await source.read(8000, 32000);
-      return { errors, frames: next[0].length, history: BWG_EXPORT_HISTORY_SECONDS, maximum: BWG_EXPORT_MAX_READ_SECONDS };
+      const next = await source.read(4000, 36000);
+      const oddRate = 11025, odd = new BwgExportSource(parseBwg(new Uint8Array(bytes)), oddRate, [1]);
+      let oddError = '', oddFrames = 0;
+      try {
+        await odd.read(0, oddRate * 4);
+        const firstRetained = oddRate * 4 - Math.floor(oddRate * BWG_EXPORT_HISTORY_SECONDS);
+        try { await odd.read(firstRetained - 1, oddRate * 4); } catch (error) { oddError = (error as Error).name; }
+        oddFrames = (await odd.read(firstRetained, oddRate * 4))[0].length;
+      } finally { odd.dispose(); }
+      return { errors, frames: next[0].length, history: BWG_EXPORT_HISTORY_SECONDS, maximum: BWG_EXPORT_MAX_READ_SECONDS, oddError, oddFrames };
     } finally { source.dispose(); }
   }, fixture);
   expect(result.errors[0]).toContain('already in progress');
-  expect(result.errors.slice(1)).toEqual(Array(8).fill('RangeError'));
-  expect(result.frames).toBe(32000);
-  expect(result.history).toBe(3);
+  expect(result.errors.slice(1)).toEqual(Array(9).fill('RangeError'));
+  expect(result.frames).toBe(36000);
+  expect(result.history).toBe(3.5);
   expect(result.maximum).toBe(40);
+  expect(result.oddError).toBe('RangeError'); expect(result.oddFrames).toBe(44100);
 });
 
 test('BWGen worker retains exact PCM across the thirty-second WAV chunk boundary', async ({ page }) => {

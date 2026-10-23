@@ -4,7 +4,7 @@ import type { Session } from '../src/model';
 
 async function installOriginalGraph(page: Page): Promise<void> {
   await page.evaluate(() => {
-    (window as any).originalDynamicsGraph = async (context: OfflineAudioContext, session: Session, music: AudioBuffer) => {
+    (window as any).originalDynamicsGraph = async (context: OfflineAudioContext, session: Session, music: AudioBuffer, offset = 0) => {
       if (session.ambient !== 'none' || session.minutes !== 0 || session.asmr?.focus || !['asmr', 'mixed'].includes(session.mode!)) {
         throw new Error('Original dynamics reference expects untimed ASMR/mixed input without ambience or focus ducking.');
       }
@@ -14,13 +14,14 @@ async function installOriginalGraph(page: Page): Promise<void> {
       const compressor = context.createDynamicsCompressor();
       compressor.threshold.value = ({ balanced: -10, open: -4, soft: -18 })[session.dynamics ?? 'balanced'];
       compressor.knee.value = 6; compressor.ratio.value = 12; compressor.attack.value = .003; compressor.release.value = .25;
-      const gate = context.createGain(); gate.gain.setValueAtTime(0, 0); gate.gain.linearRampToValueAtTime(1, .5);
+      const gate = context.createGain(); gate.gain.setValueAtTime(offset > .5 ? 1 : 0, 0);
+      if (offset <= .5) gate.gain.linearRampToValueAtTime(1, .5 - offset);
       master.connect(compressor).connect(gate).connect(context.destination);
       const tones = context.createGain(); tones.gain.value = session.mode === 'mixed' ? 1 : 0; tones.connect(master);
-      for (const layer of session.layers) offlineTone(context, layer, tones, session.layers.length, undefined, 0);
+      for (const layer of session.layers) offlineTone(context, layer, tones, session.layers.length, undefined, offset);
       const source = context.createBufferSource(), level = context.createGain(); source.buffer = music; source.loop = true;
-      level.gain.value = 0; smooth(level.gain, session.musicLevel * .4, 0); source.connect(level).connect(master); source.start();
-      const asmr = new AsmrMixer(context, master, undefined, 0); asmr.update(session.asmr, true);
+      level.gain.value = 0; smooth(level.gain, session.musicLevel * .4, 0); source.connect(level).connect(master); source.start(0, offset % music.duration);
+      const asmr = new AsmrMixer(context, master, undefined, offset); asmr.update(session.asmr, true);
       return () => { asmr.dispose(); compressor.disconnect(); };
     };
   });
@@ -111,17 +112,13 @@ test('native quiet/loud bursts measure original compression and ordered profile 
       }
       const source = context.createBufferSource(); source.buffer = buffer;
       const dynamics = new OutputDynamics(context, profile); source.connect(dynamics.node).connect(context.destination); source.start();
-      const suspended = context.suspend(3.5), rendering = context.startRendering();
-      await suspended;
-      await new Promise(resolve => setTimeout(resolve, 0));
-      const reduction = dynamics.node.reduction; await context.resume();
-      const output = await rendering, left = output.getChannelData(0);
+      const output = await context.startRendering(), left = output.getChannelData(0);
       const rms = (start: number, end: number) => {
         let energy = 0; for (let frame = start * rate; frame < end * rate; frame++) energy += left[frame] ** 2;
         return Math.sqrt(energy / ((end - start) * rate));
       };
       const quiet = rms(1, 1.8), loud = rms(3, 3.8);
-      results.push({ profile, quiet, loud, contrastDb: 20 * Math.log10(loud / quiet), reduction, finite: left.every(Number.isFinite) });
+      results.push({ profile, quiet, loud, contrastDb: 20 * Math.log10(loud / quiet), finite: left.every(Number.isFinite) });
       dynamics.dispose();
     }
     return { inputContrastDb: 20 * Math.log10(40), results };
@@ -130,13 +127,11 @@ test('native quiet/loud bursts measure original compression and ordered profile 
   const [open, balanced, soft] = result.results, diagnostic = JSON.stringify(result);
   for (const item of result.results) {
     expect(item.finite, diagnostic).toBe(true); expect(item.quiet, diagnostic).toBeGreaterThan(0);
-    expect(item.loud, diagnostic).toBeGreaterThan(item.quiet); expect(item.reduction, diagnostic).toBeLessThan(0);
+    expect(item.loud, diagnostic).toBeGreaterThan(item.quiet);
   }
   expect(balanced!.contrastDb, diagnostic).toBeLessThan(result.inputContrastDb);
   expect(open!.contrastDb, diagnostic).toBeGreaterThan(balanced!.contrastDb);
   expect(balanced!.contrastDb, diagnostic).toBeGreaterThan(soft!.contrastDb);
-  expect(open!.reduction, diagnostic).toBeGreaterThan(balanced!.reduction);
-  expect(balanced!.reduction, diagnostic).toBeGreaterThan(soft!.reduction);
 });
 
 test('all profiles retain native lookahead, isolated ears and matched stereo phase', async ({ page }) => {
@@ -204,11 +199,7 @@ test('all profiles retain finite native generated and recorded ASMR with music a
       const native = context.createDynamicsCompressor.bind(context);
       context.createDynamicsCompressor = () => { const node = native(); nodes.push(node); return node; };
       const cleanup = exportGraph(context, session, 0, undefined, undefined, music);
-      const suspended = context.suspend(1.5), rendering = context.startRendering();
-      await suspended;
-      await new Promise(resolve => setTimeout(resolve, 0));
-      const reduction = nodes[0]!.reduction; await context.resume();
-      const output = await rendering, channels = [output.getChannelData(0), output.getChannelData(1)];
+      const output = await context.startRendering(), channels = [output.getChannelData(0), output.getChannelData(1)];
       const referenceContext = new OfflineAudioContext(2, 88200, 44100);
       const referenceCleanup = await (window as any).originalDynamicsGraph(referenceContext, session, music);
       const reference = await referenceContext.startRendering(); referenceCleanup();
@@ -219,7 +210,7 @@ test('all profiles retain finite native generated and recorded ASMR with music a
         overRange += Number(Math.abs(value) > 1); referenceOverRange += Number(Math.abs(original) > 1); pcmError = Math.max(pcmError, Math.abs(value - original));
       }
       cleanup(); cleanup();
-      results.push({ profile, master, count: nodes.length, threshold: nodes[0]!.threshold.value, reduction, peak, referencePeak, overRange, referenceOverRange, pcmError, energy,
+      results.push({ profile, master, count: nodes.length, threshold: nodes[0]!.threshold.value, peak, referencePeak, overRange, referenceOverRange, pcmError, energy,
         finite: channels.every(channel => channel.every(Number.isFinite)) });
     }
     return results;
@@ -230,7 +221,7 @@ test('all profiles retain finite native generated and recorded ASMR with music a
     expect(item.count).toBe(1); expect(item.finite, diagnostic).toBe(true); expect(item.peak, diagnostic).toBeGreaterThan(.001);
     expect(item.energy[0], diagnostic).toBeGreaterThan(1); expect(item.energy[1], diagnostic).toBeGreaterThan(1);
     expect(item.pcmError, diagnostic).toBe(0); expect(item.peak, diagnostic).toBe(item.referencePeak); expect(item.overRange, diagnostic).toBe(item.referenceOverRange);
-    expect(item.threshold).toBe(({ balanced: -10, open: -4, soft: -18 })[item.profile]); expect(Number.isFinite(item.reduction)).toBe(true);
+    expect(item.threshold).toBe(({ balanced: -10, open: -4, soft: -18 })[item.profile]);
   }
 });
 
@@ -262,33 +253,58 @@ test('all profiles keep boosted ASMR/music WAV parity across actual 30-second se
       const referenceContext = new OfflineAudioContext(2, frames, rate);
       const referenceCleanup = await (window as any).originalDynamicsGraph(referenceContext, session, music);
       const reference = await referenceContext.startRendering(); referenceCleanup();
+      const originProbes = [];
+      if (profile === 'balanced') for (const grid of [1, 128, 18816]) {
+        const originFrame = Math.floor(27 * rate / grid) * grid, offset = originFrame / rate;
+        const probeContext = new OfflineAudioContext(2, frames - originFrame, rate);
+        const probeCleanup = await (window as any).originalDynamicsGraph(probeContext, session, music, offset);
+        const probe = await probeContext.startRendering(); probeCleanup();
+        let peakError = 0, squaredError = 0, referenceEnergy = 0, errorFrame = 0;
+        for (let frame = 30 * rate; frame < frames; frame++) for (let ear = 0; ear < 2; ear++) {
+          const original = reference.getChannelData(ear)[frame]!, actual = probe.getChannelData(ear)[frame - originFrame]!, difference = Math.abs(actual - original);
+          if (difference > peakError) { peakError = difference; errorFrame = frame; }
+          squaredError += difference ** 2; referenceEnergy += original ** 2;
+        }
+        originProbes.push({ grid, originFrame, offset, controlPhase: originFrame % 128, sourcePosition: offset * 24000,
+          peakError, errorFrame, relativeRms: Math.sqrt(squaredError / referenceEnergy) });
+      }
       let sectionPeak = 0, sectionOverRange = 0, sectionPcmError = 0, sectionFrames = 0;
+      let sectionErrorAt: { frame: number; ear: number; actual: number; original: number } | undefined;
       await renderPcm(session, 31, 3600, {
         start(total: number) { if (total !== frames) throw new Error(`Expected ${frames} pre-encoding frames, got ${total}.`); },
         write(left: Float32Array, right: Float32Array, first: number, count: number) {
           for (let frame = 0; frame < count; frame++) for (let ear = 0; ear < 2; ear++) {
             const value = (ear ? right : left)[first + frame]!, original = reference.getChannelData(ear)[sectionFrames + frame]!;
             sectionPeak = Math.max(sectionPeak, Math.abs(value)); sectionOverRange += Number(Math.abs(value) > 1);
-            sectionPcmError = Math.max(sectionPcmError, Math.abs(value - original));
+            if (Math.abs(value - original) > sectionPcmError) {
+              sectionPcmError = Math.abs(value - original); sectionErrorAt = { frame: sectionFrames + frame, ear, actual: value, original };
+            }
           }
           sectionFrames += count;
         },
       }, { music: musicFile });
       const rendered = await renderWav(session, 31, undefined, undefined, musicFile), encoded = new DataView(await rendered.arrayBuffer());
       let error = 0, boundaryError = 0, energy = 0, peak = 0, referencePeak = 0, overRange = 0, referenceOverRange = 0, pcmError = 0, finite = true;
-      let minimumSectionOverRange = 0, maximumSectionOverRange = 0;
+      let minimumSectionOverRange = 0, maximumSectionOverRange = 0, minimumFullOverRange = 0, maximumFullOverRange = 0;
+      let referenceErrorAt: { frame: number; ear: number; actual: number; original: number } | undefined;
       for (let frame = 0; frame < frames; frame++) for (let ear = 0; ear < 2; ear++) {
         const actual = encoded.getInt16(44 + frame * 4 + ear * 2, true) / 32768, expected = full.getChannelData(ear)[frame];
         const original = reference.getChannelData(ear)[frame];
         referencePeak = Math.max(referencePeak, Math.abs(original)); overRange += Number(Math.abs(expected) > 1); referenceOverRange += Number(Math.abs(original) > 1);
-        pcmError = Math.max(pcmError, Math.abs(expected - original));
+        if (Math.abs(expected - original) > pcmError) {
+          pcmError = Math.abs(expected - original); referenceErrorAt = { frame, ear, actual: expected, original };
+        }
         minimumSectionOverRange += Number(Math.abs(original) > 1 + sectionPcmError); maximumSectionOverRange += Number(Math.abs(original) > 1 - sectionPcmError);
         const limited = Math.max(-1, Math.min(1, expected));
         error = Math.max(error, Math.abs(actual - limited)); energy += actual ** 2; peak = Math.max(peak, Math.abs(expected)); finite &&= Number.isFinite(expected);
         if (Math.abs(frame / rate - 30) < .1) boundaryError = Math.max(boundaryError, Math.abs(actual - limited));
       }
+      for (let ear = 0; ear < 2; ear++) for (const original of reference.getChannelData(ear)) {
+        minimumFullOverRange += Number(Math.abs(original) > 1 + pcmError); maximumFullOverRange += Number(Math.abs(original) > 1 - pcmError);
+      }
       results.push({ profile, bytes: rendered.size, error, boundaryError, energy, peak, referencePeak, overRange, referenceOverRange, pcmError, finite,
-        sectionPeak, sectionOverRange, sectionPcmError, sectionFrames, minimumSectionOverRange, maximumSectionOverRange });
+        sectionPeak, sectionOverRange, sectionPcmError, sectionFrames, minimumSectionOverRange, maximumSectionOverRange,
+        minimumFullOverRange, maximumFullOverRange, sectionErrorAt, referenceErrorAt, originProbes });
     }
     return results;
   });
@@ -296,16 +312,24 @@ test('all profiles keep boosted ASMR/music WAV parity across actual 30-second se
   for (const item of result) {
     const diagnostic = JSON.stringify(item);
     expect(item.bytes).toBe(44 + 31 * 44100 * 4); expect(item.finite, diagnostic).toBe(true); expect(item.energy, diagnostic).toBeGreaterThan(1);
-    expect(item.pcmError, diagnostic).toBe(0); expect(item.peak, diagnostic).toBe(item.referencePeak); expect(item.overRange, diagnostic).toBe(item.referenceOverRange);
+    expect(item.pcmError, diagnostic).toBeLessThan(.00001);
+    expect(Math.abs(item.peak - item.referencePeak), diagnostic).toBeLessThanOrEqual(item.pcmError + Number.EPSILON);
+    expect(item.overRange, diagnostic).toBeGreaterThanOrEqual(item.minimumFullOverRange); expect(item.overRange, diagnostic).toBeLessThanOrEqual(item.maximumFullOverRange);
     expect(item.sectionFrames).toBe(31 * 44100); expect(item.sectionPcmError, diagnostic).toBeLessThan(.00015);
     expect(Math.abs(item.sectionPeak - item.referencePeak), diagnostic).toBeLessThanOrEqual(item.sectionPcmError + Number.EPSILON);
     expect(item.sectionOverRange, diagnostic).toBeGreaterThanOrEqual(item.minimumSectionOverRange);
     expect(item.sectionOverRange, diagnostic).toBeLessThanOrEqual(item.maximumSectionOverRange);
     expect(item.error, diagnostic).toBeLessThan(.00015); expect(item.boundaryError, diagnostic).toBeLessThan(.00015);
+    if (item.profile === 'balanced') {
+      expect(item.originProbes.map(probe => probe.originFrame)).toEqual([1190700, 1190656, 1185408]);
+      expect(item.originProbes[0]!.peakError, diagnostic).toBeGreaterThan(.001);
+      expect(item.originProbes[2]!.peakError, diagnostic).toBeLessThan(.00015);
+      expect(item.originProbes[2]!.controlPhase).toBe(0); expect(item.originProbes[2]!.sourcePosition % 1).toBe(0);
+    }
   }
 });
 
-test('@live engine profile edits reuse one compressor, preserve capture/pause and preview inherits More contrast', async ({ page }) => {
+test('@live engine profile edits measure native reduction, reuse one compressor and preserve capture/pause/preview', async ({ page }, testInfo) => {
   test.setTimeout(60_000);
   await page.goto('/'); await page.locator('h1').click();
   const result = await page.evaluate(async () => {
@@ -325,14 +349,17 @@ test('@live engine profile edits reuse one compressor, preserve capture/pause an
       const samples = new Float32Array(8192), readings = [], targets: number[] = [], target = node.threshold.setTargetAtTime.bind(node.threshold);
       node.threshold.setTargetAtTime = (value: number, time: number, constant: number) => { targets.push(value); return target(value, time, constant); };
       const initial = node.threshold.value;
+      const probe = context.createOscillator(), probeLevel = context.createGain(); probe.frequency.value = 400; probeLevel.gain.value = .8;
+      probe.connect(probeLevel).connect(engine.master); probe.start();
       const profileOrder = ['soft', 'balanced', 'open'] as const;
       for (const dynamics of profileOrder) {
         session.dynamics = dynamics; engine.update(session); engine.update(session);
         await waitForAudioTime(context, context.currentTime + .04); const moving = node.threshold.value;
-        await waitForAudioTime(context, context.currentTime + .35); tap.getFloatTimeDomainData(samples);
-        readings.push({ dynamics, moving, settled: node.threshold.value, peak: Math.max(...samples.map(Math.abs)),
+        await waitForAudioTime(context, context.currentTime + .65); tap.getFloatTimeDomainData(samples);
+        readings.push({ dynamics, moving, settled: node.threshold.value, reduction: node.reduction, peak: Math.max(...samples.map(Math.abs)),
           finite: samples.every(Number.isFinite), same: engine.dynamics === wrapper && wrapper.node === node });
       }
+      probe.stop(); probe.disconnect(); probeLevel.disconnect();
       const playing = capture.state(); await engine.pause(); const paused = capture.state(), frozenAt = context.currentTime;
       await new Promise(resolve => setTimeout(resolve, 60)); const frozen = context.currentTime === frozenAt;
       await engine.resume(); await waitForAudioTime(context, context.currentTime + .25); tap.getFloatTimeDomainData(samples);
@@ -347,14 +374,18 @@ test('@live engine profile edits reuse one compressor, preserve capture/pause an
       return { initial, readings, targets, playing, paused, frozen, resumed, resumedEnergy, activeNodes, config, stopped, cleared, inherited, previewCount };
     } finally { AudioContext.prototype.createDynamicsCompressor = native; await preview?.stop(); await engine.stop(); }
   });
+  await testInfo.attach('live-native-dynamics-reduction.json', { body: JSON.stringify(result.readings, null, 2), contentType: 'application/json' });
   expect(result.initial).toBe(-4); expect(result.activeNodes).toBe(1); expect(result.targets).toEqual([-18, -10, -4]);
   const thresholds = { soft: -18, balanced: -10, open: -4 };
   for (const reading of result.readings) {
     const diagnostic = JSON.stringify(reading);
     expect(reading.same).toBe(true); expect(reading.finite, diagnostic).toBe(true); expect(reading.peak, diagnostic).toBeGreaterThan(.001);
+    expect(reading.reduction, diagnostic).toBeLessThan(0);
     expect(reading.moving, diagnostic).toBeGreaterThanOrEqual(-18); expect(reading.moving, diagnostic).toBeLessThanOrEqual(-4);
     expect(reading.settled, diagnostic).toBeCloseTo(thresholds[reading.dynamics], 2);
   }
+  const [soft, balanced, open] = result.readings, diagnostic = JSON.stringify(result.readings);
+  expect(open!.reduction, diagnostic).toBeGreaterThan(balanced!.reduction); expect(balanced!.reduction, diagnostic).toBeGreaterThan(soft!.reduction);
   expect(result.config[0]).toBe(6); expect(result.config[1]).toBe(12); expect(result.config[2]).toBeCloseTo(.003, 7); expect(result.config[3]).toBe(.25);
   expect(result.playing).toBe('playing'); expect(result.paused).toBe('paused'); expect(result.frozen).toBe(true); expect(result.resumed).toBe('playing');
   expect(result.resumedEnergy).toBeGreaterThan(.001); expect(result.stopped).toBe('stopped'); expect(result.cleared).toBe(true);

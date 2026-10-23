@@ -43,7 +43,14 @@ test('a WAV longer than three minutes has bounded sections, exact frames and con
   });
   expect(result.size).toBe(44 + 181 * 44100 * 4);
   expect(result.declared).toBe(result.size - 44); expect(result.riff).toBe(result.size - 8);
-  expect(result.lengths).toHaveLength(7); expect(Math.max(...result.lengths)).toBeLessThanOrEqual(33 * 44100);
+  expect(result.lengths).toHaveLength(7); expect(Math.max(...result.lengths)).toBeLessThan(33.5 * 44100);
+  result.lengths.forEach((length, index) => {
+    const cursor = index * 30 * 44100, count = Math.min(30 * 44100, 181 * 44100 - cursor);
+    const origin = cursor + count - length;
+    expect(origin % 128).toBe(0);
+    expect(origin * 24000 / 44100).toBe(Math.round(origin * 24000 / 44100));
+    if (index) { expect(cursor - origin).toBeGreaterThanOrEqual(3 * 44100); expect(cursor - origin).toBeLessThan(3.5 * 44100); }
+  });
   expect(result.progress[0]).toBe(0); expect(result.progress.at(-1)).toBe(1);
   expect(result.progress.every((value, index) => !index || value >= result.progress[index - 1])).toBe(true);
   for (const ears of result.energy) for (const amplitude of ears) expect(amplitude).toBeGreaterThan(.04);

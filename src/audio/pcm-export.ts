@@ -13,6 +13,8 @@ import { asmrBackgroundGain } from '../asmr-focus';
 export const WAV_SECTION_SECONDS = 30;
 export const WAV_PREROLL_SECONDS = 3;
 const BLEND_FRAMES = Math.round(.02 * WAV_SAMPLE_RATE);
+// At 44.1 kHz, this preserves native 128-frame windows and whole 24 kHz source samples.
+const SECTION_ALIGNMENT = 128 * 147;
 
 export async function renderPcm(input: Session, seconds: number, maximum: number, output: PcmOutput, options: WavOptions): Promise<number> {
   const total = wavFrames(seconds, maximum), session = parseSession(input), signal = options.signal;
@@ -44,7 +46,9 @@ export async function renderPcm(input: Session, seconds: number, maximum: number
     const sectionFrames = WAV_SECTION_SECONDS * WAV_SAMPLE_RATE, preroll = WAV_PREROLL_SECONDS * WAV_SAMPLE_RATE;
     for (let cursor = 0; cursor < total; cursor += sectionFrames) {
       signal?.throwIfAborted();
-      const count = Math.min(sectionFrames, total - cursor), start = Math.max(0, cursor - preroll), prefix = cursor - start;
+      const count = Math.min(sectionFrames, total - cursor);
+      // Preserve the native compressor's control-window phase across independently rendered sections.
+      const start = Math.floor(Math.max(0, cursor - preroll) / SECTION_ALIGNMENT) * SECTION_ALIGNMENT, prefix = cursor - start;
       const length = prefix + count, offset = start / WAV_SAMPLE_RATE;
       let channels: [Float32Array, Float32Array];
       if (session.master === 0 || (end !== undefined && offset >= end)) channels = [new Float32Array(length), new Float32Array(length)];
