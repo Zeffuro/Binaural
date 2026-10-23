@@ -42,7 +42,7 @@ function ambience(context: OfflineAudioContext, session: Session, output: AudioN
 }
 
 export function exportGraph(context: OfflineAudioContext, session: Session, offset: number, end: number | undefined,
-    native?: [Float32Array, Float32Array], music?: AudioBuffer): () => void {
+    native?: [Float32Array, Float32Array], music?: AudioBuffer, onFailure?: (error: Error) => void): () => void {
   const localEnd = end === undefined ? undefined : end - offset;
   const master = context.createGain(); master.gain.value = session.master;
   const dynamics = new OutputDynamics(context, session.dynamics);
@@ -71,6 +71,8 @@ export function exportGraph(context: OfflineAudioContext, session: Session, offs
     source.connect(level).connect(master); source.start(0, offset % music.duration);
     if (localEnd !== undefined) source.stop(localEnd);
   }
-  const asmr = new AsmrMixer(context, master, localEnd, offset); asmr.update(session.asmr, !!gains.asmr);
+  const asmr = new AsmrMixer(context, master, localEnd, offset,
+    () => onFailure?.(new Error('An ASMR audio processor failed during export. Please try again.')));
+  asmr.update(session.asmr, !!gains.asmr);
   return () => { asmr.dispose(); dynamics.dispose(); };
 }

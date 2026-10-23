@@ -79,14 +79,14 @@ class AsmrVoice {
     this.motion.connect(this.width).connect(this.panner.pan);
     this.drift.connect(this.wander).connect(this.panner.pan);
     this.source.connect(this.highpass).connect(this.filter).connect(this.level);
-    if (layer.spatial) this.position = new AsmrPosition(context, this.level, output, layer.spatial, layer.period, endAt, offsetSeconds);
+    if (layer.spatial) this.position = new AsmrPosition(context, this.level, output, layer.spatial, layer.period, endAt, offsetSeconds, onFailure);
     else this.level.connect(this.panner).connect(output);
     this.update(layer, audible);
     this.source.start();
     this.motion.start(); this.drift.start(); this.pressure.start();
     if (endAt !== undefined && endAt > context.currentTime) for (const source of [this.source, this.motion, this.drift, this.pressure]) source.stop(endAt);
   }
-  update(layer: AsmrLayer, audible: boolean, config?: AsmrPhraseConfig): void {
+  update(layer: AsmrLayer, audible: boolean, config?: AsmrPhraseConfig, spatialReady = true): void {
     this.cueAudible = audible && layer.level > 0;
     if (!this.cueAudible) this.clearCue();
     if (config) this.source.configure?.(config);
@@ -109,7 +109,7 @@ class AsmrVoice {
     smooth(this.wander.gain, layer.motion === 'wander' ? width * .3 : 0, time);
     smooth(this.motion.frequency, 1 / layer.period, time);
     smooth(this.drift.frequency, 1 / (layer.period * 2.71), time);
-    if (layer.spatial) this.position?.update(layer.spatial, layer.period);
+    if (layer.spatial && spatialReady) this.position?.update(layer.spatial, layer.period);
   }
   readCue(gain: number, time: number): AsmrCue | undefined {
     if (this.disposed || !this.cueAudible || gain <= 0) { this.clearCue(); return; }
@@ -181,7 +181,7 @@ export class AsmrMixer {
       if (!voice) { voice = new AsmrVoice(this.context, layer, this.bus, this.endAt, audible,
         this.offsetSeconds + this.context.currentTime - this.origin, config, this.onFailure,
         this.origin - this.offsetSeconds); this.voices.set(layer.id, voice); }
-      voice.update(layer, audible, config);
+      voice.update(layer, audible, config, enabled);
     }
   }
   readCues(gain = 1, time = this.context.currentTime): AsmrCue[] {

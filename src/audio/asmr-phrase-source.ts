@@ -6,14 +6,15 @@ import { AsmrMarkerHistory, type AsmrMarkerPose } from './asmr-markers';
 import { asmrRecordingsReady, prepareAsmrRecordings, recordedAsmrBuffer } from './asmr-assets';
 import { AsmrPhraseRenderer, type AsmrPhraseConfig, type AsmrPhrasePcm } from './asmr-phrases';
 import workletUrl from './asmr-phrase-worklet.ts?worker&url';
+import { hrtfAudioReady, prepareHrtfAudio } from './hrtf-audio';
 
 const prepared = new WeakSet<BaseAudioContext>(), pending = new WeakMap<BaseAudioContext, Promise<void>>();
 const usesPhrases = (settings?: AsmrSettings) => !!settings?.variation && settings.variation.mode !== 'steady' && settings.layers.length > 0;
 export const asmrAudioReady = (context: BaseAudioContext, settings?: AsmrSettings): boolean =>
-  asmrRecordingsReady(settings) && (!usesPhrases(settings) || prepared.has(context));
+  asmrRecordingsReady(settings) && hrtfAudioReady(context, settings) && (!usesPhrases(settings) || prepared.has(context));
 
 export async function prepareAsmrAudio(context: BaseAudioContext, settings?: AsmrSettings): Promise<void> {
-  const tasks: Promise<unknown>[] = [prepareAsmrRecordings(settings)];
+  const tasks: Promise<unknown>[] = [prepareAsmrRecordings(settings), prepareHrtfAudio(context, settings)];
   if (usesPhrases(settings) && !prepared.has(context)) {
     let task = pending.get(context);
     if (!task) {

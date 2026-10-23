@@ -1,3 +1,5 @@
+import { parseHrtfProfile, type HrtfProfile } from './hrtf-profiles';
+
 export const asmrSpatialMotions = ['still', 'orbit', 'sweep', 'approach', 'rise', 'figure-eight'] as const;
 export const asmrSpatialMotionLabels = {
   still: 'Stay in place', orbit: 'Orbit around your head', sweep: 'Side to side',
@@ -10,6 +12,7 @@ export interface AsmrSpatialSettings {
   elevation: number;
   distance: number;
   motion: typeof asmrSpatialMotions[number];
+  profile?: HrtfProfile;
 }
 
 export const defaultSpatial = (): AsmrSpatialSettings => ({ azimuth: 0, elevation: 0, distance: .6, motion: 'still' });
@@ -23,7 +26,8 @@ export function parseAsmrSpatial(value: unknown): AsmrSpatialSettings {
     throw new Error('Invalid ASMR spatial position.');
   }
   return { azimuth: input.azimuth as number, elevation: input.elevation as number,
-    distance: input.distance as number, motion: input.motion as AsmrSpatialSettings['motion'] };
+    distance: input.distance as number, motion: input.motion as AsmrSpatialSettings['motion'],
+    ...(input.profile === undefined ? {} : { profile: parseHrtfProfile(input.profile) }) };
 }
 
 export function spatialPosition(settings: AsmrSpatialSettings): { x: number; y: number; z: number } {

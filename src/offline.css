@@ -4,4 +4,7 @@
 .offline-tools .offline-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .offline-tools button { min-height: 32px; padding: 6px 12px; font-size: 13px; }
 .offline-tools button:disabled { opacity: .7; cursor: default; }
+.app-update-banner { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 12px 28px; background: var(--surface, #edf0e5); border-bottom: 1px solid var(--line); font-size: 13px; }
+.app-update-banner[hidden] { display: none; }
+.app-update-banner button { min-height: 44px; }
 @media (max-width: 720px) { .offline-tools summary, .offline-tools button { min-height: 44px; } }

@@ -4,6 +4,7 @@ import { resolve, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, firefox, expect } from '@playwright/test';
 import { browserLaunchOptions } from '../scripts/browser-options.mjs';
+import { checkHrtfProfiles } from './helpers/hrtf-production.ts';
 import AxeBuilder from '@axe-core/playwright';
 import { makeBwgFixture } from './helpers/bwg.ts';
 import { setSources } from './helpers/listening-sources.ts';
@@ -92,6 +93,7 @@ try {
           await expect(page.locator('[data-asmr]')).toHaveCount(2);
           await expect(page.getByLabel('Enable light triggers', { exact: true })).toBeChecked();
         }
+        await checkHrtfProfiles(page, origin, prefix, true);
         await page.locator('#asmr-browse').click(); await page.locator('[data-load-preset="asmr-hands-close"]').click();
         const recording = page.waitForResponse(origin + prefix + 'audio/asmr/hand-rubbing.ogg');
         await page.locator('#asmr-only').click(); await page.locator('#play').click();
@@ -252,16 +254,19 @@ try {
         await other.evaluate(() => { window.offlineTabMarker = 'preserve'; });
         await page.locator('.offline-tools summary').click();
         await expect(page.locator('#offline-update')).toBeDisabled();
+        await expect(page.locator('#app-update')).toBeVisible();
+        await expect(page.locator('#app-update')).toBeDisabled();
+        await expect(page.locator('.app-update-banner')).toContainText('Finish listening');
         await page.getByRole('button', { name: 'Stop listening' }).click();
         await expect(page.locator('#status')).toHaveText('Ready when you are');
         await other.getByRole('button', { name: 'Start listening' }).click();
-        await page.locator('#offline-update').click();
+        await page.locator('#app-update').click();
         await expect(page.locator('#offline-status')).toContainText('all open Binaural tabs');
         expect(await page.evaluate(async () => !!(await navigator.serviceWorker.getRegistration()).waiting)).toBe(true);
         await expect(other.locator('#status')).toHaveText('● Listening');
         await other.getByRole('button', { name: 'Stop listening' }).click();
         await expect(other.locator('#status')).toHaveText('Ready when you are');
-        await Promise.all([page.waitForEvent('domcontentloaded'), page.locator('#offline-update').click()]);
+        await Promise.all([page.waitForEvent('domcontentloaded'), page.locator('#app-update').click()]);
         await expect(page.locator('h1')).toContainText('Find your own');
         expect(await other.evaluate(() => window.offlineTabMarker)).toBe('preserve');
         await other.close();

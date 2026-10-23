@@ -1,0 +1,124 @@
+SADIE II Database — modified HRIR assets
+Copyright 2018, University of York.
+All data recorded and developed at the AudioLab, Department of Electronic Engineering, University of York by Cal Armstrong, Lewis Thresh and Gavin Kearney.
+Source release 2-2 (18 June 2024): https://zenodo.org/records/12092466
+License: Apache License, Version 2.0 (see sadie-ii-Apache-2.0.txt).
+Reference: C. Armstrong, L. Thresh, D. T. Murphy and G. Kearney (2018), A Perceptual Evaluation of Individual and Non-Individual HRTFs: A Case Study of the SADIE II Database, Applied Sciences 8(11), 2029. https://www.mdpi.com/2076-3417/8/11/2029
+Changes: selected measured directions, transformed coordinate/ear ordering and stored native 44.1/48kHz paired HRIRs as float32. No normalization, resampling, EQ, time alignment or truncation.
+The upstream responses are diffuse-field equalised (paper sections 3.2.2–3.2.3). These 1.2m measurements do not represent near-ear measurement or listener personalization.
+The selected source archives contain no separate LICENSE or NOTICE files; the release's separate LICENSE.txt is included unmodified.
+The H10 source Comment says 2818 positions; its actual SourcePosition/Data.IR dimensions contain 2114. The manifest reports the actual dimensions; the original Comment is retained below.
+
+Selected SOFA attribution and processing metadata (verbatim values):
+
+D1 / 44100Hz / D1_HRIR_SOFA/D1_44K_16bit_256tap_FIR_SOFA.sofa
+{
+  "APIName": "SOFA Toolbox for Matlab/Octave",
+  "APIVersion": "2.2.0",
+  "ApplicationName": "MATLAB",
+  "ApplicationVersion": "2023a",
+  "AuthorContact": "gavin.kearney@york.ac.uk",
+  "Comment": "8802 source positions. KU100 subject. Measurement utlized Genelec 8010 Loudspeakers and 24s overlapped swept sine technique. Reciever microphones were KU100 built in mics via RME Fireface 400 Preamps. Filters were low frequency extended, diffuse field equalized and windowed. (approx.) Linear phase HRIRs.",
+  "Conventions": "SOFA",
+  "DataType": "FIR",
+  "DatabaseName": "SADIE II",
+  "DateCreated": "2020-01-10 10:56:00",
+  "DateModified": "2024-02-08 11:16:46",
+  "History": "Measurement, Low Frequency Extension, Diffuse Field Equalization, Windowing, Diffuse Field Equalization",
+  "License": "Copyright 2018, University of York, Licensed under the Apache License, Version 2.0 (the \"License\"); you may not use this file except in compliance with the License. You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0 Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.",
+  "ListenerShortName": "D1",
+  "NCProperties": "version=1|netcdflibversion=4.6.1|hdf5libversion=1.8.12",
+  "Organization": "AudioLab, Department of Electronic Engineering, University of York, United Kingdom.",
+  "Origin": "Overlapped Exponential Swept Sine Wave Measuremnt",
+  "References": "https://doi.org/10.3390/app8112029",
+  "RoomType": "free field",
+  "SOFAConventions": "SimpleFreeFieldHRIR",
+  "SOFAConventionsVersion": "1.0",
+  "Title": "D1 HRIRs",
+  "Version": "2.1",
+  "_NCProperties": "version=2,netcdf=4.8.1,hdf5=1.10.8"
+}
+
+D1 / 48000Hz / D1_HRIR_SOFA/D1_48K_24bit_256tap_FIR_SOFA.sofa
+{
+  "APIName": "SOFA Toolbox for Matlab/Octave",
+  "APIVersion": "2.2.0",
+  "ApplicationName": "MATLAB",
+  "ApplicationVersion": "2023a",
+  "AuthorContact": "gavin.kearney@york.ac.uk",
+  "Comment": "8802 source positions. KU100 subject. Measurement utlized Genelec 8010 Loudspeakers and 24s overlapped swept sine technique. Reciever microphones were KU100 built in mics via RME Fireface 400 Preamps. Filters were low frequency extended, diffuse field equalized and windowed. (approx.) Linear phase HRIRs.",
+  "Conventions": "SOFA",
+  "DataType": "FIR",
+  "DatabaseName": "SADIE II",
+  "DateCreated": "2019-08-01 13:21:05",
+  "DateModified": "2024-02-08 11:16:46",
+  "History": "Measurement, Low Frequency Extension, Diffuse Field Equalization, Windowing, Diffuse Field Equalization",
+  "License": "Copyright 2018, University of York, Licensed under the Apache License, Version 2.0 (the \"License\"); you may not use this file except in compliance with the License. You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0 Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.",
+  "ListenerShortName": "D1",
+  "NCProperties": "version=1|netcdflibversion=4.6.1|hdf5libversion=1.8.12",
+  "Organization": "AudioLab, Department of Electronic Engineering, University of York, United Kingdom.",
+  "Origin": "Overlapped Exponential Swept Sine Wave Measuremnt",
+  "References": "https://doi.org/10.3390/app8112029",
+  "RoomType": "free field",
+  "SOFAConventions": "SimpleFreeFieldHRIR",
+  "SOFAConventionsVersion": "1.0",
+  "Title": "D1 HRIRs",
+  "Version": "2.1",
+  "_NCProperties": "version=2,netcdf=4.8.1,hdf5=1.10.8"
+}
+
+H10 / 44100Hz / H10_HRIR_SOFA/H10_44K_16bit_256tap_FIR_SOFA.sofa
+{
+  "APIName": "SOFA Toolbox for Matlab/Octave",
+  "APIVersion": "2.2.0",
+  "ApplicationName": "MATLAB",
+  "ApplicationVersion": "2023a",
+  "AuthorContact": "gavin.kearney@york.ac.uk",
+  "Comment": "2818 source positions. Human subject. Measurement utlized Genelec 8010 Loudspeakers and 24s overlapped swept sine technique. Reciever microphones were Knowles FG-23329-C05 via RME Fireface 400 Preamps. Filters were low frequency extended, diffuse field equalized and windowed. (approx.) Linear phase HRIRs.",
+  "Conventions": "SOFA",
+  "DataType": "FIR",
+  "DatabaseName": "SADIE II",
+  "DateCreated": "2018-12-05 18:57:09",
+  "DateModified": "2024-02-08 11:16:51",
+  "History": "Measurement, Low Frequency Extension, Diffuse Field Equalization, Windowing, Diffuse Field Equalization",
+  "License": "Copyright 2018, University of York, Licensed under the Apache License, Version 2.0 (the \"License\"); you may not use this file except in compliance with the License. You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0 Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.",
+  "ListenerShortName": "H10",
+  "NCProperties": "version=1|netcdflibversion=4.6.1|hdf5libversion=1.8.12",
+  "Organization": "AudioLab, Department of Electronic Engineering, University of York, United Kingdom.",
+  "Origin": "Overlapped Exponential Swept Sine Wave Measuremnt",
+  "References": "https://doi.org/10.3390/app8112029",
+  "RoomType": "free field",
+  "SOFAConventions": "SimpleFreeFieldHRIR",
+  "SOFAConventionsVersion": "1.0",
+  "Title": "H10 HRIRs",
+  "Version": "2.1",
+  "_NCProperties": "version=2,netcdf=4.8.1,hdf5=1.10.8"
+}
+
+H10 / 48000Hz / H10_HRIR_SOFA/H10_48K_24bit_256tap_FIR_SOFA.sofa
+{
+  "APIName": "SOFA Toolbox for Matlab/Octave",
+  "APIVersion": "2.2.0",
+  "ApplicationName": "MATLAB",
+  "ApplicationVersion": "2023a",
+  "AuthorContact": "gavin.kearney@york.ac.uk",
+  "Comment": "2818 source positions. Human subject. Measurement utlized Genelec 8010 Loudspeakers and 24s overlapped swept sine technique. Reciever microphones were Knowles FG-23329-C05 via RME Fireface 400 Preamps. Filters were low frequency extended, diffuse field equalized and windowed. (approx.) Linear phase HRIRs.",
+  "Conventions": "SOFA",
+  "DataType": "FIR",
+  "DatabaseName": "SADIE II",
+  "DateCreated": "2018-12-05 19:05:38",
+  "DateModified": "2024-02-08 11:16:51",
+  "History": "Measurement, Low Frequency Extension, Diffuse Field Equalization, Windowing, Diffuse Field Equalization",
+  "License": "Copyright 2018, University of York, Licensed under the Apache License, Version 2.0 (the \"License\"); you may not use this file except in compliance with the License. You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0 Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.",
+  "ListenerShortName": "H10",
+  "NCProperties": "version=1|netcdflibversion=4.6.1|hdf5libversion=1.8.12",
+  "Organization": "AudioLab, Department of Electronic Engineering, University of York, United Kingdom.",
+  "Origin": "Overlapped Exponential Swept Sine Wave Measuremnt",
+  "References": "https://doi.org/10.3390/app8112029",
+  "RoomType": "free field",
+  "SOFAConventions": "SimpleFreeFieldHRIR",
+  "SOFAConventionsVersion": "1.0",
+  "Title": "H10 HRIRs",
+  "Version": "2.1",
+  "_NCProperties": "version=2,netcdf=4.8.1,hdf5=1.10.8"
+}

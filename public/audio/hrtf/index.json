@@ -1,0 +1,41 @@
+{
+  "profiles": [
+    {
+      "binary": "sadie-d1-44100.bin",
+      "bytes": 797244,
+      "directions": 387,
+      "profile": "sadie-d1",
+      "sampleRate": 44100,
+      "sha256": "066a40fc7c7efd78c74e6b4912edf93620848849288f6efb990aa0524e7547af",
+      "taps": 256
+    },
+    {
+      "binary": "sadie-d1-48000.bin",
+      "bytes": 797244,
+      "directions": 387,
+      "profile": "sadie-d1",
+      "sampleRate": 48000,
+      "sha256": "57fd17ca2057cfa33bcc581a41ee0d2ac192fc4873879cf198ce0efbf6abdcd3",
+      "taps": 256
+    },
+    {
+      "binary": "sadie-h10-44100.bin",
+      "bytes": 784884,
+      "directions": 381,
+      "profile": "sadie-h10",
+      "sampleRate": 44100,
+      "sha256": "f97927a63a8232848cee206d584a87149fdc4e5c0571344f2ed9459d27e01a29",
+      "taps": 256
+    },
+    {
+      "binary": "sadie-h10-48000.bin",
+      "bytes": 784884,
+      "directions": 381,
+      "profile": "sadie-h10",
+      "sampleRate": 48000,
+      "sha256": "e62124792de8b615935dbed400b784916ff87a597829d819f53267bd0e9dbac4",
+      "taps": 256
+    }
+  ],
+  "version": 1
+}

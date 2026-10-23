@@ -454,7 +454,7 @@ test('@live phrase processor errors stop the app and dispose the active audio ca
     probe.node.dispatchEvent(new Event('processorerror'));
   });
   await expect(page.locator('#status')).toHaveText('Ready when you are');
-  await expect(page.locator('#notice')).toContainText('ASMR phrase processor stopped unexpectedly');
+  await expect(page.locator('#notice')).toContainText('ASMR audio processor stopped unexpectedly');
   await expect(page.getByRole('button', { name: 'Start listening', exact: true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => {
     const probe = (window as unknown as { phraseFailureProbe: { node: AudioWorkletNode; lease: AudioCaptureLease; disconnected: boolean } }).phraseFailureProbe;

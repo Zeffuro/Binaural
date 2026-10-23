@@ -156,7 +156,7 @@ export class AudioEngine {
       this.toneBus.gain.value = session.tonesMuted ? 0 : modeGains(listeningMode(session)).tones;
       this.toneBus.connect(this.master);
       this.asmr = new AsmrMixer(context, this.master, this.endAt, 0,
-        () => { if (current()) this.failure = 'The ASMR phrase processor stopped unexpectedly. Playback has been stopped.'; });
+        () => { if (current()) this.failure = 'An ASMR audio processor stopped unexpectedly. Playback has been stopped.'; });
       if (modeGains(listeningMode(session)).asmr) {
         await prepareAsmrAudio(context, session.asmr);
         if (!current()) return;
@@ -189,7 +189,7 @@ export class AudioEngine {
     const gains = modeGains(listeningMode(session));
     const cueSignature = JSON.stringify([!!gains.asmr, session.master > 0, (session.asmr?.level ?? 0) > 0,
       session.asmr?.variation?.mode !== 'steady' && !!session.asmr?.variation,
-      session.asmr?.layers.map(layer => [layer.id, layer.sound, !!layer.spatial, layer.muted, layer.solo, layer.level > 0])]);
+      session.asmr?.layers.map(layer => [layer.id, layer.sound, !!layer.spatial, layer.spatial?.profile, layer.muted, layer.solo, layer.level > 0])]);
     if (cueSignature !== this.cueSignature) { this.cueTimeline.clear(); this.cueSignature = cueSignature; }
     smooth(this.master.gain, session.master, context.currentTime);
     this.dynamics?.update(session.dynamics);

@@ -9,6 +9,7 @@ import { decodeMusicForExport } from './music-export';
 import { WAV_SAMPLE_RATE, wavFrames } from './wav-encoding';
 import type { PcmOutput, WavOptions, WavProgress } from './export-types';
 import { asmrBackgroundGain } from '../asmr-focus';
+import { prepareHrtfAudio } from './hrtf-audio';
 
 export const WAV_SECTION_SECONDS = 30;
 export const WAV_PREROLL_SECONDS = 3;
@@ -55,9 +56,16 @@ export async function renderPcm(input: Session, seconds: number, maximum: number
       else {
         const pcm = native ? await native.read(start, length) : undefined;
         signal?.throwIfAborted();
-        const context = new OfflineAudioContext(2, length, WAV_SAMPLE_RATE), cleanup = exportGraph(context, session, offset, end, pcm, music);
+        const context = new OfflineAudioContext(2, length, WAV_SAMPLE_RATE);
+        if (gains.asmr) await prepareHrtfAudio(context, session.asmr);
+        signal?.throwIfAborted();
+        let graphFailure: Error | undefined;
+        const cleanup = exportGraph(context, session, offset, end, pcm, music, error => { graphFailure = error; });
         try {
           const buffer = await context.startRendering();
+          // Processor errors are queued on the control thread before a section is encoded.
+          if (session.asmr?.layers.some(layer => layer.spatial?.profile)) await new Promise(resolve => setTimeout(resolve, 0));
+          if (graphFailure) throw graphFailure;
           signal?.throwIfAborted(); channels = [buffer.getChannelData(0), buffer.getChannelData(1)];
         } finally { cleanup(); }
       }

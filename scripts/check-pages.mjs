@@ -6,6 +6,7 @@ import { chromium, firefox, expect } from '@playwright/test';
 import { browserLaunchOptions } from './browser-options.mjs';
 import { makeBwgFixture } from '../tests/helpers/bwg.ts';
 import { setSources } from '../tests/helpers/listening-sources.ts';
+import { checkHrtfProfiles } from '../tests/helpers/hrtf-production.ts';
 
 const root = resolve(fileURLToPath(new URL('../dist/', import.meta.url)));
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.webp': 'image/webp', '.png': 'image/png', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json', '.txt': 'text/plain', '.ogg': 'audio/ogg', '.mp3': 'audio/mpeg' };
@@ -240,6 +241,7 @@ try {
         await page.getByRole('button', { name: 'Open visualization' }).click();
         await expect(page.getByRole('dialog', { name: 'Immersive visualization' })).toBeVisible();
         await page.getByRole('button', { name: 'Close visualization' }).click();
+        await checkHrtfProfiles(page, origin, prefix);
         await page.setViewportSize({ width: 390, height: 844 });
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
         await page.goto(origin + prefix + 'credits.html');

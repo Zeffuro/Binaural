@@ -21,6 +21,11 @@ export function setupOffline(options: { isPlaying: () => boolean }): { update: (
   const updateButton = panel.querySelector<HTMLButtonElement>('#offline-update')!;
   const installButton = panel.querySelector<HTMLButtonElement>('#offline-install')!;
   const checkButton = panel.querySelector<HTMLButtonElement>('#offline-check')!;
+  const banner = document.createElement('div');
+  banner.className = 'app-update-banner'; banner.hidden = true;
+  banner.innerHTML = '<span role="status">An update is ready.</span><button type="button" class="secondary-button" id="app-update">Update and reload</button>';
+  document.querySelector('.topbar')?.after(banner);
+  const bannerButton = banner.querySelector<HTMLButtonElement>('button')!;
   let registration: ServiceWorkerRegistration | undefined;
   let prompt: InstallPrompt | undefined;
   let applying = false;
@@ -32,6 +37,11 @@ export function setupOffline(options: { isPlaying: () => boolean }): { update: (
     updateButton.hidden = !waiting && !reloadReady;
     updateButton.disabled = options.isPlaying() || applying;
     updateButton.textContent = options.isPlaying() ? 'Update after listening' : reloadReady ? 'Reload updated app' : 'Update and reload';
+    banner.hidden = !waiting && !reloadReady;
+    bannerButton.disabled = updateButton.disabled;
+    if (bannerButton.textContent !== updateButton.textContent) bannerButton.textContent = updateButton.textContent;
+    const bannerText = failure || (options.isPlaying() ? 'An update is ready. Finish listening to update.' : 'An update is ready.');
+    if (banner.querySelector('span')!.textContent !== bannerText) banner.querySelector('span')!.textContent = bannerText;
     const message = failure || (waiting || reloadReady ? 'An update is ready. Reload when you have finished listening.' :
       ready ? 'Ready offline. Reopen this address or the installed app, even without a connection.' : 'Preparing the app for offline use…');
     if (status.textContent !== message) status.textContent = message;
@@ -55,6 +65,7 @@ export function setupOffline(options: { isPlaying: () => boolean }): { update: (
     applying = true; update();
     registration.waiting.postMessage({ type: 'ACTIVATE_UPDATE' });
   });
+  bannerButton.addEventListener('click', () => updateButton.click());
   if (!('serviceWorker' in navigator) || !window.isSecureContext) {
     failure = 'Offline use needs HTTPS and a browser with service worker support. You can still use the app while connected.';
     update(); return { update };
