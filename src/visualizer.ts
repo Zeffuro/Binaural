@@ -8,7 +8,7 @@ import { setupTriggerControls } from './trigger-controls';
 import { TriggerRenderer } from './trigger-renderer';
 import { captureSurface, type VisualCapture } from './visual-capture';
 
-export function setupVisualizer(host: HTMLElement, audio: (timeline?: VisualTimeline, offsetMs?: number) => VisualFrame | undefined, changed: () => void, dock?: VisualDock, beforeEdit: () => void = () => {}, reduced = matchMedia('(prefers-reduced-motion: reduce)')) {
+export function setupVisualizer(host: HTMLElement, audio: (timeline?: VisualTimeline, offsetMs?: number, needCues?: boolean) => VisualFrame | undefined, changed: () => void, dock?: VisualDock, beforeEdit: () => void = () => {}, reduced = matchMedia('(prefers-reduced-motion: reduce)'), requestCues?: () => () => void) {
   host.innerHTML = `<div class="scene-heading"><h3>Visualizations</h3><span class="small-muted">For music or a quiet moment</span></div>
     <label for="scene-mode">Scene</label><select id="scene-mode"><option value="off">Off</option><optgroup label="Music patterns"><option value="spectrum">Spectrum</option><option value="scope">Oscilloscope</option><option value="orbits">Orbital trails</option></optgroup><optgroup label="Moodscapes"><option value="aurora">Aurora</option><option value="water">Quiet water</option><option value="local">Your photo or video</option></optgroup><optgroup label="Light triggers"><option value="triggers">Light triggers and gestures</option></optgroup>${libraryOptions}</select>
     <div id="scene-preview"><div class="scene-viewport" hidden><div class="scene-media"></div><canvas class="scene-drawing" aria-label="Music visualization"></canvas></div></div>${libraryControls}
@@ -38,7 +38,7 @@ export function setupVisualizer(host: HTMLElement, audio: (timeline?: VisualTime
   let video: HTMLVideoElement | undefined;
   let lastFrame: VisualFrame | undefined;
   let loading = 0;
-  const captures = new Set<{ width: number; height: number; update(): void }>();
+  const captures = new Set<{ width: number; height: number; syncCues(): void; update(): void }>();
   const bands = new Float32Array(48);
   const library = setupSceneLibrary(host, refresh, message => { status.textContent = message; }, changed);
   const consent = host.querySelector<HTMLInputElement>('#milkdrop-enable')!;
@@ -62,6 +62,13 @@ export function setupVisualizer(host: HTMLElement, audio: (timeline?: VisualTime
   }
 
   const active = () => mode.value !== 'off' && allowed() && (running || independent.checked) && !reduced.matches && !document.hidden && (onscreen || stage.open || captures.size > 0);
+  const cueActive = () => running && mode.value === 'triggers' && triggers.enabled() && triggers.state().syncAsmr && !reduced.matches && !document.hidden;
+  let releaseDisplayCues: (() => void) | undefined;
+  function syncCues(): void {
+    if (cueActive() && (onscreen || stage.open)) releaseDisplayCues ??= requestCues?.();
+    else { releaseDisplayCues?.(); releaseDisplayCues = undefined; }
+    for (const capture of captures) capture.syncCues();
+  }
   let reducedState = reduced.matches;
   function syncDock(): void {
     reducedState = reduced.matches;
@@ -86,6 +93,7 @@ export function setupVisualizer(host: HTMLElement, audio: (timeline?: VisualTime
     return canvas;
   }
   function render(timestamp = 0): void {
+    syncCues();
     if (reducedState !== reduced.matches) syncDock();
     const cadence = timestamp && previousTick ? timestamp - previousTick : 0;
     previousTick = timestamp;
@@ -106,7 +114,7 @@ export function setupVisualizer(host: HTMLElement, audio: (timeline?: VisualTime
       canvas.width = Math.round(width * ratio); canvas.height = Math.round(height * ratio);
     }
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-    if (running && drawing) { const current = audio('output', triggers.timingOffset()); lastFrame = current ? { ...current } : undefined; }
+    if (running && drawing) { const current = audio('output', triggers.timingOffset(), cueActive() && (onscreen || stage.open)); lastFrame = current ? { ...current } : undefined; }
     const frame = lastFrame;
     library.render(mode.value, frame, delta, elapsed, captureSize(), drawing);
     const waveform = frame?.waveform;
@@ -187,6 +195,7 @@ export function setupVisualizer(host: HTMLElement, audio: (timeline?: VisualTime
   }
   function refresh(): void {
     cancelAnimationFrame(raf); previous = previousTick = nextDraw = 0;
+    syncCues();
     if (!active()) library.pauseQuality();
     viewport.hidden = mode.value === 'off' || !allowed(); open.disabled = viewport.hidden;
     canvas.hidden = mode.value === 'local' || mode.value === 'milkdrop' || mode.value.startsWith('nature:'); media.hidden = mode.value !== 'local';
@@ -319,7 +328,7 @@ export function setupVisualizer(host: HTMLElement, audio: (timeline?: VisualTime
   });
   refresh();
   return { transport(value: boolean) {
-      const clearFrame = !value && !!lastFrame && !audio();
+      const clearFrame = !value && !!lastFrame && !audio(undefined, undefined, false);
       if (value !== running || clearFrame) { running = value; if (clearFrame) lastFrame = undefined; refresh(); }
     },
     createCapture(width: number, height: number, fps = 30): VisualCapture {
@@ -328,21 +337,25 @@ export function setupVisualizer(host: HTMLElement, audio: (timeline?: VisualTime
       const renderer = new TriggerRenderer();
       let disposed = false, failure: unknown, painted = false, captureSettings = '';
       let captureFrame: VisualFrame | undefined;
-      const capture = { width, height, update() {
+      let releaseCaptureCues: (() => void) | undefined;
+      const capture = { width, height, syncCues() {
+        if (!disposed && !failure && cueActive()) releaseCaptureCues ??= requestCues?.();
+        else { releaseCaptureCues?.(); releaseCaptureCues = undefined; }
+      }, update() {
         if (failure) return;
         try {
           const source = captureSource();
           if (mode.value === 'triggers') {
             const settings = triggers.state(), signature = JSON.stringify(settings);
             if (!active() && painted && captureSettings === signature) return;
-            if (active()) captureFrame = running ? audio('capture') : undefined;
+            if (active()) captureFrame = running ? audio('capture', 0, cueActive()) : undefined;
             renderer.render(surface.context, width, height, settings, {
               glass: glassPhase, light: lightPhase, energy, pan, cues: captureFrame?.asmr,
             });
             captureSettings = signature;
           } else { surface.paint(source); captureSettings = ''; }
           painted = true;
-        } catch (error) { failure = error; }
+        } catch (error) { failure = error; capture.syncCues(); }
       } };
       const lease: VisualCapture = { canvas: surface.canvas,
         draw() {
@@ -353,7 +366,7 @@ export function setupVisualizer(host: HTMLElement, audio: (timeline?: VisualTime
         },
         dispose() {
           if (disposed) return;
-          disposed = true; captures.delete(capture); surface.canvas.width = surface.canvas.height = 1; refresh();
+          disposed = true; capture.syncCues(); captures.delete(capture); surface.canvas.width = surface.canvas.height = 1; refresh();
         },
       };
       captures.add(capture);

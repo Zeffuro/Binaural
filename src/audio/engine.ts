@@ -51,6 +51,7 @@ export class AudioEngine {
   private captures = new Set<AudioCaptureLease>();
   private cueTimeline = new AsmrCueTimeline();
   private cueSignature = '';
+  private cueReaders = new Set<symbol>();
   get loadingAsmr(): boolean { return this.asmrPending; }
   failure?: string;
 
@@ -60,9 +61,18 @@ export class AudioEngine {
   get state(): string { return this.context?.state ?? 'stopped'; }
   get paused(): boolean { return this.isPaused; }
   get selectedMusicFile(): File | undefined { return this.musicFile; }
-  visualFrame(timeline: VisualTimeline = 'analysis', offsetMs = 0): VisualFrame | undefined {
+  requestVisualCues(): () => void {
+    const reader = Symbol();
+    this.cueReaders.add(reader);
+    return () => {
+      if (!this.cueReaders.delete(reader) || this.cueReaders.size) return;
+      this.asmr?.clearCues(); this.cueTimeline.clear();
+    };
+  }
+  visualFrame(timeline: VisualTimeline = 'analysis', offsetMs = 0, needCues = true): VisualFrame | undefined {
     const frame = this.analysis?.read(), context = this.context;
     if (!frame || !context) return frame;
+    if (!needCues) return { ...frame, asmr: [] };
     const audible = !this.stopping && !this.isPaused && context.state === 'running' && !this.asmrPending &&
       this.visualGain > 0 && (this.endAt === undefined || context.currentTime < this.endAt);
     if (!audible) { this.asmr?.clearCues(); this.cueTimeline.clear(); frame.asmr = []; }

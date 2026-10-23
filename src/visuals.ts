@@ -9,7 +9,7 @@ import { setupVisualDock } from './visual-dock';
 import { setupControlsPreference, setupImmersiveControls } from './immersive-controls';
 import { captureSurface, type VisualCapture } from './visual-capture';
 
-export function setupVisuals(audio: (timeline?: VisualTimeline, offsetMs?: number) => VisualFrame | undefined, changed: () => void = () => {}, beforeEdit: () => void = () => {}) {
+export function setupVisuals(audio: (timeline?: VisualTimeline, offsetMs?: number, needCues?: boolean) => VisualFrame | undefined, changed: () => void = () => {}, beforeEdit: () => void = () => {}, requestCues?: () => () => void) {
   document.querySelector('#visual-controls')!.innerHTML = `
     <label class="visual-toggle" for="visuals"><span><strong>Ambient light</strong><small>Color, movement and a full-screen space</small></span><input id="visuals" type="checkbox" role="switch" /></label>
     <div id="visual-preview" class="visual-preview" role="img" aria-label="Ambient color preview"></div>
@@ -43,7 +43,7 @@ export function setupVisuals(audio: (timeline?: VisualTimeline, offsetMs?: numbe
   setupControlsPreference(dock.controls);
   const immersive = setupImmersiveControls(stage, stage.querySelector('.light-field')!, stage.querySelector('.light-overlay')!, () => { void fullscreen(); }, () => { void closeStage(); });
   const edit = () => { syncQuick(); changed(); };
-  const scenes = setupVisualizer(document.querySelector('#scene-controls')!, audio, edit, dock, beforeEdit, reduced);
+  const scenes = setupVisualizer(document.querySelector('#scene-controls')!, audio, edit, dock, beforeEdit, reduced, requestCues);
   function syncQuick(): void {
     const scene = scenes.getState().scene;
     const selected = scene === 'off' ? (input('#visuals').checked ? '' : 'off') : ['milkdrop', 'triggers'].includes(scene) ? scene : scene.startsWith('nature:') ? 'nature' : ['aurora', 'water'].includes(scene) ? 'calm' : ['spectrum', 'scope', 'orbits'].includes(scene) ? 'reactive' : '';
