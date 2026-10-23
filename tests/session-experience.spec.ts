@@ -14,12 +14,16 @@ test('tone mute is reversible and preserves the audible mix settings', async ({ 
   const result = await page.evaluate(async () => {
     const enginePath = '/src/audio/engine.ts', modelPath = '/src/model.ts';
     const { AudioEngine } = await import(enginePath), { initialSession } = await import(modelPath);
+    const clockPath = '/tests/helpers/audio-clock.ts', { waitForAudioTime } = await import(clockPath);
     const engine = new AudioEngine(), session = initialSession(); session.master = 1; session.ambient = 'none';
     const rms = () => { const frame = engine.visualFrame()!.left; return Math.sqrt(frame.reduce((sum: number, n: number) => sum + ((n - 128) / 128) ** 2, 0) / frame.length); };
-    await engine.start(session); await new Promise(resolve => setTimeout(resolve, 400)); const sound = rms();
-    session.tonesMuted = true; engine.update(session); await new Promise(resolve => setTimeout(resolve, 400)); const muted = rms();
-    session.ambient = 'white'; session.ambientLevel = 1; engine.update(session); await new Promise(resolve => setTimeout(resolve, 350)); const background = rms();
-    session.ambient = 'none'; session.tonesMuted = false; engine.update(session); await new Promise(resolve => setTimeout(resolve, 400)); const resumed = rms();
+    await engine.start(session);
+    const context = (engine as unknown as { context: AudioContext }).context;
+    const settle = () => waitForAudioTime(context, context.currentTime + .8);
+    await settle(); const sound = rms();
+    session.tonesMuted = true; engine.update(session); await settle(); const muted = rms();
+    session.ambient = 'white'; session.ambientLevel = 1; engine.update(session); await settle(); const background = rms();
+    session.ambient = 'none'; session.tonesMuted = false; engine.update(session); await settle(); const resumed = rms();
     await engine.stop(); return { sound, muted, background, resumed, level: session.layers[0].level };
   });
   expect(result.sound).toBeGreaterThan(0.02); expect(result.muted).toBeLessThan(0.008); expect(result.background).toBeGreaterThan(0.01); expect(result.resumed).toBeGreaterThan(0.02); expect(result.level).toBe(0.6);

@@ -152,32 +152,57 @@ test('native spatial modulation matches absolute trajectory phase including thre
   const results = await page.evaluate(async () => {
     const spatialPath = '/src/asmr-spatial.ts', positionPath = '/src/audio/asmr-position.ts';
     const { asmrSpatialMotions, sampleSpatialPosition } = await import(spatialPath), { AsmrPosition } = await import(positionPath);
-    const results: { motion: string; offset: number; error: number; peak: number }[] = [];
+    const results: { motion: string; offset: number; initialError: number; nativeError: number; peak: number }[] = [];
     for (const motion of asmrSpatialMotions as string[]) for (const offset of [0, 10800]) {
-      const context = new OfflineAudioContext(3, 88200, 44100), source = context.createGain(), sink = context.createGain();
+      const context = new OfflineAudioContext(6, 88200, 44100), source = context.createGain(), sink = context.createGain();
       const settings = { motion, distance: 1.7, azimuth: -65, elevation: 35 }, period = 2.7;
-      const position = new AsmrPosition(context, source, sink, settings, period, 2, offset), merger = context.createChannelMerger(3);
+      const position = new AsmrPosition(context, source, sink, settings, period, 2, offset), merger = context.createChannelMerger(6);
       const centers = [position.panner.positionX, position.panner.positionY, position.panner.positionZ].map((parameter: AudioParam, axis: number) => {
         const constant = context.createConstantSource(); constant.offset.value = parameter.value;
         constant.connect(merger, 0, axis); constant.start(); return constant;
       });
       position.matrix.forEach((coefficient: GainNode, index: number) => coefficient.connect(merger, 0, Math.floor(index / 3)));
+      // Native sine and custom quadrature accumulate float phase differently in Firefox.
+      const references = [1 / period, 1 / period, 2 / period].map((frequency, index) => {
+        const oscillator = context.createOscillator(); oscillator.frequency.value = frequency;
+        if (offset > 0 || index === 1) {
+          const cycles = ((Math.fround(frequency) * offset) % 1 + 1) % 1 + (index === 1 ? .25 : 0);
+          const angle = cycles * 2 * Math.PI;
+          oscillator.setPeriodicWave(context.createPeriodicWave(new Float32Array([0, Math.sin(angle)]),
+            new Float32Array([0, Math.cos(angle)]), { disableNormalization: true }));
+        }
+        oscillator.connect(merger, 0, index + 3); oscillator.start(); return oscillator;
+      });
       merger.connect(context.destination); const buffer = await context.startRendering();
-      let error = 0, peak = 0;
-      for (const frame of [4410, 11025, 22050, 33075, 66150]) {
-        const expected = sampleSpatialPosition(settings, offset + frame / 44100, period);
-        (['x', 'y', 'z'] as const).forEach((axis, channel) => {
-          const actual = buffer.getChannelData(channel)[frame];
-          error = Math.max(error, Math.abs(actual - expected[axis])); peak = Math.max(peak, Math.abs(actual));
+      const cycleSeconds = 1 / Math.fround(1 / period);
+      const [start, quarter, half, threeQuarters, eighth] = [0, .25, .5, .75, .125].map(cycle => sampleSpatialPosition(settings, cycle * cycleSeconds, period));
+      const channels = Array.from({ length: 6 }, (_, channel) => buffer.getChannelData(channel));
+      const coefficients = (['x', 'y', 'z'] as const).map(axis => {
+        const center = (start[axis] + half[axis]) / 2, cosine = (start[axis] - half[axis]) / 2;
+        const sine = (quarter[axis] - threeQuarters[axis]) / 2, harmonic = eighth[axis] - center - (sine + cosine) * Math.SQRT1_2;
+        return { axis, center, cosine, sine, harmonic };
+      });
+      let initialError = 0, nativeError = 0, peak = 0;
+      for (let frame = 0; frame < buffer.length; frame++) {
+        const expected = [0, 1, 4410].includes(frame) ? sampleSpatialPosition(settings, offset + frame / 44100, period) : undefined;
+        coefficients.forEach(({ axis, center, sine, cosine, harmonic }, channel) => {
+          const actual = channels[channel][frame];
+          const native = center + sine * channels[3][frame] + cosine * channels[4][frame] + harmonic * channels[5][frame];
+          nativeError = Math.max(nativeError, Math.abs(actual - native)); peak = Math.max(peak, Math.abs(actual));
+          if (expected) initialError = Math.max(initialError, Math.abs(actual - expected[axis]));
         });
       }
       position.dispose(); centers.forEach((constant: ConstantSourceNode) => { constant.stop(); constant.disconnect(); }); merger.disconnect();
-      results.push({ motion, offset, error, peak });
+      references.forEach(oscillator => { oscillator.stop(); oscillator.disconnect(); });
+      results.push({ motion, offset, initialError, nativeError, peak });
     }
     return results;
   });
   expect(results).toHaveLength(12);
-  for (const result of results) { expect(result.error, `${result.motion} at ${result.offset}s`).toBeLessThan(.0001); expect(result.peak).toBeLessThan(1.71); }
+  for (const result of results) {
+    expect(result.initialError, JSON.stringify(result)).toBeLessThan(.0001);
+    expect(result.nativeError, JSON.stringify(result)).toBeLessThan(.0001); expect(result.peak).toBeLessThan(1.71);
+  }
 });
 
 test('spatial edits stay bounded and disposal preserves unrelated source connections', async ({ page }) => {
