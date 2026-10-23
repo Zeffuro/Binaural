@@ -135,7 +135,7 @@ test('all twelve everyday recording experiences keep source IDs, flow, duration 
     if (await page.locator('#asmr-mixer').getAttribute('open') === null) await page.locator('#asmr-mixer > summary').click();
     await page.locator('#asmr-level').focus();
     await page.locator('#asmr-level').evaluate((element: HTMLInputElement) => {
-      element.value = '.11'; element.dispatchEvent(new Event('input', { bubbles: true }));
+      element.value = '0.11'; element.dispatchEvent(new Event('input', { bubbles: true }));
     });
     await expect(page.locator('#asmr-level')).toHaveValue('0.11');
     await page.locator('#import-file').setInputFiles({ name: `${recipe.id}.json`, mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(saved)) });
@@ -154,7 +154,7 @@ test('actual original recordings retain seeded turns and room tails across every
     const { initialSession } = await import(modelPath), { makeAsmrLayer } = await import(statePath);
     const { exportGraph } = await import(graphPath), { renderWav, renderFlac } = await import(exportPath);
     const { prepareAsmrRecordings } = await import(assetsPath), rate = 44100, frames = 31 * rate;
-    const session = initialSession(); session.mode = 'asmr'; session.minutes = 0; session.master = .4; session.ambient = 'none';
+    const session = initialSession(); session.mode = 'asmr'; session.minutes = 0; session.master = .8; session.ambient = 'none';
     session.asmr = { level: .5, space: { amount: .18, size: 1.2, warmth: .65 },
       variation: { mode: 'turns', seed: 6733, amount: .7, phraseSeconds: 6, turnSeconds: 15 }, layers: [
         { ...makeAsmrLayer('recorded-blanket'), level: .55, pan: -.8, motion: 'still', tone: .7, rate: .85 },
