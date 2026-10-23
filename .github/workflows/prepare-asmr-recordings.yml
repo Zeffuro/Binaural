@@ -1,0 +1,46 @@
+name: Prepare ASMR recordings
+
+on:
+  push:
+    branches: [main]
+    paths: ['scripts/prepare-asmr-recordings.py', '.github/workflows/prepare-asmr-recordings.yml']
+  workflow_dispatch:
+    inputs:
+      inspect_only:
+        description: Inspect original WAV signals without preparing assets
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Install preparation dependencies
+        run: python -m pip install numpy==2.5.4 scipy==1.18.1 soundfile==0.13.1
+      - name: Verify and prepare pinned original recordings
+        env:
+          INSPECT_ONLY: ${{ inputs.inspect_only }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=()
+          if [[ "$INSPECT_ONLY" == "true" ]]; then args+=(--inspect-only); fi
+          python scripts/prepare-asmr-recordings.py "${args[@]}"
+      - name: Preserve recordings, licensing evidence and signal audit
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: asmr-prepared
+          path: asmr-prepared/
+          if-no-files-found: error
+          retention-days: 14
