@@ -78,6 +78,36 @@ test('duplicated 3D sounds keep independent positions through subsequent edits a
   await expect(page.locator('#status')).toHaveText('Ready when you are');
 });
 
+test('all 3D path choices share complete settings and saved figure eight reloads without motion consent', async ({ page }) => {
+  await page.goto('/'); await setSources(page, 'asmr'); await adjust(page);
+  await page.getByLabel('Sound 1 sound space', { exact: true }).selectOption('hrtf');
+  const movement = page.getByLabel('Sound 1 3D movement', { exact: true });
+  await expect(movement.locator('option')).toHaveText([
+    'Stay in place', 'Orbit around your head', 'Side to side', 'Near and far', 'Up and down', 'Figure eight',
+  ]);
+  await expect(page.locator('.asmr-position .fine-print').first()).toContainText('Distance limits');
+  await range(page.getByLabel('Sound 1 direction', { exact: true }), '65');
+  await range(page.getByLabel('Sound 1 height', { exact: true }), '-25');
+  await range(page.getByLabel('Sound 1 distance', { exact: true }), '.8');
+  for (const motion of ['sweep', 'approach', 'rise', 'figure-eight']) {
+    await movement.selectOption(motion);
+    const { link, session } = await sharedMix(page);
+    expect(session.asmr.layers[0].spatial).toEqual({ azimuth: 65, elevation: -25, distance: .8, motion });
+    await page.goto(link); await adjust(page);
+    await expect(movement).toHaveValue(motion);
+    await expect(page.locator('#status')).toHaveText('Ready when you are');
+    await expect(page.getByLabel('Enable light triggers', { exact: true })).not.toBeChecked();
+  }
+  await page.locator('#preset-name').fill('A figure eight in front'); await page.locator('#save-preset').click();
+  await expect(page.locator('#notice')).toContainText('saved');
+  await page.goto('/'); await page.locator('[data-saved]').click(); await adjust(page);
+  await expect(movement).toHaveValue('figure-eight');
+  await expect(page.getByLabel('Sound 1 direction', { exact: true })).toHaveValue('65');
+  await expect(page.getByLabel('Sound 1 height', { exact: true })).toHaveValue('-25');
+  await expect(page.getByLabel('Sound 1 distance', { exact: true })).toHaveValue('0.8');
+  await expect(page.locator('#status')).toHaveText('Ready when you are');
+});
+
 test('3D controls fit 320px screens and remain accessible in both themes', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 800 }); await page.goto('/');
   await setSources(page, 'asmr');

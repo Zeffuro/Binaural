@@ -1,7 +1,7 @@
 import { asmrMotions, asmrRanges, generatedAsmrSounds, recordedAsmrSounds, defaultAsmr, makeAsmrLayer, MAX_ASMR_LAYERS, type AsmrLayer, type AsmrSettings, type AsmrSound } from './asmr-state';
 import { asmrPresets } from './asmr-presets';
 import { openPresetExplorer } from './explorer';
-import { asmrSpatialRanges, defaultSpatial } from './asmr-spatial';
+import { asmrSpatialMotions, asmrSpatialMotionLabels, asmrSpatialRanges, defaultSpatial } from './asmr-spatial';
 import { defaultAsmrVariation, type AsmrVariation } from './asmr-variation';
 import './asmr-controls.css';
 
@@ -151,7 +151,7 @@ export function setupAsmr(options: {
       <details class="asmr-advanced" ${expanded.has(layer.id) ? 'open' : ''}><summary>Adjust</summary>
       <div class="asmr-flags"><button class="secondary-button" data-action="solo" aria-label="Solo sound ${i + 1}" aria-pressed="${layer.solo}">Solo</button><button class="text-button" data-action="duplicate" aria-label="Duplicate sound ${i + 1}">Duplicate</button></div>
       <label for="asmr-space-${i}">Sound space</label><select id="asmr-space-${i}" aria-label="Sound ${i + 1} sound space" data-field="space"><option value="stereo" ${!layer.spatial ? 'selected' : ''}>Stereo</option><option value="hrtf" ${layer.spatial ? 'selected' : ''}>3D headphones</option></select>
-      ${layer.spatial ? `<div class="asmr-position">${positionRanges(layer, i, ['azimuth', 'distance'])}<label for="asmr-orbit-${i}">3D movement</label><select id="asmr-orbit-${i}" aria-label="Sound ${i + 1} 3D movement" data-position="motion"><option value="still" ${layer.spatial.motion === 'still' ? 'selected' : ''}>Stay in place</option><option value="orbit" ${layer.spatial.motion === 'orbit' ? 'selected' : ''}>Orbit around your head</option></select><p class="fine-print">Places this layer as one source around your head. Direction sets the orbit's starting angle. Stereo keeps a recording's original width.</p></div>`
+      ${layer.spatial ? `<div class="asmr-position">${positionRanges(layer, i, ['azimuth', 'distance'])}<label for="asmr-orbit-${i}">3D movement</label><select id="asmr-orbit-${i}" aria-label="Sound ${i + 1} 3D movement" data-position="motion">${asmrSpatialMotions.map(motion => `<option value="${motion}" ${layer.spatial!.motion === motion ? 'selected' : ''}>${asmrSpatialMotionLabels[motion]}</option>`).join('')}</select><p class="fine-print">Places this layer as one source around your head. Direction and height orient the path; direction starts an orbit. Distance limits the path's reach, with movement narrowing near 0.15 m. Stereo keeps a recording's original width.</p></div>`
         : `<label for="asmr-motion-${i}">Movement</label><select id="asmr-motion-${i}" aria-label="Sound ${i + 1} movement" data-field="motion">${asmrMotions.map(motion => `<option value="${motion}" ${motion === layer.motion ? 'selected' : ''}>${({ still: 'Stay in place', sweep: 'Left / right sweep', wander: 'Slow wander' })[motion]}</option>`).join('')}</select>`}
       ${ranges(layer, i, layer.spatial ? ['pressure', 'period', 'rate', 'tone', 'pressurePhase'] : ['pan', 'pressure', 'width', 'period', 'rate', 'tone', 'pressurePhase'])}${layer.spatial ? positionRanges(layer, i, ['elevation']) : ''}</details></article>`).join('');
     host.querySelectorAll<HTMLInputElement>('input[data-field]').forEach(input => input.setAttribute('aria-valuetext', format(input.dataset.field!, Number(input.value))));
@@ -192,7 +192,7 @@ export function setupAsmr(options: {
       edit(value => {
         const position = value.layers.find(layer => layer.id === id)!.spatial!;
         const field = input.dataset.position!;
-        if (field === 'motion') position.motion = input.value as 'still' | 'orbit';
+        if (field === 'motion') position.motion = input.value as typeof position.motion;
         else position[field as keyof typeof asmrSpatialRanges] = Number(input.value);
       });
       if (input.type === 'range') {

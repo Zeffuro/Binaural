@@ -3,6 +3,7 @@ import type { AsmrCue } from './asmr-cues';
 export type VisualTimeline = 'analysis' | 'output' | 'capture';
 type OutputClock = Pick<AudioContext, 'currentTime' | 'sampleRate' | 'baseLatency' | 'outputLatency' | 'getOutputTimestamp'>;
 const MAX_DELAY = 2;
+const HISTORY_SECONDS = 3;
 
 export function outputTime(context: OutputClock, now = performance.now()): number {
   const current = context.currentTime;
@@ -20,6 +21,12 @@ export function outputTime(context: OutputClock, now = performance.now()): numbe
   return Math.max(0, current - Math.min(MAX_DELAY, latency(context.baseLatency) + latency(context.outputLatency)));
 }
 
+export function visualOutputTime(context: OutputClock, timeline: VisualTimeline, offsetMs = 0, now = performance.now()): number {
+  if (timeline !== 'output') return context.currentTime;
+  const delay = Number.isFinite(offsetMs) ? Math.max(-250, Math.min(500, offsetMs)) / 1000 : 0;
+  return Math.max(0, Math.min(context.currentTime, outputTime(context, now) - delay));
+}
+
 export class AsmrCueTimeline {
   private frames: { time: number; cues: AsmrCue[] }[] = [];
   clear(): void { this.frames.length = 0; }
@@ -31,7 +38,7 @@ export class AsmrCueTimeline {
     const frame = { time, cues: cues.map(cue => ({ ...cue })) };
     if (last?.time === time) this.frames[this.frames.length - 1] = frame;
     else this.frames.push(frame);
-    while (this.frames.length > 240 || (this.frames.length > 1 && time - this.frames[0].time > MAX_DELAY)) this.frames.shift();
+    while (this.frames.length > 512 || (this.frames.length > 1 && time - this.frames[0].time > HISTORY_SECONDS)) this.frames.shift();
   }
 
   read(output: number, sampleRate: number): AsmrCue[] {

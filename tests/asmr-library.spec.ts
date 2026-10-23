@@ -5,9 +5,9 @@ import { loadAsmrExperience } from './helpers/asmr-discovery';
 test('one explorer opens all families by default and ASMR browse resets stale filters', async ({ page }) => {
   await page.goto('/');
   await page.locator('#explore-presets').click();
-  await expect(page.locator('.explore-card')).toHaveCount(83);
+  await expect(page.locator('.explore-card')).toHaveCount(91);
   await page.locator('#preset-category').selectOption('ASMR');
-  await expect(page.locator('.explore-card')).toHaveCount(53);
+  await expect(page.locator('.explore-card')).toHaveCount(61);
   await expect(page.locator('#preset-results')).not.toContainText('Hz');
   await page.locator('#preset-search').fill('temple');
   await page.locator('#preset-with-visuals').check();
@@ -18,13 +18,13 @@ test('one explorer opens all families by default and ASMR browse resets stale fi
   await expect(page.locator('#preset-search')).toHaveValue('');
   await expect(page.locator('#preset-with-visuals')).not.toBeChecked();
   await expect(page.locator('#preset-favorites')).not.toBeChecked();
-  await expect(page.locator('.explore-card')).toHaveCount(83);
+  await expect(page.locator('.explore-card')).toHaveCount(91);
   await page.locator('#preset-search').fill('missing');
   await page.locator('#close-explorer').click();
   await page.locator('#asmr-browse').click();
   await expect(page.locator('#preset-category')).toHaveValue('ASMR');
   await expect(page.locator('#preset-search')).toHaveValue('');
-  await expect(page.locator('.explore-card')).toHaveCount(53);
+  await expect(page.locator('.explore-card')).toHaveCount(61);
   await expect(page.locator('#preset-explorer')).toHaveCount(1);
   await expect(page.locator('#asmr-preset, #asmr-search, #asmr-library-list')).toHaveCount(0);
   await expect(page.locator('#status')).toHaveText('Ready when you are');
@@ -33,7 +33,7 @@ test('one explorer opens all families by default and ASMR browse resets stale fi
 test('shared discovery searches source descriptions and loads complete ASMR with optional soft lights silently', async ({ page }) => {
   await page.goto('/'); await page.locator('#asmr-browse').click();
   await page.locator('#preset-search').fill('blankets');
-  await expect(page.locator('.explore-card')).toHaveCount(5);
+  await expect(page.locator('.explore-card')).toHaveCount(7);
   await expect(page.locator('.explore-card h3').filter({ hasText: 'Soft cloth cocoon' })).toHaveCount(1);
   await page.locator('#preset-search').fill('  LEFT  attention ');
   await expect(page.locator('.explore-card h3')).toHaveText(['Left ear attention', 'Left soft attention', 'Temple brushing']);
@@ -176,8 +176,8 @@ test('every ASMR recipe adapts to a complete validated shared experience with it
         soft: entry.session.visual.triggers.brightness === .3 && entry.session.visual.triggers.speed <= .015 && entry.session.visual.triggers.drift <= .06 && entry.session.visual.triggers.lightSpeed <= .05 && entry.session.visual.triggers.reaction <= .2 };
     });
   });
-  expect(result).toHaveLength(53);
-  expect(new Set(result.map((entry: { id: string }) => entry.id)).size).toBe(53);
+  expect(result).toHaveLength(61);
+  expect(new Set(result.map((entry: { id: string }) => entry.id)).size).toBe(61);
   expect(result.every((entry: { duration: boolean; mix: boolean; hasVisual: boolean; soft: boolean }) => entry.duration && entry.mix && entry.hasVisual && entry.soft)).toBe(true);
 });
 
@@ -191,4 +191,48 @@ test('ASMR Load and play starts audio only after that explicit action and motion
   await expect(page.getByLabel('Enable light triggers', { exact: true })).not.toBeChecked();
   await page.getByRole('button', { name: 'Stop listening', exact: true }).click();
   await expect(page.locator('#status')).toHaveText('Ready when you are');
+});
+
+test('all eight spatial paired experiences load silently and preserve complete saved and shared settings', async ({ page }) => {
+  test.setTimeout(120000);
+  await page.goto('/');
+  const recipes = await page.evaluate(async () => {
+    const path = '/src/asmr-spatial-experiences.ts', { asmrSpatialExperiences } = await import(path);
+    return asmrSpatialExperiences.map((recipe: { id: string; name: string; minutes: number; make: () => unknown }) =>
+      ({ id: recipe.id, name: recipe.name, minutes: recipe.minutes, settings: recipe.make() }));
+  });
+  expect(recipes).toHaveLength(8);
+  expect(recipes.map((recipe: { minutes: number }) => recipe.minutes)).toEqual([30, 20, 30, 45, 30, 20, 45, 30]);
+  expect(recipes.map((recipe: { settings: { layers: { spatial?: { motion: string } }[] } }) => recipe.settings.layers[0].spatial?.motion))
+    .toEqual(['sweep', 'approach', 'rise', 'figure-eight', 'orbit', 'sweep', undefined, undefined]);
+  for (const recipe of recipes) {
+    await page.locator('#asmr-browse').click();
+    const favorite = page.getByRole('button', { name: `Favorite: ${recipe.name}`, exact: true });
+    await favorite.click(); await expect(favorite).toHaveAttribute('aria-pressed', 'true');
+    await page.locator(`[data-load-preset="asmr-${recipe.id}"]`).click();
+    await page.getByRole('dialog', { name: 'Moving visual trigger', exact: true }).getByRole('button', { name: 'Not now', exact: true }).click();
+    await expect(page.locator('#playing-title')).toHaveText(recipe.name);
+    await expect(page.locator('#minutes')).toHaveValue(String(recipe.minutes));
+    await expect(page.locator('#status')).toHaveText('Ready when you are');
+    await expect(page.getByLabel('Enable light triggers', { exact: true })).not.toBeChecked();
+    await page.locator('#preset-name').fill(recipe.name);
+    await page.locator('#save-preset').click(); await page.reload();
+    await page.locator('.saved-preset').filter({ hasText: recipe.name }).click();
+    await expect(page.locator('#minutes')).toHaveValue(String(recipe.minutes));
+    await expect(page.getByLabel('Enable light triggers', { exact: true })).not.toBeChecked();
+    await expect(page.locator('#status')).toHaveText('Ready when you are');
+    await page.locator('#share-session').click();
+    const link = await page.getByLabel('Session link', { exact: true }).inputValue();
+    const shared = await page.evaluate(async link => {
+      const path = '/src/share.ts', { readSharedSession } = await import(path);
+      return readSharedSession(new URL(link).hash);
+    }, link);
+    const canonical = (value: { layers: { id: string }[] }) => value.layers.map(({ id: _id, ...layer }) => layer);
+    expect(shared.mode, recipe.id).toBe('asmr'); expect(shared.minutes, recipe.id).toBe(recipe.minutes);
+    expect(canonical(shared.asmr), recipe.id).toEqual(canonical(recipe.settings));
+    expect(shared.asmr.variation, recipe.id).toEqual(recipe.settings.variation);
+    expect(shared.visual.triggers.brightness, recipe.id).toBe(.3);
+    expect(shared.visual.triggers, recipe.id).not.toHaveProperty('enabled');
+    await page.getByRole('button', { name: 'Close share', exact: true }).click();
+  }
 });

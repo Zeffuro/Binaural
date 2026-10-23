@@ -4,12 +4,13 @@ test('spatial ASMR validates every bound, preserves legacy stereo and round-trip
   await page.goto('/');
   const result = await page.evaluate(async () => {
     const spatialPath = '/src/asmr-spatial.ts', statePath = '/src/asmr-state.ts', modelPath = '/src/model.ts', sharePath = '/src/share.ts';
-    const { defaultSpatial, parseAsmrSpatial, spatialPosition } = await import(spatialPath);
+    const { defaultSpatial, parseAsmrSpatial, spatialPosition, asmrSpatialMotions } = await import(spatialPath);
+    const motionIds: string[] = asmrSpatialMotions;
     const { makeAsmrLayer, parseAsmr } = await import(statePath), { initialSession, parseSession } = await import(modelPath);
     const { sessionLink, readSharedSession } = await import(sharePath);
     const base = defaultSpatial(), bad: unknown[] = [undefined, null, [], false, 1, 'spatial', {}];
     for (const [field, values] of Object.entries({ azimuth: [-181, 181, NaN, Infinity, '-90', null], elevation: [-61, 61],
-      distance: [.149, 3.001, 0], motion: ['sweep', 'ORBIT', null, ['still']] })) {
+      distance: [.149, 3.001, 0], motion: ['wander', 'SWEEP', 'ORBIT', 'figure8', null, ['still']] })) {
       for (const value of values) bad.push({ ...base, [field]: value });
     }
     const rejected = bad.every(value => { try { parseAsmrSpatial(value); return false; } catch { return true; } });
@@ -18,23 +19,30 @@ test('spatial ASMR validates every bound, preserves legacy stereo and round-trip
       try { parseAsmrSpatial(value); return false; } catch { return true; }
     });
     const boundaries = [-180, 180].flatMap(azimuth => [-60, 60].flatMap(elevation => [.15, 3].flatMap(distance =>
-      ['still', 'orbit'].map(motion => parseAsmrSpatial({ azimuth, elevation, distance, motion })))));
+      motionIds.map(motion => parseAsmrSpatial({ azimuth, elevation, distance, motion })))));
     const legacy = makeAsmrLayer('air'); legacy.pan = -1; legacy.motion = 'still';
     const spatial = { azimuth: -85, elevation: 35, distance: .3, motion: 'orbit' };
     const session = initialSession(); session.asmr = { level: .6, layers: [{ ...legacy, spatial }] };
     const json = parseSession(JSON.parse(JSON.stringify(session))), shared = readSharedSession(new URL(sessionLink(session)).hash);
+    const motions = motionIds.map(motion => {
+      session.asmr.layers[0].spatial.motion = motion;
+      return { motion, json: parseSession(JSON.parse(JSON.stringify(session))).asmr.layers[0].spatial.motion,
+        share: readSharedSession(new URL(sessionLink(session)).hash).asmr.layers[0].spatial.motion };
+    });
     const invalidLayer = bad.every(spatial => {
       if (spatial === undefined) return true;
       try { parseAsmr({ level: .6, layers: [{ ...legacy, spatial }] }); return false; } catch { return true; }
     });
-    return { rejected, missing, invalidLayer, boundaries: boundaries.length,
+    return { rejected, missing, invalidLayer, motions, boundaries: boundaries.length,
       legacy: parseAsmr({ level: .6, layers: [legacy] }).layers[0].spatial === undefined,
       json: json.asmr.layers[0].spatial, shared: shared.asmr.layers[0].spatial,
       positions: [0, 90, -90, 180].map(azimuth => spatialPosition({ ...base, azimuth, distance: 1 })),
       elevated: spatialPosition({ ...base, elevation: 60, distance: 2 }) };
   });
   expect(result.rejected).toBe(true); expect(result.missing).toBe(true); expect(result.invalidLayer).toBe(true);
-  expect(result.boundaries).toBe(16); expect(result.legacy).toBe(true);
+  expect(result.boundaries).toBe(48); expect(result.legacy).toBe(true);
+  expect(result.motions.map(({ motion }) => motion)).toEqual(['still', 'orbit', 'sweep', 'approach', 'rise', 'figure-eight']);
+  for (const motion of result.motions) { expect(motion.json).toBe(motion.motion); expect(motion.share).toBe(motion.motion); }
   expect(result.json).toEqual({ azimuth: -85, elevation: 35, distance: .3, motion: 'orbit' }); expect(result.shared).toEqual(result.json);
   for (const [index, expected] of [[0, [0, 0, -1]], [1, [1, 0, 0]], [2, [-1, 0, 0]], [3, [0, 0, 1]]] as const) {
     const value = result.positions[index]; [value.x, value.y, value.z].forEach((coordinate, axis) => expect(coordinate).toBeCloseTo(expected[axis], 10));
@@ -76,13 +84,19 @@ test('actual HRTF graph resolves direction, elevation and distance with finite b
     const near = await render({ distance: .15 }), far = await render({ distance: 3 });
     const cancelled = await render({}, true), cancelledOrbit = await render({ motion: 'orbit' }, true), orbit = await render({ motion: 'orbit' });
     const fixed = await render({ motion: 'still' });
+    const sweep = await render({ motion: 'sweep' }), rise = await render({ motion: 'rise' });
+    const approach = await render({ motion: 'approach' }), figure = await render({ motion: 'figure-eight' });
     let peak = 0, finite = true;
-    for (const channels of [left, right, front, back, above, below, near, far, cancelled, cancelledOrbit, orbit, fixed]) {
+    for (const channels of [left, right, front, back, above, below, near, far, cancelled, cancelledOrbit, orbit, fixed, sweep, rise, approach, figure]) {
       for (const channel of channels) for (const sample of channel) { finite &&= Number.isFinite(sample); peak = Math.max(peak, Math.abs(sample)); }
     }
     return { left: power(left), right: power(right), frontBack: difference(front, back), elevation: difference(above, below),
       distance: power(far).reduce((a, b) => a + b) / power(near).reduce((a, b) => a + b), cancelled: power(cancelled), cancelledOrbit: power(cancelledOrbit),
-      orbitRight: power(orbit, .35, .65), orbitLeft: power(orbit, 1.35, 1.65), orbitDifference: difference(orbit, fixed), finite, peak };
+      orbitRight: power(orbit, .35, .65), orbitLeft: power(orbit, 1.35, 1.65), orbitDifference: difference(orbit, fixed),
+      sweepRight: power(sweep, .35, .65), sweepLeft: power(sweep, 1.35, 1.65),
+      figureRight: power(figure, .35, .65), figureLeft: power(figure, 1.35, 1.65),
+      approachNear: power(approach, .85, 1.15), approachFar: power(approach, .05, .25),
+      movementDifferences: [sweep, rise, approach, figure].map(channels => difference(channels, fixed)), finite, peak };
   });
   expect(result.finite).toBe(true); expect(result.peak).toBeGreaterThan(.005); expect(result.peak).toBeLessThan(.3);
   expect(result.left[0]).toBeGreaterThan(result.left[1] * 1.2); expect(result.right[1]).toBeGreaterThan(result.right[0] * 1.2);
@@ -91,6 +105,79 @@ test('actual HRTF graph resolves direction, elevation and distance with finite b
   expect(Math.max(...result.cancelled, ...result.cancelledOrbit)).toBeLessThan(1e-12);
   expect(result.orbitRight[1]).toBeGreaterThan(result.orbitRight[0] * 1.2);
   expect(result.orbitLeft[0]).toBeGreaterThan(result.orbitLeft[1] * 1.2); expect(result.orbitDifference).toBeGreaterThan(.000001);
+  for (const [right, left] of [[result.sweepRight, result.sweepLeft], [result.figureRight, result.figureLeft]]) {
+    expect(right[1]).toBeGreaterThan(right[0] * 1.2); expect(left[0]).toBeGreaterThan(left[1] * 1.2);
+  }
+  expect(result.approachNear.reduce((a, b) => a + b)).toBeGreaterThan(result.approachFar.reduce((a, b) => a + b) * 1.2);
+  for (const difference of result.movementDifferences) expect(difference).toBeGreaterThan(.000001);
+});
+
+test('all spatial trajectories stay finite and bounded while retaining legacy still and orbit coordinates', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const path = '/src/asmr-spatial.ts', { asmrSpatialMotions, sampleSpatialPosition, spatialPosition } = await import(path);
+    const motions: string[] = asmrSpatialMotions;
+    let bounded = true, finite = true, legacyError = 0, variation = 0;
+    for (const motion of motions) for (const distance of [.15, .16, .6, 3]) {
+      for (const azimuth of [-180, -70, 0, 110, 180]) for (const elevation of [-60, 0, 60]) {
+        const settings = { motion, distance, azimuth, elevation }, initial = spatialPosition(settings);
+        for (let step = 0; step < 65; step++) {
+          const seconds = step / 16, coordinate = sampleSpatialPosition(settings, seconds, 4);
+          const radius = Math.hypot(coordinate.x, coordinate.y, coordinate.z);
+          finite &&= Object.values(coordinate).every(Number.isFinite); bounded &&= radius >= .15 - 1e-9 && radius <= distance + 1e-9;
+          if (motion === 'still' || motion === 'orbit') {
+            const angle = 2 * Math.PI * seconds / 4;
+            const expected = motion === 'still' ? initial : {
+              x: initial.x * Math.cos(angle) - initial.z * Math.sin(angle), y: initial.y,
+              z: initial.x * Math.sin(angle) + initial.z * Math.cos(angle),
+            };
+            legacyError = Math.max(legacyError, Math.hypot(coordinate.x - expected.x, coordinate.y - expected.y, coordinate.z - expected.z));
+          }
+        }
+      }
+    }
+    for (const motion of motions.filter(motion => motion !== 'still')) {
+      const settings = { motion, distance: .6, azimuth: 0, elevation: 0 };
+      const first = sampleSpatialPosition(settings, 0, 4), next = sampleSpatialPosition(settings, 1, 4);
+      variation += Math.hypot(first.x - next.x, first.y - next.y, first.z - next.z) > .1 ? 1 : 0;
+    }
+    return { finite, bounded, legacyError, variation };
+  });
+  expect(result.finite).toBe(true); expect(result.bounded).toBe(true);
+  expect(result.legacyError).toBeLessThan(1e-12); expect(result.variation).toBe(5);
+});
+
+test('native spatial modulation matches absolute trajectory phase including three-hour section offsets', async ({ page }) => {
+  await page.goto('/');
+  const results = await page.evaluate(async () => {
+    const spatialPath = '/src/asmr-spatial.ts', positionPath = '/src/audio/asmr-position.ts';
+    const { asmrSpatialMotions, sampleSpatialPosition } = await import(spatialPath), { AsmrPosition } = await import(positionPath);
+    const results: { motion: string; offset: number; error: number; peak: number }[] = [];
+    for (const motion of asmrSpatialMotions as string[]) for (const offset of [0, 10800]) {
+      const context = new OfflineAudioContext(3, 88200, 44100), source = context.createGain(), sink = context.createGain();
+      const settings = { motion, distance: 1.7, azimuth: -65, elevation: 35 }, period = 2.7;
+      const position = new AsmrPosition(context, source, sink, settings, period, 2, offset), merger = context.createChannelMerger(3);
+      const centers = [position.panner.positionX, position.panner.positionY, position.panner.positionZ].map((parameter: AudioParam, axis: number) => {
+        const constant = context.createConstantSource(); constant.offset.value = parameter.value;
+        constant.connect(merger, 0, axis); constant.start(); return constant;
+      });
+      position.matrix.forEach((coefficient: GainNode, index: number) => coefficient.connect(merger, 0, Math.floor(index / 3)));
+      merger.connect(context.destination); const buffer = await context.startRendering();
+      let error = 0, peak = 0;
+      for (const frame of [4410, 11025, 22050, 33075, 66150]) {
+        const expected = sampleSpatialPosition(settings, offset + frame / 44100, period);
+        (['x', 'y', 'z'] as const).forEach((axis, channel) => {
+          const actual = buffer.getChannelData(channel)[frame];
+          error = Math.max(error, Math.abs(actual - expected[axis])); peak = Math.max(peak, Math.abs(actual));
+        });
+      }
+      position.dispose(); centers.forEach((constant: ConstantSourceNode) => { constant.stop(); constant.disconnect(); }); merger.disconnect();
+      results.push({ motion, offset, error, peak });
+    }
+    return results;
+  });
+  expect(results).toHaveLength(12);
+  for (const result of results) { expect(result.error, `${result.motion} at ${result.offset}s`).toBeLessThan(.0001); expect(result.peak).toBeLessThan(1.71); }
 });
 
 test('spatial edits stay bounded and disposal preserves unrelated source connections', async ({ page }) => {
@@ -156,34 +243,45 @@ test('spatial mixer keeps stereo legacy routing and uses HRTF in WAV with the sc
     };
     const legacy = await measure();
     session.asmr.layers[0].spatial = { azimuth: 70, elevation: 20, distance: .4, motion: 'still' };
-    const spatial = await measure();
-    return { legacy, spatial };
+    const spatial = await measure(), moving: { motion: string; audio: Awaited<ReturnType<typeof measure>> }[] = [];
+    for (const motion of ['orbit', 'sweep', 'approach', 'rise', 'figure-eight']) {
+      session.asmr.layers[0].spatial.motion = motion;
+      moving.push({ motion, audio: await measure() });
+    }
+    return { legacy, spatial, moving };
   });
   expect(result.legacy.energy[0]).toBeGreaterThan(.01); expect(result.legacy.energy[1]).toBe(0);
   expect(result.spatial.energy[1]).toBeGreaterThan(result.spatial.energy[0] * 1.2);
   expect(Math.min(...result.spatial.energy)).toBeGreaterThan(.0001); expect(result.spatial.peak).toBeLessThan(.7);
   expect(result.spatial.tail).toEqual([0, 0]); expect(result.spatial.channels).toBe(2); expect(result.spatial.bytes).toBe(44 + 88200 * 4);
+  for (const { motion, audio } of result.moving) {
+    expect(Math.min(...audio.energy), motion).toBeGreaterThan(.0001); expect(audio.peak, motion).toBeLessThan(.7);
+    expect(audio.tail, motion).toEqual([0, 0]); expect(audio.channels).toBe(2); expect(audio.bytes).toBe(44 + 88200 * 4);
+  }
 });
 
-test('@live spatial orbit shares live pause, end and voice replacement ownership', async ({ page }) => {
+for (const motion of ['orbit', 'sweep', 'approach', 'rise', 'figure-eight']) test(`@live spatial ${motion} shares live pause, end and voice replacement ownership`, async ({ page }) => {
   await page.goto('/'); await page.locator('h1').click();
-  const result = await page.evaluate(async () => {
+  const result = await page.evaluate(async motion => {
     const enginePath = '/src/audio/engine.ts', statePath = '/src/asmr-state.ts', modelPath = '/src/model.ts', clockPath = '/tests/helpers/audio-clock.ts';
     const { AudioEngine } = await import(enginePath), { makeAsmrLayer } = await import(statePath), { initialSession } = await import(modelPath);
     const { waitForAudioTime } = await import(clockPath);
     const engine = new AudioEngine(), session = initialSession();
     session.mode = 'asmr'; session.minutes = .035; session.master = .7; session.ambient = 'none';
     session.asmr = { level: 1, layers: [{ ...makeAsmrLayer('air'), level: 1,
-      spatial: { azimuth: -90, elevation: 15, distance: .3, motion: 'orbit' }, period: 2 }] };
+      spatial: { azimuth: -90, elevation: 15, distance: .3, motion }, period: 2 }] };
     await engine.start(session);
     const context: AudioContext = engine.context, analyzer = context.createAnalyser(); analyzer.fftSize = 2048; engine.transport.connect(analyzer);
     const read = () => { const data = new Float32Array(2048); analyzer.getFloatTimeDomainData(data); return Math.max(...data.map(Math.abs)); };
     await waitForAudioTime(context, .55); const before = read();
     const first = engine.asmr.voices.get(session.asmr.layers[0].id);
+    const oscillators = [first.position.sine, first.position.cosine, first.position.harmonic];
     await engine.pause(); const time = context.currentTime;
     await new Promise(resolve => setTimeout(resolve, 160)); const frozen = context.currentTime === time;
     session.asmr.layers[0].spatial.azimuth = 60; session.asmr.layers[0].spatial.elevation = -30; engine.update(session);
     const updatedSameVoice = first === engine.asmr.voices.get(session.asmr.layers[0].id);
+    const retainedPhase = oscillators.every((oscillator: OscillatorNode, index: number) => oscillator ===
+      [first.position.sine, first.position.cosine, first.position.harmonic][index]);
     await engine.resume(); await waitForAudioTime(context, context.currentTime + .15);
     delete session.asmr.layers[0].spatial; engine.update(session);
     const stereoVoice = engine.asmr.voices.get(session.asmr.layers[0].id), replaced = stereoVoice !== first;
@@ -193,9 +291,10 @@ test('@live spatial orbit shares live pause, end and voice replacement ownership
     session.asmr.layers[0].spatial.motion = 'orbit'; engine.update(session);
     await waitForAudioTime(context, context.currentTime + .2); const expired = read(), voices = engine.asmr.voices.size;
     await engine.stop();
-    return { before, frozen, updatedSameVoice, replaced, spatialReplaced, ended, expired, voices, stopped: !engine.playing };
-  });
+    return { before, frozen, updatedSameVoice, retainedPhase, replaced, spatialReplaced, ended, expired, voices, stopped: !engine.playing };
+  }, motion);
   expect(result.before).toBeGreaterThan(.0001); expect(result.frozen).toBe(true); expect(result.updatedSameVoice).toBe(true);
   expect(result.replaced).toBe(true); expect(result.spatialReplaced).toBe(true);
+  expect(result.retainedPhase).toBe(true);
   expect(result.ended).toBe(0); expect(result.expired).toBe(0); expect(result.voices).toBe(0); expect(result.stopped).toBe(true);
 });

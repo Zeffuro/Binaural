@@ -73,7 +73,7 @@ test('pause freezes audio timer, resumes, and can stop while paused', async ({ p
 test('explorer filters sourced recipes and loads without autoplay', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Explore all presets' }).click();
-  await expect(page.locator('.explore-card')).toHaveCount(83);
+  await expect(page.locator('.explore-card')).toHaveCount(91);
   await page.screenshot({ path: `test-results/preset-explorer-${test.info().project.name}.png` });
   await page.getByRole('searchbox', { name: 'Search', exact: true }).fill('432 theta');
   await expect(page.locator('.explore-card')).toHaveCount(1);

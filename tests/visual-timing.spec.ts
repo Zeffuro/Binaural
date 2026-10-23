@@ -45,7 +45,45 @@ test('cue history compensates analysis windows and graph delay, copies snapshots
   expect(result.future).toEqual([]); expect(result.copied[0].pan).toBe(-.8);
   expect(result.beforeBoundary[0].time).toBe(1); expect(result.afterBoundary[0].time).toBe(1.1);
   expect(result.replaced).toEqual([]); expect(result.gap).toEqual([]); expect(result.stale).toEqual([]);
-  expect(result.reversed).toBe(1); expect(result.frames).toBeLessThanOrEqual(240); expect(result.cleared).toEqual([]);
+  expect(result.reversed).toBe(1); expect(result.frames).toBeLessThanOrEqual(512); expect(result.cleared).toEqual([]);
+});
+
+test('manual headphone timing is bounded, device-only and cannot predict unavailable sound or shift video capture', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const path = '/src/audio/visual-timing.ts', { visualOutputTime } = await import(path);
+    const context = { currentTime: 10, sampleRate: 48000, baseLatency: .02, outputLatency: .08,
+      getOutputTimestamp: () => ({ contextTime: 9.8, performanceTime: 990 }) };
+    return { normal: visualOutputTime(context, 'output', 0, 1000), later: visualOutputTime(context, 'output', 120, 1000),
+      earlier: visualOutputTime(context, 'output', -250, 1000), excessive: visualOutputTime(context, 'output', 9999, 1000),
+      malformed: visualOutputTime(context, 'output', NaN, 1000),
+      capture: [-250, 0, 500].map(value => visualOutputTime(context, 'capture', value, 1000)),
+      analysis: visualOutputTime(context, 'analysis', 500, 1000),
+      start: visualOutputTime({ ...context, currentTime: .01, getOutputTimestamp: () => ({ contextTime: 0, performanceTime: 0 }) }, 'output', 500, 1000) };
+  });
+  expect(result.normal).toBeCloseTo(9.81, 8); expect(result.later).toBeCloseTo(9.69, 8);
+  expect(result.earlier).toBe(10); expect(result.excessive).toBeCloseTo(9.31, 8);
+  expect(result.malformed).toBeCloseTo(9.81, 8); expect(result.capture).toEqual([10, 10, 10]);
+  expect(result.analysis).toBe(10); expect(result.start).toBe(0);
+});
+
+test('maximum device latency plus manual delay retains cues while display and capture both sample the timeline', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const path = '/src/audio/visual-timing.ts', { AsmrCueTimeline, visualOutputTime } = await import(path);
+    const timeline = new AsmrCueTimeline(), context = { currentTime: 10, sampleRate: 48000,
+      baseLatency: 1, outputLatency: 1, getOutputTimestamp: () => ({ contextTime: 8, performanceTime: 1000 }) };
+    for (let index = 0; index <= 372; index++) {
+      const time = 6.9 + index / 120;
+      timeline.push(time, [{ id: 'brush', kind: 'brush', pan: -.8, strength: .8, progress: .3, contact: .4, time }]);
+    }
+    return { delayed: timeline.read(visualOutputTime(context, 'output', 500, 1000), 48000),
+      capture: timeline.read(visualOutputTime(context, 'capture', 500, 1000), 48000), frames: timeline.frames.length,
+      span: timeline.frames.at(-1).time - timeline.frames[0].time };
+  });
+  expect(result.delayed).toHaveLength(1); expect(result.delayed[0].time).toBeCloseTo(7.5, 2);
+  expect(result.capture).toHaveLength(1); expect(result.capture[0].time).toBeCloseTo(10, 2);
+  expect(result.frames).toBeGreaterThan(300); expect(result.frames).toBeLessThanOrEqual(512); expect(result.span).toBeLessThanOrEqual(3);
 });
 
 test('@live output cues lag analysis by device time while video capture and audibility gates remain independent', async ({ page }) => {
@@ -69,6 +107,9 @@ test('@live output cues lag analysis by device time while video capture and audi
     }
     const raw = engine.visualFrame(), output = engine.visualFrame('output'), capture = engine.visualFrame('capture');
     const analysisTime = raw.asmr[0]?.time, outputTime = output.asmr[0]?.time, captureTime = capture.asmr[0]?.time;
+    const later = engine.visualFrame('output', 80).asmr[0]?.time;
+    const earlier = engine.visualFrame('output', -250).asmr[0]?.time;
+    const unchangedCapture = engine.visualFrame('capture', 500).asmr[0]?.time;
     session.musicLevel = .2; session.master = .7; engine.update(session);
     const afterEdit = engine.visualFrame('output').asmr[0]?.time;
     session.master = 0; engine.update(session);
@@ -77,11 +118,14 @@ test('@live output cues lag analysis by device time while video capture and audi
     await engine.pause(); const paused = engine.visualFrame('output').asmr.length;
     await engine.resume(); const resumed = engine.visualFrame('output').asmr.length;
     await engine.stop(); const stopped = engine.visualFrame('output');
-    return { analysisTime, outputTime, captureTime, afterEdit, mute, paused, resumed, stopped };
+    return { analysisTime, outputTime, captureTime, later, earlier, unchangedCapture, afterEdit, mute, paused, resumed, stopped };
   });
   expect(result.analysisTime - result.outputTime).toBeGreaterThan(.12);
   expect(result.analysisTime - result.outputTime).toBeLessThan(.21);
   expect(Math.abs(result.analysisTime - result.captureTime)).toBeLessThan(.035);
+  expect(result.outputTime - result.later).toBeGreaterThan(.045); expect(result.outputTime - result.later).toBeLessThan(.115);
+  expect(Math.abs(result.analysisTime - result.earlier)).toBeLessThan(.035);
+  expect(Math.abs(result.captureTime - result.unchangedCapture)).toBeLessThan(.035);
   expect(result.afterEdit).toBeGreaterThan(0); expect(Math.abs(result.afterEdit - result.outputTime)).toBeLessThan(.035);
   expect(result.mute).toEqual([0, 0, 0]); expect(result.paused).toBe(0); expect(result.resumed).toBe(0); expect(result.stopped).toBeUndefined();
 });
@@ -92,15 +136,16 @@ test('gesture capture uses its own timeline and keeps display, pause and reduced
     document.body.innerHTML = '<div class="transport"></div><div id="visual-controls"></div><style>.scene-viewport{width:640px;height:360px;position:relative}[hidden]{display:none!important}</style>';
     const path = '/src/visuals.ts', { setupVisuals } = await import(path), silence = new Uint8Array(1024).fill(128);
     const frame = { frequency: new Uint8Array(512), waveform: silence, left: silence, right: silence, time: 1 };
-    const probe = { calls: [] as string[], capturePan: .8, visual: undefined as any, capture: undefined as any };
-    probe.visual = setupVisuals((timeline: string) => {
-      probe.calls.push(timeline); return { ...frame, asmr: [{ id: 'brush', kind: 'brush', strength: .8, contact: .4,
+    const probe = { calls: [] as string[], offsets: [] as { timeline: string; offset: number }[], capturePan: .8, visual: undefined as any, capture: undefined as any };
+    probe.visual = setupVisuals((timeline: string, offset = 0) => {
+      probe.calls.push(timeline); probe.offsets.push({ timeline, offset }); return { ...frame, asmr: [{ id: 'brush', kind: 'brush', strength: .8, contact: .4,
         progress: .3, pan: timeline === 'capture' ? probe.capturePan : -.8, time: 1 }] };
     });
     (window as any).timingCapture = probe;
   });
   await page.locator('#scene-mode').selectOption('triggers'); await page.locator('#trigger-enable').check();
   await page.locator('#trigger-preset').selectOption('gesture-brush');
+  await page.locator('#trigger-controls details > summary').click(); await page.locator('#light-timing-offset').fill('120');
   await page.evaluate(() => { const probe = (window as any).timingCapture; probe.visual.transport(true); probe.capture = probe.visual.createCapture(320, 180); });
   await expect(page.locator('.scene-drawing')).toHaveAttribute('data-cue-pan', '-0.800');
   const pixels = () => page.evaluate(() => {
@@ -117,6 +162,9 @@ test('gesture capture uses its own timeline and keeps display, pause and reduced
   await expect.poll(pixels).not.toBe(first);
   await expect(page.locator('.scene-drawing')).toHaveAttribute('data-cue-pan', '-0.800');
   expect(await page.evaluate(() => (window as any).timingCapture.calls.includes('capture'))).toBe(true);
+  const offsets = await page.evaluate(() => (window as any).timingCapture.offsets);
+  expect(offsets.some((entry: { timeline: string; offset: number }) => entry.timeline === 'output' && entry.offset === 120)).toBe(true);
+  expect(offsets.filter((entry: { timeline: string }) => entry.timeline === 'capture').every((entry: { offset: number }) => entry.offset === 0)).toBe(true);
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const frozen = await pixels();
   await page.evaluate(() => { (window as any).timingCapture.capturePan = .5; });

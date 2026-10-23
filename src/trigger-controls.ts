@@ -4,6 +4,7 @@ import { defaultTriggerSettings, parseTriggerSettings, triggerRanges, triggerGes
 import { triggerPresets } from './trigger-presets';
 import { setupAsmrVisualConsent } from './asmr-visual-consent';
 import './trigger-controls.css';
+import { setupLightTiming } from './light-timing';
 
 type Numeric = keyof typeof triggerRanges;
 const labels: Record<Numeric, string> = { symmetry: 'Radial symmetry', density: 'Glass pieces', zoom: 'Zoom', speed: 'Glass rotation speed', rotation: 'Starting angle', drift: 'Glass drift',
@@ -47,6 +48,7 @@ export function setupTriggerControls(host: HTMLElement, redraw: () => void, chan
   const consent = consentBox.querySelector<HTMLInputElement>('input')!;
   const preset = panel.querySelector<HTMLSelectElement>('#trigger-preset')!;
   const details = panel.querySelector('details')!;
+  const timing = setupLightTiming(details.querySelector('.trigger-grid')!, redraw);
   const description = panel.querySelector('#trigger-description')!;
   const richControls = [...panel.children].filter(child => child.tagName !== 'H3' && child !== details);
   const advanced = document.createElement('div'); details.querySelector('summary')!.after(advanced);
@@ -105,6 +107,7 @@ export function setupTriggerControls(host: HTMLElement, redraw: () => void, chan
     panel.querySelector<HTMLInputElement>('[data-trigger=depth]')!.disabled = state.style === 'scan';
     panel.querySelector<HTMLElement>('#trigger-gesture-choice')!.hidden = state.style !== 'gesture';
     panel.querySelector<HTMLElement>('#trigger-sync-help')!.hidden = !state.syncAsmr;
+    timing.enabled(!!state.syncAsmr);
     for (const key of ['offsetX', 'offsetY']) panel.querySelector<HTMLInputElement>(`[data-trigger=${key}]`)!.disabled = state.path !== 'manual';
     pickers.forEach(({ key, picker }) => picker.update(fromHex(state[key], 0)));
     const quickValue = (field: string, value: string) => { simple.querySelector<HTMLSelectElement>(`[data-asmr-visual=${field}]`)!.value = value; };
@@ -159,7 +162,7 @@ export function setupTriggerControls(host: HTMLElement, redraw: () => void, chan
   dialog.addEventListener('close', () => { if (returnParent) returnParent.append(panel); details.open = previousOpen; });
   sync();
   return {
-    panel, consentBox, enabled: () => consent.checked,
+    panel, consentBox, enabled: () => consent.checked, timingOffset: timing.offset,
     state: () => structuredClone(state),
     select(mode: string) { panel.hidden = consentBox.hidden = mode !== 'triggers'; },
     next, apply,

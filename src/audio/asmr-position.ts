@@ -1,4 +1,4 @@
-import { parseAsmrSpatial, spatialPosition, type AsmrSpatialSettings } from '../asmr-spatial';
+import { parseAsmrSpatial, spatialTrajectory, type AsmrSpatialSettings } from '../asmr-spatial';
 import { smooth } from './graph';
 import { phaseCycles, setSinePhase } from './render-timing';
 
@@ -7,6 +7,7 @@ export class AsmrPosition {
   private panner: PannerNode;
   private sine: OscillatorNode;
   private cosine: OscillatorNode;
+  private harmonic: OscillatorNode;
   private matrix: GainNode[];
   private disposed = false;
   get outputNode(): AudioNode { return this.panner; }
@@ -21,20 +22,20 @@ export class AsmrPosition {
     this.panner.distanceModel = 'inverse'; this.panner.refDistance = .15;
     this.panner.maxDistance = 3; this.panner.rolloffFactor = .2;
     this.panner.coneInnerAngle = this.panner.coneOuterAngle = 360; this.panner.coneOuterGain = 1;
-    this.sine = context.createOscillator(); this.cosine = context.createOscillator();
+    this.sine = context.createOscillator(); this.cosine = context.createOscillator(); this.harmonic = context.createOscillator();
     if (offsetSeconds > 0) {
       setSinePhase(context, this.sine, phaseCycles(1 / period, offsetSeconds));
       setSinePhase(context, this.cosine, phaseCycles(1 / period, offsetSeconds) + .25);
+      setSinePhase(context, this.harmonic, phaseCycles(2 / period, offsetSeconds));
     } else this.cosine.setPeriodicWave(context.createPeriodicWave(new Float32Array([0, 1]), new Float32Array(2), { disableNormalization: true }));
-    this.matrix = Array.from({ length: 4 }, () => context.createGain());
-    this.sine.connect(this.matrix[0]).connect(this.panner.positionX);
-    this.cosine.connect(this.matrix[1]).connect(this.panner.positionX);
-    this.sine.connect(this.matrix[2]).connect(this.panner.positionZ);
-    this.cosine.connect(this.matrix[3]).connect(this.panner.positionZ);
+    this.matrix = Array.from({ length: 9 }, () => context.createGain());
+    [this.panner.positionX, this.panner.positionY, this.panner.positionZ].forEach((parameter, axis) => {
+      [this.sine, this.cosine, this.harmonic].forEach((oscillator, component) => oscillator.connect(this.matrix[axis * 3 + component]).connect(parameter));
+    });
     this.configure(settings, period, true);
     input.connect(this.mono).connect(this.panner).connect(output);
     const startAt = context.currentTime;
-    for (const oscillator of [this.sine, this.cosine]) {
+    for (const oscillator of [this.sine, this.cosine, this.harmonic]) {
       oscillator.start(startAt);
       if (endAt !== undefined) oscillator.stop(Math.max(context.currentTime, endAt));
     }
@@ -45,18 +46,18 @@ export class AsmrPosition {
   }
 
   private configure(settings: AsmrSpatialSettings, period: number, initial = false): void {
-    const position = spatialPosition(settings), orbit = settings.motion === 'orbit';
+    const path = spatialTrajectory(settings);
     const set = (param: AudioParam, value: number) => {
       if (initial) param.value = value;
       else smooth(param, value, this.context.currentTime);
     };
-    set(this.panner.positionX, orbit ? 0 : position.x);
-    set(this.panner.positionY, position.y);
-    set(this.panner.positionZ, orbit ? 0 : position.z);
-    // Quadrature coefficients rotate one shared audio-clock phase without restarting motion on edits.
-    const coefficients = orbit ? [-position.z, position.x, position.x, position.z] : [0, 0, 0, 0];
-    this.matrix.forEach((gain, index) => set(gain.gain, coefficients[index]));
+    // Shared phases keep motion continuous through position and trajectory edits.
+    [this.panner.positionX, this.panner.positionY, this.panner.positionZ].forEach((parameter, axis) => {
+      const key = (['x', 'y', 'z'] as const)[axis]; set(parameter, path.center[key]);
+      [path.sine, path.cosine, path.harmonic].forEach((coefficient, component) => set(this.matrix[axis * 3 + component].gain, coefficient[key]));
+    });
     for (const oscillator of [this.sine, this.cosine]) set(oscillator.frequency, 1 / period);
+    set(this.harmonic.frequency, 2 / period);
   }
 
   update(settings: AsmrSpatialSettings, period: number): void {
@@ -68,8 +69,8 @@ export class AsmrPosition {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    for (const oscillator of [this.sine, this.cosine]) oscillator.stop();
+    for (const oscillator of [this.sine, this.cosine, this.harmonic]) oscillator.stop();
     this.input.disconnect(this.mono);
-    for (const node of [this.mono, this.panner, this.sine, this.cosine, ...this.matrix]) node.disconnect();
+    for (const node of [this.mono, this.panner, this.sine, this.cosine, this.harmonic, ...this.matrix]) node.disconnect();
   }
 }

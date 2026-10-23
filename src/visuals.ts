@@ -9,7 +9,7 @@ import { setupVisualDock } from './visual-dock';
 import { setupControlsPreference, setupImmersiveControls } from './immersive-controls';
 import { captureSurface, type VisualCapture } from './visual-capture';
 
-export function setupVisuals(audio: (timeline?: VisualTimeline) => VisualFrame | undefined, changed: () => void = () => {}, beforeEdit: () => void = () => {}) {
+export function setupVisuals(audio: (timeline?: VisualTimeline, offsetMs?: number) => VisualFrame | undefined, changed: () => void = () => {}, beforeEdit: () => void = () => {}) {
   document.querySelector('#visual-controls')!.innerHTML = `
     <label class="visual-toggle" for="visuals"><span><strong>Ambient light</strong><small>Color, movement and a full-screen space</small></span><input id="visuals" type="checkbox" role="switch" /></label>
     <div id="visual-preview" class="visual-preview" role="img" aria-label="Ambient color preview"></div>

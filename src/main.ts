@@ -48,7 +48,7 @@ let videoExport: ReturnType<typeof setupVideoExport> | undefined;
 let noticeTimer: ReturnType<typeof setTimeout>;
 const engine = new AudioEngine();
 const history = new EditHistory<{ session: Session; saved: Session[] }>();
-const visual = setupVisuals(timeline => engine.visualFrame(timeline ?? 'output'), () => { session.visual = visual.getState(); session.version = 2; }, () => { experienceRevision++; checkpoint(); });
+const visual = setupVisuals((timeline, offsetMs) => engine.visualFrame(timeline ?? 'output', offsetMs), () => { session.visual = visual.getState(); session.version = 2; }, () => { experienceRevision++; checkpoint(); });
 const controls = setupStudioControls({
   playPause: () => { void playPause().catch(report); }, stop: () => { void stop().catch(report); }, mute: toggleMute,
   visual: () => { experienceRevision++; checkpoint(); visual.toggle(); }, fullscreen: () => { checkpoint(); visual.fullscreen(); }, next: direction => { experienceRevision++; checkpoint(); visual.next(direction); },

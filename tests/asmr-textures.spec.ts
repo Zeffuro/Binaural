@@ -18,6 +18,8 @@ const experienceIds = [
 ];
 const routineIds = ['pages-evening', 'hairbrush-unhurried', 'water-preparation', 'pencil-notes', 'unhurried-salon', 'quiet-desk-journey'];
 const gestureIds = ['follow-my-light', 'brush-in-front', 'tap-and-follow', 'pencil-trace', 'close-object-study', 'ear-attention-lights', 'water-light-ritual'];
+const spatialExperienceIds = ['brush-across-view', 'hands-near-and-far', 'comb-floating-up', 'fabric-ribbon',
+  'paper-circling-light', 'small-tapping-visits', 'pages-and-pencil-light', 'hairbrush-and-mist-light'];
 interface RecipeSummary {
   id: string; group: string; validLight: boolean; canonical: boolean; repeatable: boolean; freshIds: boolean;
   layerCount: number; sources: string[]; spatialCount: number; knownSources: boolean;
@@ -61,7 +63,7 @@ test('six original textures fill deterministically and retain the caller normali
   for (const rate of [24000, 48000]) expect(new Set(results.textures.filter(item => item.rate === rate).map(item => item.signature)).size).toBe(6);
 });
 
-test('all 53 ASMR recipes are canonical, cover every source, and reference existing lights', async ({ page }) => {
+test('all 61 ASMR recipes are canonical, cover every source, and reference existing lights', async ({ page }) => {
   await page.goto('/');
   const result = await page.evaluate(async () => {
     const statePath = '/src/asmr-state.ts', presetPath = '/src/asmr-presets.ts', lightPath = '/src/trigger-presets.ts', extraPath = '/src/asmr-textures.ts';
@@ -84,8 +86,8 @@ test('all 53 ASMR recipes are canonical, cover every source, and reference exist
   });
   expect(result.generated).toBe(15); expect(result.recordings).toBe(9); expect(result.lightCount).toBe(26);
   expect(result.textures).toEqual(textureIds);
-  expect(result.presets.map(preset => preset.id)).toEqual([...originalPresetIds, ...sensoryPresetIds, ...experienceIds, ...routineIds, ...gestureIds]);
-  expect(new Set(result.presets.map(preset => preset.id)).size).toBe(53);
+  expect(result.presets.map(preset => preset.id)).toEqual([...originalPresetIds, ...sensoryPresetIds, ...experienceIds, ...routineIds, ...gestureIds, ...spatialExperienceIds]);
+  expect(new Set(result.presets.map(preset => preset.id)).size).toBe(61);
   expect([...new Set(result.presets.flatMap(preset => preset.sources))].sort()).toEqual([...result.sources].sort());
   const sensory = result.presets.filter(preset => preset.group === 'Sensory textures');
   expect(sensory.map(preset => preset.id)).toEqual(sensoryPresetIds);
@@ -111,16 +113,20 @@ test('every recipe renders finite non-silent bounded offline stereo through the 
       const context = new OfflineAudioContext(2, 60000, 24000), mixer = new AsmrMixer(context, context.destination);
       mixer.update(settings); const buffer = await context.startRendering();
       let finite = true, peak = 0, energy = 0;
+      const earEnergy = [];
       for (let channel = 0; channel < 2; channel++) {
-        for (const value of buffer.getChannelData(channel)) { finite &&= Number.isFinite(value); peak = Math.max(peak, Math.abs(value)); energy += value * value; }
+        let channelEnergy = 0;
+        for (const value of buffer.getChannelData(channel)) { finite &&= Number.isFinite(value); peak = Math.max(peak, Math.abs(value)); energy += value * value; channelEnergy += value * value; }
+        earEnergy.push(channelEnergy);
       }
-      mixer.dispose(); results.push({ id: preset.id, finite, peak, energy });
+      mixer.dispose(); results.push({ id: preset.id, finite, peak, energy, earEnergy });
     }
     return results;
   });
-  expect(results.map(preset => preset.id)).toEqual([...originalPresetIds, ...sensoryPresetIds, ...experienceIds, ...routineIds, ...gestureIds]);
+  expect(results.map(preset => preset.id)).toEqual([...originalPresetIds, ...sensoryPresetIds, ...experienceIds, ...routineIds, ...gestureIds, ...spatialExperienceIds]);
   for (const result of results) {
     expect(result.finite, result.id).toBe(true); expect(result.energy, result.id).toBeGreaterThan(0); expect(result.peak, result.id).toBeLessThan(1);
+    if (spatialExperienceIds.includes(result.id)) for (const energy of result.earEnergy) expect(energy, result.id).toBeGreaterThan(0);
   }
 });
 

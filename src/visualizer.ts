@@ -8,7 +8,7 @@ import { setupTriggerControls } from './trigger-controls';
 import { TriggerRenderer } from './trigger-renderer';
 import { captureSurface, type VisualCapture } from './visual-capture';
 
-export function setupVisualizer(host: HTMLElement, audio: (timeline?: VisualTimeline) => VisualFrame | undefined, changed: () => void, dock?: VisualDock, beforeEdit: () => void = () => {}, reduced = matchMedia('(prefers-reduced-motion: reduce)')) {
+export function setupVisualizer(host: HTMLElement, audio: (timeline?: VisualTimeline, offsetMs?: number) => VisualFrame | undefined, changed: () => void, dock?: VisualDock, beforeEdit: () => void = () => {}, reduced = matchMedia('(prefers-reduced-motion: reduce)')) {
   host.innerHTML = `<div class="scene-heading"><h3>Visualizations</h3><span class="small-muted">For music or a quiet moment</span></div>
     <label for="scene-mode">Scene</label><select id="scene-mode"><option value="off">Off</option><optgroup label="Music patterns"><option value="spectrum">Spectrum</option><option value="scope">Oscilloscope</option><option value="orbits">Orbital trails</option></optgroup><optgroup label="Moodscapes"><option value="aurora">Aurora</option><option value="water">Quiet water</option><option value="local">Your photo or video</option></optgroup><optgroup label="Light triggers"><option value="triggers">Light triggers and gestures</option></optgroup>${libraryOptions}</select>
     <div id="scene-preview"><div class="scene-viewport" hidden><div class="scene-media"></div><canvas class="scene-drawing" aria-label="Music visualization"></canvas></div></div>${libraryControls}
@@ -106,7 +106,7 @@ export function setupVisualizer(host: HTMLElement, audio: (timeline?: VisualTime
       canvas.width = Math.round(width * ratio); canvas.height = Math.round(height * ratio);
     }
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-    if (running && drawing) { const current = audio('output'); lastFrame = current ? { ...current } : undefined; }
+    if (running && drawing) { const current = audio('output', triggers.timingOffset()); lastFrame = current ? { ...current } : undefined; }
     const frame = lastFrame;
     library.render(mode.value, frame, delta, elapsed, captureSize(), drawing);
     const waveform = frame?.waveform;

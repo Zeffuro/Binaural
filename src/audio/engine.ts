@@ -9,7 +9,7 @@ import { AsmrMixer } from './asmr-mixer';
 import { listeningMode, modeGains } from '../listening-mode';
 import { asmrAudioReady, prepareAsmrAudio } from './asmr-phrase-source';
 import { asmrBackgroundGain } from '../asmr-focus';
-import { AsmrCueTimeline, outputTime, type VisualTimeline } from './visual-timing';
+import { AsmrCueTimeline, visualOutputTime, type VisualTimeline } from './visual-timing';
 
 export interface AudioCaptureLease {
   stream: MediaStream;
@@ -60,7 +60,7 @@ export class AudioEngine {
   get state(): string { return this.context?.state ?? 'stopped'; }
   get paused(): boolean { return this.isPaused; }
   get selectedMusicFile(): File | undefined { return this.musicFile; }
-  visualFrame(timeline: VisualTimeline = 'analysis'): VisualFrame | undefined {
+  visualFrame(timeline: VisualTimeline = 'analysis', offsetMs = 0): VisualFrame | undefined {
     const frame = this.analysis?.read(), context = this.context;
     if (!frame || !context) return frame;
     const audible = !this.stopping && !this.isPaused && context.state === 'running' && !this.asmrPending &&
@@ -73,7 +73,7 @@ export class AudioEngine {
       this.cueTimeline.push(frame.time, frame.asmr);
     }
     return timeline === 'analysis' ? frame : { ...frame,
-      asmr: this.cueTimeline.read(timeline === 'capture' ? context.currentTime : outputTime(context), context.sampleRate) };
+      asmr: this.cueTimeline.read(visualOutputTime(context, timeline, offsetMs), context.sampleRate) };
   }
   captureAudio(): AudioCaptureLease {
     const context = this.context, transport = this.transport;

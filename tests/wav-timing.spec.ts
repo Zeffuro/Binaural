@@ -39,7 +39,8 @@ test('ASMR seeks three-hour offsets with the playback rate accepted by the actua
   expect(Math.abs(far.seek - raw)).toBeGreaterThan(.0004);
 });
 
-for (const mode of ['static-tone', 'automated-tone', 'asmr-loop', 'asmr-sweep', 'asmr-wander', 'asmr-spatial']) {
+for (const mode of ['static-tone', 'automated-tone', 'asmr-loop', 'asmr-sweep', 'asmr-wander', 'asmr-spatial',
+  'asmr-spatial-sweep', 'asmr-spatial-approach', 'asmr-spatial-rise', 'asmr-spatial-figure-eight']) {
   test(`stitched ${mode} PCM follows the monolithic render across a 30-second boundary`, async ({ page }) => {
     test.setTimeout(120_000);
     await page.goto('/');
@@ -62,7 +63,8 @@ for (const mode of ['static-tone', 'automated-tone', 'asmr-loop', 'asmr-sweep', 
       const asmr = { ...makeAsmrLayer('cupping'), level: .8, rate: 1.25, period: 2.7,
         motion: mode === 'asmr-wander' ? 'wander' : mode === 'asmr-sweep' ? 'sweep' : 'still',
         pan: -.23, width: .8, tone: .6, pressure: .8, pressurePhase: 77,
-        ...(mode === 'asmr-spatial' ? { spatial: { azimuth: 63, elevation: 25, distance: .4, motion: 'orbit' } } : {}),
+        ...(mode.startsWith('asmr-spatial') ? { spatial: { azimuth: 63, elevation: 25, distance: .4,
+          motion: mode === 'asmr-spatial' ? 'orbit' : mode.slice('asmr-spatial-'.length) } } : {}),
       };
       const render = async (offset: number, seconds: number) => {
         const context = new OfflineAudioContext(2, Math.round(seconds * rate), rate);
@@ -105,7 +107,7 @@ for (const mode of ['static-tone', 'automated-tone', 'asmr-loop', 'asmr-sweep', 
           (channel[boundary * rate] - channel[boundary * rate - 1]) - (mono[ear][boundary * rate] - mono[ear][boundary * rate - 1])))) };
     }, mode);
     expect(result.finite).toBe(true); expect(result.boundary.energy).toBeGreaterThan(1e-6);
-    const tolerance = mode === 'asmr-spatial' ? .08 : .025;
+    const tolerance = mode.startsWith('asmr-spatial') ? .08 : .025;
     expect(result.boundary.relativeRms).toBeLessThan(tolerance); expect(result.tail.relativeRms).toBeLessThan(tolerance);
     expect(result.boundary.peak).toBeLessThan(.005); expect(result.seamError).toBeLessThan(.005);
     expect(result.spectralError).toBeLessThan(.0005);

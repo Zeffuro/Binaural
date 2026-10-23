@@ -66,7 +66,7 @@ jobs:
         env:
           PLAYWRIGHT_HTML_OPEN: never
       - name: Check ASMR playback, gestures and discovery
-        run: xvfb-run -a node scripts/test-browser.mjs --full tests/asmr-phrases.spec.ts tests/asmr-variation-ui.spec.ts tests/asmr-cues.spec.ts tests/asmr-gestures.spec.ts tests/asmr-library.spec.ts tests/visual-timing.spec.ts tests/experience.spec.ts tests/session-experience.spec.ts --forbid-only --workers=1 --reporter=list,html
+        run: xvfb-run -a node scripts/test-browser.mjs --full tests/asmr-phrases.spec.ts tests/asmr-variation-ui.spec.ts tests/asmr-cues.spec.ts tests/asmr-gestures.spec.ts tests/asmr-library.spec.ts tests/asmr-spatial.spec.ts tests/wav-timing.spec.ts tests/visual-timing.spec.ts tests/light-timing-ui.spec.ts tests/experience.spec.ts tests/session-experience.spec.ts --forbid-only --workers=1 --reporter=list,html
         env:
           PLAYWRIGHT_HTML_OPEN: never
       - name: Check listening workspace and visual controls
@@ -74,7 +74,7 @@ jobs:
         env:
           PLAYWRIGHT_HTML_OPEN: never
       - name: Run Chromium, Firefox and accessibility smoke tests
-        run: xvfb-run -a node scripts/test-browser.mjs --full --grep-invert "recorded canvas and stereo engine mix independently decode|recording includes native BWGen, stereo local music and ASMR|normal ambience uses the generated PCM and retains pause and audio-clock stop|boost doubles quiet|(?:accessibility|discovery|asmr-ui|asmr-visuals|asmr-workspace|asmr-modes|asmr-library|asmr-focus|asmr-phrases|asmr-variation-ui|asmr-cues|asmr-gestures|visual-timing|experience|asmr-spatial-ui|listening-sources|light-triggers|visual-workspace|visualizer)\.spec\.ts" --forbid-only --workers=1 --reporter=list,html
+        run: xvfb-run -a node scripts/test-browser.mjs --full --grep-invert "recorded canvas and stereo engine mix independently decode|recording includes native BWGen, stereo local music and ASMR|normal ambience uses the generated PCM and retains pause and audio-clock stop|boost doubles quiet|(?:accessibility|discovery|asmr-ui|asmr-visuals|asmr-workspace|asmr-modes|asmr-library|asmr-focus|asmr-phrases|asmr-variation-ui|asmr-cues|asmr-gestures|asmr-spatial|wav-timing|light-timing-ui|visual-timing|experience|asmr-spatial-ui|listening-sources|light-triggers|visual-workspace|visualizer)\.spec\.ts" --forbid-only --workers=1 --reporter=list,html
         env:
           PLAYWRIGHT_HTML_OPEN: never
       - name: Preserve Linux test reports and failure traces
@@ -118,7 +118,7 @@ jobs:
       - name: Check types and build on Windows
         run: npm run build
       - name: Check Windows offline synthesis in both browsers
-        run: node scripts/test-browser.mjs --full tests/audio.spec.ts tests/asmr-audio.spec.ts tests/asmr-focus.spec.ts tests/asmr-phrases.spec.ts tests/asmr-cues.spec.ts tests/asmr-gestures.spec.ts tests/visual-timing.spec.ts tests/asmr-modes.spec.ts tests/asmr-textures.spec.ts tests/asmr-spatial.spec.ts tests/bwg-audio.spec.ts tests/background-audio.spec.ts tests/timeline.spec.ts tests/audio-export.spec.ts tests/long-wav-export.spec.ts tests/wav-timing.spec.ts tests/bwg-export-source.spec.ts tests/music-export-asset.spec.ts tests/music-flac-export.spec.ts tests/flac-encoder.spec.ts tests/export-formats.spec.ts tests/video-recording.spec.ts tests/video-visual-capture.spec.ts tests/video-export.spec.ts --grep-invert "timer gate silences|ASMR follows pause|whole BWGen mute|ASMR starts with|pending recording|@live" --forbid-only --workers=1 --reporter=list,html
+        run: node scripts/test-browser.mjs --full tests/audio.spec.ts tests/asmr-audio.spec.ts tests/asmr-focus.spec.ts tests/asmr-phrases.spec.ts tests/asmr-cues.spec.ts tests/asmr-gestures.spec.ts tests/visual-timing.spec.ts tests/light-timing-ui.spec.ts tests/asmr-modes.spec.ts tests/asmr-textures.spec.ts tests/asmr-spatial.spec.ts tests/bwg-audio.spec.ts tests/background-audio.spec.ts tests/timeline.spec.ts tests/audio-export.spec.ts tests/long-wav-export.spec.ts tests/wav-timing.spec.ts tests/bwg-export-source.spec.ts tests/music-export-asset.spec.ts tests/music-flac-export.spec.ts tests/flac-encoder.spec.ts tests/export-formats.spec.ts tests/video-recording.spec.ts tests/video-visual-capture.spec.ts tests/video-export.spec.ts --grep-invert "timer gate silences|ASMR follows pause|whole BWGen mute|ASMR starts with|pending recording|@live" --forbid-only --workers=1 --reporter=list,html
         env:
           PLAYWRIGHT_HTML_OPEN: never
       - name: Preserve Windows test reports and failure traces
