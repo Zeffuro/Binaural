@@ -165,10 +165,7 @@ def prepare(data, spec, output, inspect_only):
         return audit, None
     rate = min(48000, metadata["sampleRate"])
     subtype = "PCM_16" if metadata["subtype"] == "PCM_16" else "PCM_24"
-    bytes_per_sample = 2 if subtype == "PCM_16" else 3
-    # Bound the uncompressed payload too, so compressibility never controls selection.
-    max_frames = min(round(rate * (30 if pcm.shape[1] == 1 else 18)),
-                     1_850_000 // (pcm.shape[1] * bytes_per_sample))
+    max_frames = round(rate * (30 if pcm.shape[1] == 1 else 18))
     source_frames = min(len(pcm), math.floor(max_frames * metadata["sampleRate"] / rate))
     pcm = pcm[:source_frames].copy()
     if rate != metadata["sampleRate"]:
