@@ -41,7 +41,8 @@ try {
     for (const [name, launcher] of [['chromium', chromium], ['firefox', firefox]]) {
       const browser = await launcher.launch(browserLaunchOptions(name));
       try {
-        const page = await browser.newPage({ colorScheme: 'dark' });
+        // Offline lifecycle has a separate gate; asset assertions need direct responses.
+        const page = await browser.newPage({ colorScheme: 'dark', serviceWorkers: 'block' });
         const errors = [], badResponses = [], outside = [];
         page.on('pageerror', error => errors.push(error.message));
         page.on('response', response => { if (response.status() >= 400) badResponses.push(response.url()); });
@@ -85,7 +86,10 @@ try {
         await expect(page.locator('#status')).toHaveText('● Listening');
         await page.locator('#pause').click(); await expect(page.locator('#status')).toHaveText('Ⅱ Paused');
         await page.locator('#play').click();
+        await expect(page.locator('#status')).toHaveText('Ready when you are');
         await page.locator('#asmr-browse').click(); await page.locator('[data-load-preset="asmr-hairbrush-unhurried"]').click();
+        await expect(page.locator('#session-label')).toHaveText('Unhurried hair brushing');
+        await expect(page.getByRole('dialog', { name: 'Explore presets', exact: true })).not.toBeVisible();
         await expect(page.locator('#asmr-flow')).toHaveValue('natural');
         const hairRecording = page.waitForResponse(origin + prefix + 'audio/asmr/hair-brushing.mp3');
         await page.locator('#play').click();
@@ -94,6 +98,7 @@ try {
         await expect(page.locator('#status')).toHaveText('● Listening');
         await page.locator('#pause').click(); await expect(page.locator('#status')).toHaveText('Ⅱ Paused');
         await page.locator('#play').click();
+        await expect(page.locator('#status')).toHaveText('Ready when you are');
         await page.locator('#asmr-flow').selectOption('steady');
         await page.locator('#asmr-browse').click(); await page.locator('[data-load-preset="asmr-brush-in-front"]').click();
         await expect(page.locator('#trigger-sync-asmr')).toBeChecked();
@@ -101,6 +106,7 @@ try {
         await expect.poll(async () => Number(await page.locator('.scene-drawing').getAttribute('data-cues'))).toBeGreaterThan(0);
         await page.locator('#pause').click(); await expect(page.locator('#status')).toHaveText('Ⅱ Paused');
         await page.locator('#play').click();
+        await expect(page.locator('#status')).toHaveText('Ready when you are');
         await page.locator('#asmr-browse').click(); await page.locator('[data-load-preset="asmr-hands-close"]').click();
         await page.getByLabel('Enable light triggers', { exact: true }).uncheck();
         await page.locator('[data-visual-quick=calm]').click();
