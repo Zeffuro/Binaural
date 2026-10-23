@@ -301,7 +301,7 @@ for (const kind of ['generated', 'stereo', 'hrtf'] as const) {
         while (preview.active && performance.now() < deadline) await new Promise(resolve => setTimeout(resolve, 20));
         taps.forEach(tap => tap.disconnect()); splitter.disconnect();
         const compressor = compressors[0];
-        return { audible, earlyFade, lateFade, tail, stoppedAt, duration: end - origin, phases, state: preview.state, ownedStops,
+        return { audible, earlyFade, lateFade, tail, stoppedAt, duration: end - origin, phases: [...phases], state: preview.state, ownedStops,
           untouched: before === JSON.stringify(source), closed: context.state === 'closed', disposed: mixer.voices.size === 0 && mixer.space.bank === undefined,
           roomUsed: !!room, compressed: compressors.length === 1,
           protection: [compressor.threshold.value, compressor.knee.value, compressor.ratio.value, compressor.attack.value, compressor.release.value] };
