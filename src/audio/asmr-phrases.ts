@@ -1,4 +1,5 @@
 import type { AsmrVariation } from '../asmr-variation';
+import { sourceMarker, sourceMarkerIndex, type AsmrMarkerEvent, type AsmrMarkerSample } from './asmr-markers';
 
 export interface AsmrPhraseConfig {
   variation: AsmrVariation;
@@ -90,7 +91,12 @@ export function planAsmrPhrase(config: AsmrPhraseConfig, cell: number, sourceSec
       asmrTurn(settings.seed, turnIndex, eligible, config.families, config.sounds) === ordinal) };
 }
 
-export interface AsmrPhrasePcm { channels: Float32Array[]; sampleRate: number; variants?: Float32Array[][] }
+export interface AsmrPhrasePcm {
+  channels: Float32Array[];
+  sampleRate: number;
+  variants?: Float32Array[][];
+  events?: readonly AsmrMarkerEvent[][];
+}
 
 export class AsmrPhraseRenderer {
   private phrase?: AsmrPhrase;
@@ -99,10 +105,26 @@ export class AsmrPhraseRenderer {
   private lastFrame = -Infinity;
   private lastRate = 1;
   private ratePhase = 0;
+  private markerFrame = -Infinity;
+  private markerIndex = -2;
+  private markerCell = 0;
+  private markerTurn = 0;
+  private markerVariant = 0;
+  private markerCycle = 0;
   constructor(private pcm: AsmrPhrasePcm, config: AsmrPhraseConfig) { this.config = config; }
   configure(config: AsmrPhraseConfig): void { this.config = config; this.phrase = undefined; }
 
-  render(output: Float32Array[], sampleRate: number, firstFrame: number, rates: Float32Array | number): void {
+  private markerDue(frame: number, sampleRate: number, contiguous: boolean, index: number,
+      cell = 0, turn = 0, variant = 0, cycle = 0): boolean {
+    if (contiguous && frame - this.markerFrame < sampleRate / 40 && index === this.markerIndex && cell === this.markerCell &&
+        turn === this.markerTurn && variant === this.markerVariant && cycle === this.markerCycle) return false;
+    this.markerFrame = frame; this.markerIndex = index; this.markerCell = cell;
+    this.markerTurn = turn; this.markerVariant = variant; this.markerCycle = cycle;
+    return true;
+  }
+
+  render(output: Float32Array[], sampleRate: number, firstFrame: number, rates: Float32Array | number,
+      observe?: (sample: AsmrMarkerSample) => void): void {
     const { channels, sampleRate: sourceRate } = this.pcm, sourceLength = channels[0].length;
     const { phraseSeconds: period, turnSeconds, mode } = this.config.variation;
     for (let frame = 0; frame < output[0].length; frame++) {
@@ -119,6 +141,7 @@ export class AsmrPhraseRenderer {
       else if (rate !== this.lastRate) this.ratePhase += (elapsed - 1 / sampleRate) * (this.lastRate - rate);
       this.lastFrame = absoluteFrame; this.lastRate = rate;
       if (!phrase.active || elapsed < 0 || elapsed >= phrase.duration) {
+        if (observe && this.markerDue(absoluteFrame, sampleRate, contiguous, -1)) observe({ time, pose: null, event: 'quiet' });
         for (const channel of output) channel[frame] = 0;
         continue;
       }
@@ -127,6 +150,16 @@ export class AsmrPhraseRenderer {
       const envelope = Math.sin(fade * Math.PI / 2) ** 2 * phrase.gain;
       const position = ((phrase.offset + (elapsed * rate + this.ratePhase) * phrase.rate) * sourceRate) % sourceLength;
       const index = Math.floor(position), fraction = position - index, next = (index + 1) % sourceLength;
+      if (observe) {
+        const events = this.pcm.events?.[phrase.variant];
+        const markerIndex = events ? sourceMarkerIndex(events, position, sourceLength) : -1;
+        const cycle = Math.floor((phrase.offset + (elapsed * rate + this.ratePhase) * phrase.rate) * sourceRate / sourceLength);
+        if (this.markerDue(absoluteFrame, sampleRate, contiguous, markerIndex, cell, turnIndex, phrase.variant, cycle)) {
+          const marker = events && markerIndex >= 0 ? sourceMarker(events, position, sourceLength, sourceRate) : undefined;
+          observe({ time, pose: marker?.pose ?? null,
+            event: marker ? `${cell}:${turnIndex}:${phrase.variant}:${cycle}:${markerIndex}` : 'quiet' });
+        }
+      }
       for (let ear = 0; ear < output.length; ear++) {
         const selected = this.pcm.variants?.[phrase.variant - 1] ?? channels;
         const input = selected[Math.min(ear, selected.length - 1)];

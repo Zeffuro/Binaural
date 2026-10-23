@@ -20,6 +20,8 @@ const routineIds = ['pages-evening', 'hairbrush-unhurried', 'water-preparation',
 const gestureIds = ['follow-my-light', 'brush-in-front', 'tap-and-follow', 'pencil-trace', 'close-object-study', 'ear-attention-lights', 'water-light-ritual'];
 const spatialExperienceIds = ['brush-across-view', 'hands-near-and-far', 'comb-floating-up', 'fabric-ribbon',
   'paper-circling-light', 'small-tapping-visits', 'pages-and-pencil-light', 'hairbrush-and-mist-light'];
+const detailExperienceIds = ['wooden-keepsakes', 'counting-on-glass', 'paper-beside-the-keys',
+  'water-under-small-bells', 'trail-of-fingertips', 'comb-and-quiet-clicks'];
 interface RecipeSummary {
   id: string; group: string; validLight: boolean; canonical: boolean; repeatable: boolean; freshIds: boolean;
   layerCount: number; sources: string[]; spatialCount: number; knownSources: boolean;
@@ -63,7 +65,7 @@ test('six original textures fill deterministically and retain the caller normali
   for (const rate of [24000, 48000]) expect(new Set(results.textures.filter(item => item.rate === rate).map(item => item.signature)).size).toBe(6);
 });
 
-test('all 61 ASMR recipes are canonical, cover every source, and reference existing lights', async ({ page }) => {
+test('all 67 ASMR recipes are canonical, cover every source, and reference existing lights', async ({ page }) => {
   await page.goto('/');
   const result = await page.evaluate(async () => {
     const statePath = '/src/asmr-state.ts', presetPath = '/src/asmr-presets.ts', lightPath = '/src/trigger-presets.ts', extraPath = '/src/asmr-textures.ts';
@@ -86,13 +88,19 @@ test('all 61 ASMR recipes are canonical, cover every source, and reference exist
   });
   expect(result.generated).toBe(15); expect(result.recordings).toBe(9); expect(result.lightCount).toBe(26);
   expect(result.textures).toEqual(textureIds);
-  expect(result.presets.map(preset => preset.id)).toEqual([...originalPresetIds, ...sensoryPresetIds, ...experienceIds, ...routineIds, ...gestureIds, ...spatialExperienceIds]);
-  expect(new Set(result.presets.map(preset => preset.id)).size).toBe(61);
+  expect(result.presets.map(preset => preset.id)).toEqual([...originalPresetIds, ...sensoryPresetIds, ...experienceIds, ...routineIds, ...gestureIds, ...spatialExperienceIds, ...detailExperienceIds]);
+  expect(new Set(result.presets.map(preset => preset.id)).size).toBe(67);
   expect([...new Set(result.presets.flatMap(preset => preset.sources))].sort()).toEqual([...result.sources].sort());
   const sensory = result.presets.filter(preset => preset.group === 'Sensory textures');
   expect(sensory.map(preset => preset.id)).toEqual(sensoryPresetIds);
   expect([...new Set(sensory.map(preset => preset.layerCount))].sort()).toEqual([1, 2, 3, 4]);
   expect(sensory.filter(preset => preset.spatialCount).map(preset => preset.id)).toEqual(['shoulder-side-fabric', 'around-your-head']);
+  const details = result.presets.filter(preset => preset.group === 'Small sound details');
+  expect(details.map(preset => preset.id)).toEqual(detailExperienceIds);
+  expect([...new Set(details.flatMap(preset => preset.sources))].sort())
+    .toEqual(['chimes', 'comb', 'fingertip-taps', 'glass', 'keyboard', 'paper', 'soft-clicks', 'water', 'wood']);
+  expect(details.every(preset => preset.layerCount >= 1 && preset.layerCount <= 2)).toBe(true);
+  expect(details.filter(preset => preset.spatialCount).map(preset => preset.id)).toEqual(['trail-of-fingertips']);
   for (const preset of result.presets) {
     expect(preset.canonical, preset.id).toBe(true); expect(preset.repeatable, preset.id).toBe(true); expect(preset.freshIds, preset.id).toBe(true);
     expect(preset.validLight, preset.id).toBe(true); expect(preset.knownSources, preset.id).toBe(true);
@@ -123,10 +131,10 @@ test('every recipe renders finite non-silent bounded offline stereo through the 
     }
     return results;
   });
-  expect(results.map(preset => preset.id)).toEqual([...originalPresetIds, ...sensoryPresetIds, ...experienceIds, ...routineIds, ...gestureIds, ...spatialExperienceIds]);
+  expect(results.map(preset => preset.id)).toEqual([...originalPresetIds, ...sensoryPresetIds, ...experienceIds, ...routineIds, ...gestureIds, ...spatialExperienceIds, ...detailExperienceIds]);
   for (const result of results) {
     expect(result.finite, result.id).toBe(true); expect(result.energy, result.id).toBeGreaterThan(0); expect(result.peak, result.id).toBeLessThan(1);
-    if (spatialExperienceIds.includes(result.id)) for (const energy of result.earEnergy) expect(energy, result.id).toBeGreaterThan(0);
+    if ([...spatialExperienceIds, ...detailExperienceIds].includes(result.id)) for (const energy of result.earEnergy) expect(energy, result.id).toBeGreaterThan(0);
   }
 });
 

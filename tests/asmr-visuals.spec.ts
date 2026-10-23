@@ -67,6 +67,16 @@ test('remembered bounded approval requires an explicit pair action and manual of
   await page.locator('#trigger-enable').uncheck(); await pair(page); await expect(dialog(page)).toBeVisible();
 });
 
+test('older visual approval does not bypass the sound-reactive pulse notice', async ({ page }) => {
+  await mount(page);
+  await page.evaluate(() => localStorage.setItem('binaural:asmr-soft-visual-approval:v1', 'soft-slow'));
+  await mount(page); await pair(page);
+  await expect(dialog(page)).toBeVisible(); await expect(dialog(page)).toContainText('rapid pulses');
+  await expect(page.locator('#trigger-enable')).not.toBeChecked();
+  await dialog(page).getByRole('button', { name: 'Not now', exact: true }).click();
+  await expect(page.locator('#trigger-enable')).not.toBeChecked();
+});
+
 test('restore, emergency stop, another scene and repeated pair actions cancel stale consent', async ({ page }) => {
   await mount(page);
   for (const action of ['restore', 'stop', 'scene', 'repeat']) {

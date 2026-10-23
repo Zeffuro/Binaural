@@ -87,7 +87,7 @@ class AsmrVoice {
   }
   update(layer: AsmrLayer, audible: boolean, config?: AsmrPhraseConfig): void {
     this.cueAudible = audible && layer.level > 0;
-    if (!this.cueAudible) this.cue.reset();
+    if (!this.cueAudible) this.clearCue();
     if (config) this.source.configure?.(config);
     const time = this.context.currentTime;
     const pressure = cuppingParameters(audible ? layer.level : 0, layer.tone, layer.pressure ?? 0);
@@ -111,7 +111,7 @@ class AsmrVoice {
     if (layer.spatial) this.position?.update(layer.spatial, layer.period);
   }
   readCue(gain: number, time: number): AsmrCue | undefined {
-    if (this.disposed || !this.cueAudible || gain <= 0) { this.cue.reset(); return; }
+    if (this.disposed || !this.cueAudible || gain <= 0) { this.clearCue(); return; }
     if (!this.cueTap) {
       const output = this.position?.outputNode ?? this.panner, splitter = this.context.createChannelSplitter(2);
       const ears = [this.context.createAnalyser(), this.context.createAnalyser()];
@@ -121,13 +121,14 @@ class AsmrVoice {
     }
     const { ears, samples } = this.cueTap;
     ears.forEach((ear, index) => ear.getFloatTimeDomainData(samples[index]));
-    return this.cue.read(time, earRms(samples[0]) * gain, earRms(samples[1]) * gain);
+    const marker = this.source.readMarker?.(time - 512 / this.context.sampleRate);
+    return this.cue.read(time, earRms(samples[0]) * gain, earRms(samples[1]) * gain, marker);
   }
-  clearCue(): void { this.cue.reset(); }
+  clearCue(): void { this.cue.reset(); this.source.clearMarkers?.(); }
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    this.cue.reset();
+    this.clearCue();
     if (this.cueTap) {
       this.cueTap.output.disconnect(this.cueTap.splitter);
       this.cueTap.splitter.disconnect(); this.cueTap.ears.forEach(ear => ear.disconnect());

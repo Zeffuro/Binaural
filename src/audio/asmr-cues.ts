@@ -1,4 +1,5 @@
 import type { AsmrSound } from '../asmr-state';
+import type { AsmrMarkerPose } from './asmr-markers';
 
 export type AsmrCueKind = 'follow' | 'brush' | 'tap' | 'trace' | 'inspect' | 'ear' | 'drop';
 export interface AsmrCue {
@@ -28,7 +29,6 @@ export function earRms(samples: Float32Array): number {
   return samples.length ? Math.sqrt(energy / samples.length) : 0;
 }
 
-// These cues follow measured envelopes; they do not reconstruct authored source events.
 export class AsmrCueDetector {
   private lastTime?: number;
   private lastOnset = -Infinity;
@@ -39,16 +39,17 @@ export class AsmrCueDetector {
   private contact = 0;
   private lastHeard = -Infinity;
   private pan = 0;
+  private markedProgress = 0;
   readonly kind: AsmrCueKind;
 
   constructor(private id: string, sound: AsmrSound) { this.kind = asmrCueKind(sound); }
 
   reset(): void {
     this.lastTime = undefined; this.lastOnset = this.lastHeard = -Infinity;
-    this.baseline = this.previous = this.strength = this.progress = this.contact = this.pan = 0;
+    this.baseline = this.previous = this.strength = this.progress = this.contact = this.pan = this.markedProgress = 0;
   }
 
-  read(time: number, left: number, right: number): AsmrCue | undefined {
+  read(time: number, left: number, right: number, marker?: AsmrMarkerPose | null): AsmrCue | undefined {
     if (!Number.isFinite(time) || !Number.isFinite(left) || !Number.isFinite(right)) { this.reset(); return; }
     if (this.lastTime !== undefined && (time < this.lastTime || time - this.lastTime > .75)) this.reset();
     const dt = this.lastTime === undefined ? 1 / 60 : clamp(time - this.lastTime, 0, .1);
@@ -74,8 +75,12 @@ export class AsmrCueDetector {
     this.strength += (target - this.strength) * (1 - Math.exp(-dt / (target > this.strength ? .04 : .18)));
     if (transient) this.progress = clamp((time - this.lastOnset) / .65);
     else if (audible) this.progress = (this.progress + dt / (3.8 - this.strength)) % 1;
-    if (time - this.lastHeard > .35 || this.strength < .0005 || (transient && time - this.lastOnset > .65)) return;
+    if (marker && (!Number.isFinite(marker.progress) || !Number.isFinite(marker.contact))) marker = undefined;
+    if (marker) this.markedProgress = clamp(marker.progress);
+    if ((marker && !audible) || time - this.lastHeard > .35 || this.strength < .0005 ||
+        (!marker && transient && time - this.lastOnset > .65)) return;
     return { id: this.id, kind: this.kind, pan: this.pan, strength: clamp(this.strength),
-      progress: this.progress, contact: this.contact, time };
+      progress: marker !== undefined ? this.markedProgress : this.progress,
+      contact: marker === null ? 0 : marker ? clamp(marker.contact, 0, .85) : this.contact, time };
   }
 }

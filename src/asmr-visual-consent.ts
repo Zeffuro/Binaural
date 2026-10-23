@@ -1,4 +1,4 @@
-const preferenceKey = 'binaural:asmr-soft-visual-approval:v1';
+const preferenceKey = 'binaural:asmr-soft-visual-approval:v2';
 type Decision = { allowed: boolean; remember: boolean };
 
 export function setupAsmrVisualConsent() {
@@ -17,7 +17,7 @@ export function setupAsmrVisualConsent() {
         const dialog = document.createElement('dialog');
         dialog.className = 'asmr-visual-consent'; dialog.setAttribute('aria-labelledby', 'asmr-visual-consent-title');
         dialog.setAttribute('aria-describedby', 'asmr-visual-consent-description');
-        dialog.innerHTML = '<h2 id="asmr-visual-consent-title">Moving visual trigger</h2><p id="asmr-visual-consent-description">Smooth moving lights and mirrored patterns can be uncomfortable for photosensitive viewers. No strobe effects. Starts soft and slow, and respects your reduced-motion settings. Motion follows playback or Animate without audio.</p><label class="asmr-visual-remember"><input type="checkbox" /> Remember this choice on this browser</label><p class="fine-print">Remembering allows soft ASMR visuals only when you choose sounds + lights. Advanced bright lights and MilkDrop remain separate.</p><div class="asmr-visual-consent-actions"><button type="button" class="save-button" data-accept>Start visual</button><button type="button" class="secondary-button" data-decline>Not now</button></div>';
+        dialog.innerHTML = '<h2 id="asmr-visual-consent-title">Moving visual trigger</h2><p id="asmr-visual-consent-description">Moving lights, mirrored patterns and sound-reactive pulses can be uncomfortable for photosensitive viewers. Fast sounds can produce rapid pulses. Starts at low brightness and respects your reduced-motion settings. Motion follows playback or Animate without audio.</p><label class="asmr-visual-remember"><input type="checkbox" /> Remember this choice on this browser</label><p class="fine-print">Remembering allows soft ASMR visuals only when you choose sounds + lights. Advanced bright lights and MilkDrop remain separate.</p><div class="asmr-visual-consent-actions"><button type="button" class="save-button" data-accept>Start visual</button><button type="button" class="secondary-button" data-decline>Not now</button></div>';
         const finish = (decision: Decision) => {
           if (pending?.dialog !== dialog) return;
           pending = undefined; dialog.close(); dialog.remove(); resolve(decision);

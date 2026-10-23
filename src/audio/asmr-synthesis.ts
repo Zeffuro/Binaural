@@ -1,13 +1,15 @@
 import { generatedAsmrSounds, type AsmrSound } from '../asmr-state';
 import { fillAsmrTexture } from './asmr-textures';
+import type { AsmrMarkerEvent } from './asmr-markers';
 
 export const ASMR_RATE = 24000;
 export const ASMR_SECONDS = 12;
-const cache = new Map<AsmrSound, Float32Array>();
-const variants = new Map<string, Float32Array>();
+export interface AsmrGeneratedSample { samples: Float32Array; events?: AsmrMarkerEvent[] }
+const cache = new Map<AsmrSound, AsmrGeneratedSample>();
+const variants = new Map<string, AsmrGeneratedSample>();
 const VARIANT_CACHE_BYTES = 6 * 1024 * 1024;
 
-function fillOriginalTexture(sound: AsmrSound, data: Float32Array, random: () => number): void {
+function fillOriginalTexture(sound: AsmrSound, data: Float32Array, random: () => number, events?: AsmrMarkerEvent[]): void {
   const noise = new Float32Array(data.length);
   let low = 0;
   for (let i = 0; i < noise.length; i++) {
@@ -30,6 +32,7 @@ function fillOriginalTexture(sound: AsmrSound, data: Float32Array, random: () =>
       const duration = sound === 'chimes' ? 1.8 : sound === 'paper' ? .45 : sound === 'water' ? .23 : .18;
       const frequency = (sound === 'wood' ? 220 : sound === 'glass' ? 1300 : sound === 'chimes' ? 560 : 760) * (.8 + random() * .4);
       const strength = .45 + random() * .45;
+      events?.push({ start: Math.floor(onset * ASMR_RATE), length: Math.ceil(duration * ASMR_RATE) });
       for (let j = 0; j < duration * ASMR_RATE; j++) {
         const i = (Math.floor(onset * ASMR_RATE) + j) % data.length;
         const t = j / ASMR_RATE;
@@ -44,13 +47,15 @@ function fillOriginalTexture(sound: AsmrSound, data: Float32Array, random: () =>
   }
 }
 
-function synthesize(sound: AsmrSound, variant = 0): Float32Array {
+export function synthesizeAsmrSample(sound: AsmrSound, variant = 0, markers = true): AsmrGeneratedSample {
   if (!generatedAsmrSounds.some(item => item.id === sound)) throw new Error('Load the recorded ASMR sound before playing it.');
   const data = new Float32Array(ASMR_RATE * ASMR_SECONDS);
   let seed = [...sound].reduce((n, c) => Math.imul(n, 31) + c.charCodeAt(0), 893);
   if (variant) seed ^= Math.imul(variant, 0x6d2b79f5);
   const random = () => { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; return (seed >>> 0) / 4294967296; };
-  if (!fillAsmrTexture(sound, data, ASMR_RATE, random)) fillOriginalTexture(sound, data, random);
+  const events = markers && ['wood', 'glass', 'paper', 'water', 'chimes', 'fingertip-taps', 'keyboard', 'soft-clicks', 'comb'].includes(sound)
+    ? [] as AsmrMarkerEvent[] : undefined;
+  if (!fillAsmrTexture(sound, data, ASMR_RATE, random, events)) fillOriginalTexture(sound, data, random, events);
   let peak = .001;
   for (const value of data) peak = Math.max(peak, Math.abs(value));
   const seam = ASMR_RATE * .02;
@@ -58,22 +63,30 @@ function synthesize(sound: AsmrSound, variant = 0): Float32Array {
     const edge = Math.min(1, i / seam, (data.length - 1 - i) / seam);
     data[i] = data[i] / peak * .7 * Math.sin(edge * Math.PI / 2) ** 2;
   }
-  return data;
+  events?.sort((left, right) => left.start - right.start);
+  return { samples: data, events };
 }
 
 export function asmrSample(sound: AsmrSound): Float32Array {
-  const existing = cache.get(sound); if (existing) return existing;
-  const data = synthesize(sound); cache.set(sound, data); return data;
+  return asmrGeneratedSample(sound).samples;
 }
 
 export function asmrVariantSample(sound: AsmrSound, variant: 1 | 2): Float32Array {
+  return asmrGeneratedSample(sound, variant).samples;
+}
+
+export function asmrGeneratedSample(sound: AsmrSound, variant: 0 | 1 | 2 = 0): AsmrGeneratedSample {
+  if (!variant) {
+    const existing = cache.get(sound); if (existing) return existing;
+    const data = synthesizeAsmrSample(sound); cache.set(sound, data); return data;
+  }
   const key = `${sound}:${variant}`, existing = variants.get(key);
   if (existing) { variants.delete(key); variants.set(key, existing); return existing; }
-  const data = synthesize(sound, variant);
-  let bytes = data.byteLength;
-  for (const item of variants.values()) bytes += item.byteLength;
+  const data = synthesizeAsmrSample(sound, variant), size = (item: AsmrGeneratedSample) => item.samples.byteLength + (item.events?.length ?? 0) * 16;
+  let bytes = size(data);
+  for (const item of variants.values()) bytes += size(item);
   while (bytes > VARIANT_CACHE_BYTES && variants.size) {
-    const oldest = variants.keys().next().value!; bytes -= variants.get(oldest)!.byteLength; variants.delete(oldest);
+    const oldest = variants.keys().next().value!; bytes -= size(variants.get(oldest)!); variants.delete(oldest);
   }
   variants.set(key, data); return data;
 }

@@ -43,7 +43,7 @@ export function setupTriggerControls(host: HTMLElement, redraw: () => void, chan
     </div><p class="fine-print">Glass and backlight move independently. Place by hand lets you drag the preview. Audio influence gently follows the current mix; it does not add sound. Motion follows playback or Animate without audio.</p></details>`;
   host.append(panel);
   const consentBox = document.createElement('div'); consentBox.id = 'trigger-consent'; consentBox.hidden = true;
-  consentBox.innerHTML = '<p class="fine-print">Moving mirrored patterns and bright lights can be uncomfortable for photosensitive viewers. These presets use smooth movement without strobe effects.</p><label class="visual-toggle"><span>Enable light triggers</span><input id="trigger-enable" type="checkbox" /></label>';
+  consentBox.innerHTML = '<p class="fine-print">Moving patterns, bright lights and sound-reactive pulses can be uncomfortable for photosensitive viewers. Fast sounds can produce rapid pulses.</p><label class="visual-toggle"><span>Enable light triggers</span><input id="trigger-enable" type="checkbox" /></label>';
   host.append(consentBox);
   const consent = consentBox.querySelector<HTMLInputElement>('input')!;
   const preset = panel.querySelector<HTMLSelectElement>('#trigger-preset')!;
@@ -56,7 +56,7 @@ export function setupTriggerControls(host: HTMLElement, redraw: () => void, chan
   const gestureNames = ['Match the sound', 'Follow the light', 'Brush pass', 'Tap contact', 'Tracing', 'Inspect an object', 'Ear attention', 'Water ripples'];
   syncControls.innerHTML = '<label class="visual-toggle"><span>Sync with ASMR sounds</span><input id="trigger-sync-asmr" data-trigger="syncAsmr" type="checkbox" /></label>'
     + `<div id="trigger-gesture-choice">${select('gesture', 'Visual gesture', triggerGestures.map((value, i) => [value, gestureNames[i]]))}</div>`
-    + '<p id="trigger-sync-help" class="fine-print">Follows each sound’s activity and audible side. Recorded clips use detected sound activity. Start listening to see the gestures.</p>';
+    + '<p id="trigger-sync-help" class="fine-print">Follows each sound’s activity and audible side. Lights follow individual taps and strokes when timing is available; other sounds follow detected activity. Start listening to see the gestures.</p>';
   panel.querySelector('h3')!.after(syncControls);
   const simple = document.createElement('div'); simple.className = 'asmr-visual-simple'; simple.hidden = true;
   const quickSelect = (field: string, label: string, values: [string, string][]) => `<label>${label}<select aria-label="ASMR ${label.toLowerCase()}" data-asmr-visual="${field}">${options(values)}<option value="custom" disabled>Custom</option></select></label>`;
