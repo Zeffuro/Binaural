@@ -207,7 +207,9 @@ test('actual recorded markers follow independent source positions through fracti
         for (let frame = 0; frame < count; frame++) {
           const time = (first + frame) / outputRate, cell = Math.floor(time / 40), turn = mode === 'turns' ? Math.floor(time / 5.3) : 0;
           const phrase = planAsmrPhrase(config, cell, buffer.duration, turn), elapsed = time - phrase.start, key = `${cell}:${turn}`;
-          if (key !== previousKey || previousElapsed < 0 || elapsed < 0) phase = elapsed * rates[frame];
+          if (!frame || elapsed < 0) phase = elapsed * rates[frame];
+          // A reset retains the preceding a-rate value up to the final sample interval.
+          else if (key !== previousKey || previousElapsed < 0) phase = (elapsed - 1 / outputRate) * rates[frame - 1] + rates[frame] / outputRate;
           else phase += rates[frame] / outputRate;
           previousKey = key; previousElapsed = elapsed;
           const sounding = phrase.active && elapsed >= 0 && elapsed < phrase.duration;
