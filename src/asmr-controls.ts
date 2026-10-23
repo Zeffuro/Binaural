@@ -3,6 +3,7 @@ import { asmrPresets } from './asmr-presets';
 import { openPresetExplorer } from './explorer';
 import { asmrSpatialMotions, asmrSpatialMotionLabels, asmrSpatialRanges, defaultSpatial } from './asmr-spatial';
 import { defaultAsmrVariation, type AsmrVariation } from './asmr-variation';
+import { setupAsmrSpaceControls } from './asmr-space-controls';
 import './asmr-controls.css';
 
 export function setupAsmr(options: {
@@ -31,6 +32,7 @@ export function setupAsmr(options: {
       <div id="asmr-turn-settings"><label class="range-heading" for="asmr-turn-seconds">Time with each sound <output id="asmr-turn-value" aria-hidden="true"></output></label><input id="asmr-turn-seconds" type="range" min="15" max="600" step="1" /></div>
       <label for="asmr-variation-seed">Variation seed</label><input id="asmr-variation-seed" type="number" min="1" max="2147483647" step="1" required />
       <button id="asmr-new-variation" class="secondary-button">New variation</button><p class="fine-print">The same seed and settings repeat the same session, including audio exports. Only your selected sounds are used.</p></details>
+    <div id="asmr-room-controls"></div>
     <div class="asmr-quick" role="group" aria-label="Quick ASMR sounds">${quickSounds.map(([sound, label]) => `<button class="secondary-button" data-asmr-sound="${sound}">${label}</button>`).join('')}</div>
     <p class="asmr-starter-label">Or start with an experience</p>
     <div class="asmr-featured" role="group" aria-label="Starter experiences">${starters.map(([id, label]) => `<button class="secondary-button" data-asmr-preset="${id}">${label}</button>`).join('')}</div>
@@ -45,6 +47,7 @@ export function setupAsmr(options: {
     <p id="asmr-status" class="fine-print" role="status"></p>`;
   const $ = <T extends HTMLElement = HTMLElement>(selector: string) => host.querySelector<T>(selector)!;
   const settings = () => options.get() ?? defaultAsmr();
+  const spaceControls = setupAsmrSpaceControls($('#asmr-room-controls'), { get: settings, edit, busy: options.busy });
   const enabled = () => options.enabled?.() ?? true;
   let wasEnabled: boolean | undefined;
   function loadPreset(id: string): void {
@@ -87,6 +90,7 @@ export function setupAsmr(options: {
     host.querySelectorAll<HTMLButtonElement>('[data-asmr-sound]').forEach(button => {
       button.disabled = options.busy() || (full && !settings().layers.some(layer => layer.sound === button.dataset.asmrSound));
     });
+    spaceControls.transport();
   }
   function placement(layer: AsmrLayer, action: string): void {
     if (action === 'cupping') { layer.pressure = layer.pressure > 0 ? 0 : .8; return; }
@@ -118,6 +122,7 @@ export function setupAsmr(options: {
   }
   function render(): void {
     const state = settings();
+    spaceControls.refresh();
     const active = enabled(), mixer = $<HTMLDetailsElement>('#asmr-mixer');
     if (wasEnabled !== active) mixer.open = active;
     wasEnabled = active;

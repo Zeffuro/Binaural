@@ -2,6 +2,7 @@ import { extraAsmrTextures } from './asmr-textures.ts';
 import { parseAsmrSpatial, type AsmrSpatialSettings } from './asmr-spatial.ts';
 import { recordedAsmrSounds } from './asmr-recordings.ts';
 import { parseAsmrVariation, type AsmrVariation } from './asmr-variation.ts';
+import { parseAsmrSpace, type AsmrSpaceSettings } from './asmr-space.ts';
 export { recordedAsmrSounds } from './asmr-recordings.ts';
 
 export const generatedAsmrSounds = [
@@ -35,7 +36,7 @@ export interface AsmrLayer {
   pressurePhase: number;
   spatial?: AsmrSpatialSettings;
 }
-export interface AsmrSettings { level: number; layers: AsmrLayer[]; focus?: boolean; variation?: AsmrVariation }
+export interface AsmrSettings { level: number; layers: AsmrLayer[]; focus?: boolean; variation?: AsmrVariation; space?: AsmrSpaceSettings }
 export const MAX_ASMR_LAYERS = 6;
 export const defaultAsmr = (): AsmrSettings => ({ level: .6, layers: [], focus: false });
 export const makeAsmrLayer = (sound: AsmrSound = 'brush'): AsmrLayer => ({
@@ -59,5 +60,6 @@ export function parseAsmr(value: unknown): AsmrSettings {
       ...(input.spatial === undefined ? {} : { spatial: parseAsmrSpatial(input.spatial) }) };
   });
   return { level: value.level, layers, focus: value.focus ?? false,
+    ...(value.space === undefined ? {} : { space: parseAsmrSpace(value.space) }),
     ...(value.variation === undefined ? {} : { variation: parseAsmrVariation(value.variation) }) };
 }

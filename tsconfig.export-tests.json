@@ -26,6 +26,8 @@
     "tests/asmr-markers.spec.ts",
     "tests/asmr-marker-cues.spec.ts",
     "tests/asmr-marker-demand.spec.ts",
+    "tests/asmr-space-audio.spec.ts",
+    "tests/asmr-space-ui.spec.ts",
     "tests/visual-timing.spec.ts",
     "tests/light-timing-ui.spec.ts",
     "tests/asmr-gestures.spec.ts",

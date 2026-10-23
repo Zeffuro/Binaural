@@ -22,6 +22,8 @@ const spatialExperienceIds = ['brush-across-view', 'hands-near-and-far', 'comb-f
   'paper-circling-light', 'small-tapping-visits', 'pages-and-pencil-light', 'hairbrush-and-mist-light'];
 const detailExperienceIds = ['wooden-keepsakes', 'counting-on-glass', 'paper-beside-the-keys',
   'water-under-small-bells', 'trail-of-fingertips', 'comb-and-quiet-clicks'];
+const spaceExperienceIds = ['reading-alcove', 'little-wooden-workshop', 'linen-room',
+  'water-on-the-table', 'rain-stick-corner', 'after-hours-writing'];
 interface RecipeSummary {
   id: string; group: string; validLight: boolean; canonical: boolean; repeatable: boolean; freshIds: boolean;
   layerCount: number; sources: string[]; spatialCount: number; knownSources: boolean;
@@ -65,16 +67,18 @@ test('six original textures fill deterministically and retain the caller normali
   for (const rate of [24000, 48000]) expect(new Set(results.textures.filter(item => item.rate === rate).map(item => item.signature)).size).toBe(6);
 });
 
-test('all 67 ASMR recipes are canonical, cover every source, and reference existing lights', async ({ page }) => {
+test('all 73 ASMR recipes are canonical, cover every source, and reference existing lights', async ({ page }) => {
   await page.goto('/');
   const result = await page.evaluate(async () => {
     const statePath = '/src/asmr-state.ts', presetPath = '/src/asmr-presets.ts', lightPath = '/src/trigger-presets.ts', extraPath = '/src/asmr-textures.ts';
     const { parseAsmr, asmrSounds, generatedAsmrSounds, recordedAsmrSounds } = await import(statePath);
     const { asmrPresets } = await import(presetPath), { triggerPresets } = await import(lightPath), { extraAsmrTextures } = await import(extraPath);
-    const canonical = (settings: { layers: Record<string, unknown>[] }) => settings.layers.map(({ id: _id, ...layer }) => layer);
+    const canonical = (settings: { level: number; focus?: boolean; variation?: unknown; space?: unknown; layers: Record<string, unknown>[] }) =>
+      ({ level: settings.level, focus: settings.focus ?? false, variation: settings.variation, space: settings.space,
+        layers: settings.layers.map(({ id: _id, ...layer }) => layer) });
     return { sources: asmrSounds.map(({ id }: { id: string }) => id), generated: generatedAsmrSounds.length, recordings: recordedAsmrSounds.length,
       textures: extraAsmrTextures.map(({ id }: { id: string }) => id), lightCount: triggerPresets.length,
-      presets: asmrPresets.map((preset: { id: string; light: string; group?: string; make: () => { layers: { id: string; [field: string]: unknown }[] } }) => {
+      presets: asmrPresets.map((preset: { id: string; light: string; group?: string; make: () => { level: number; layers: { id: string; [field: string]: unknown }[] } }) => {
         const settings = preset.make(), parsed = parseAsmr(settings), next = preset.make();
         return { id: preset.id, group: preset.group ?? 'Layered mixes', validLight: triggerPresets.some((light: { id: string }) => light.id === preset.light),
           canonical: JSON.stringify(canonical(settings)) === JSON.stringify(canonical(parsed)),
@@ -88,8 +92,8 @@ test('all 67 ASMR recipes are canonical, cover every source, and reference exist
   });
   expect(result.generated).toBe(15); expect(result.recordings).toBe(9); expect(result.lightCount).toBe(26);
   expect(result.textures).toEqual(textureIds);
-  expect(result.presets.map(preset => preset.id)).toEqual([...originalPresetIds, ...sensoryPresetIds, ...experienceIds, ...routineIds, ...gestureIds, ...spatialExperienceIds, ...detailExperienceIds]);
-  expect(new Set(result.presets.map(preset => preset.id)).size).toBe(67);
+  expect(result.presets.map(preset => preset.id)).toEqual([...originalPresetIds, ...sensoryPresetIds, ...experienceIds, ...routineIds, ...gestureIds, ...spatialExperienceIds, ...detailExperienceIds, ...spaceExperienceIds]);
+  expect(new Set(result.presets.map(preset => preset.id)).size).toBe(73);
   expect([...new Set(result.presets.flatMap(preset => preset.sources))].sort()).toEqual([...result.sources].sort());
   const sensory = result.presets.filter(preset => preset.group === 'Sensory textures');
   expect(sensory.map(preset => preset.id)).toEqual(sensoryPresetIds);
@@ -101,6 +105,13 @@ test('all 67 ASMR recipes are canonical, cover every source, and reference exist
     .toEqual(['chimes', 'comb', 'fingertip-taps', 'glass', 'keyboard', 'paper', 'soft-clicks', 'water', 'wood']);
   expect(details.every(preset => preset.layerCount >= 1 && preset.layerCount <= 2)).toBe(true);
   expect(details.filter(preset => preset.spatialCount).map(preset => preset.id)).toEqual(['trail-of-fingertips']);
+  const spaces = result.presets.filter(preset => preset.group === 'Quiet rooms');
+  expect(spaces.map(preset => preset.id)).toEqual(spaceExperienceIds);
+  expect([...new Set(spaces.flatMap(preset => preset.sources))].sort()).toEqual([
+    'fabric', 'glass', 'keyboard', 'rain-stick', 'recorded-cloth', 'recorded-grass',
+    'recorded-metal', 'recorded-pages', 'recorded-writing', 'water', 'wood',
+  ]);
+  expect(spaces.every(preset => preset.layerCount >= 1 && preset.layerCount <= 2 && preset.spatialCount === 0)).toBe(true);
   for (const preset of result.presets) {
     expect(preset.canonical, preset.id).toBe(true); expect(preset.repeatable, preset.id).toBe(true); expect(preset.freshIds, preset.id).toBe(true);
     expect(preset.validLight, preset.id).toBe(true); expect(preset.knownSources, preset.id).toBe(true);
@@ -131,10 +142,10 @@ test('every recipe renders finite non-silent bounded offline stereo through the 
     }
     return results;
   });
-  expect(results.map(preset => preset.id)).toEqual([...originalPresetIds, ...sensoryPresetIds, ...experienceIds, ...routineIds, ...gestureIds, ...spatialExperienceIds, ...detailExperienceIds]);
+  expect(results.map(preset => preset.id)).toEqual([...originalPresetIds, ...sensoryPresetIds, ...experienceIds, ...routineIds, ...gestureIds, ...spatialExperienceIds, ...detailExperienceIds, ...spaceExperienceIds]);
   for (const result of results) {
     expect(result.finite, result.id).toBe(true); expect(result.energy, result.id).toBeGreaterThan(0); expect(result.peak, result.id).toBeLessThan(1);
-    if ([...spatialExperienceIds, ...detailExperienceIds].includes(result.id)) for (const energy of result.earEnergy) expect(energy, result.id).toBeGreaterThan(0);
+    if ([...spatialExperienceIds, ...detailExperienceIds, ...spaceExperienceIds].includes(result.id)) for (const energy of result.earEnergy) expect(energy, result.id).toBeGreaterThan(0);
   }
 });
 

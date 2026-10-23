@@ -8,6 +8,7 @@ import { phaseCycles, setSinePhase } from './render-timing';
 import { createAsmrPhraseSource, phraseConfig, type AsmrSource } from './asmr-phrase-source';
 import type { AsmrPhraseConfig } from './asmr-phrases';
 import { AsmrCueDetector, earRms, type AsmrCue } from './asmr-cues';
+import { AsmrSpace } from './asmr-space';
 
 class AsmrVoice {
   private source: AsmrSource;
@@ -147,15 +148,20 @@ class AsmrVoice {
 
 export class AsmrMixer {
   private bus: GainNode;
+  private space: AsmrSpace;
+  private disposed = false;
   private voices = new Map<string, AsmrVoice>();
   private origin: number;
   private cueLevel = 0;
   constructor(private context: BaseAudioContext, output: AudioNode, private endAt?: number, private offsetSeconds = 0,
     private onFailure?: () => void) {
     this.origin = context.currentTime;
-    this.bus = context.createGain(); this.bus.gain.value = 0; this.bus.connect(output);
+    this.bus = context.createGain(); this.bus.gain.value = 0;
+    this.space = new AsmrSpace(context, this.bus, output);
   }
   update(settings: AsmrSettings = defaultAsmr(), enabled = true): void {
+    if (this.disposed) return;
+    this.space.update(settings.space);
     const expired = this.endAt !== undefined && this.context.currentTime >= this.endAt;
     this.cueLevel = expired || !enabled ? 0 : settings.level;
     if (this.cueLevel <= 0) this.clearCues();
@@ -191,7 +197,9 @@ export class AsmrMixer {
   }
   clearCues(): void { for (const voice of this.voices.values()) voice.clearCue(); }
   dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
     for (const voice of this.voices.values()) voice.dispose();
-    this.voices.clear(); this.bus.disconnect();
+    this.voices.clear(); this.space.dispose(); this.bus.disconnect();
   }
 }
