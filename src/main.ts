@@ -172,7 +172,8 @@ function renderTransport(): void {
   asmr.transport();
   modes.refresh();
   const playing = engine.playing;
-  $('#play').innerHTML = `<span aria-hidden="true">${playing ? '■' : '▶'}</span><span>${playing ? 'Stop listening' : 'Start listening'}</span>`;
+  const playLabel = `<span aria-hidden="true">${playing ? '■' : '▶'}</span><span>${playing ? 'Stop listening' : 'Start listening'}</span>`;
+  if ($('#play').innerHTML !== playLabel) $('#play').innerHTML = playLabel;
   $('#play').classList.toggle('is-playing', playing);
   $<HTMLButtonElement>('#play').disabled = busy || musicBusy || backgroundBusy;
   $('#pause').hidden = !playing;

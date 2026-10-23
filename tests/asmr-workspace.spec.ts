@@ -23,7 +23,7 @@ async function shared(page: Page) {
 test('quick sounds stay available with ASMR off and focus an existing sound without duplication or autoplay', async ({ page }) => {
   await page.goto('/');
   const quick = page.getByRole('group', { name: 'Quick ASMR sounds', exact: true });
-  await expect(quick.getByRole('button')).toHaveText(['Brush', 'Tapping', 'Fabric', 'Crinkle', 'Air', 'Water']);
+  await expect(quick.getByRole('button')).toHaveText(['Brush', 'Tapping', 'Fabric', 'Crinkle', 'Air', 'Water', 'Hair', 'Writing']);
   await expect(page.locator('#asmr-mixer')).not.toHaveAttribute('open', '');
   await expect(page.getByRole('group', { name: 'Starter experiences', exact: true }).getByRole('button')).toHaveCount(6);
   await expect(page.locator('#asmr-browse')).toBeVisible();

@@ -1,11 +1,16 @@
 import { expect, test, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
-async function shareLink(page: Page) {
+async function sharedSettings(page: Page) {
   await page.locator('#share-session').click();
   const link = await page.getByLabel('Session link', { exact: true }).inputValue();
   await page.getByRole('button', { name: 'Close share', exact: true }).click();
-  return link;
+  return page.evaluate(async link => {
+    const path = '/src/share.ts', { readSharedSession } = await import(path);
+    const value = readSharedSession(new URL(link).hash);
+    const withoutIds = (layers: { id: string }[]) => layers.map(({ id: _id, ...layer }) => layer);
+    return { ...value, layers: withoutIds(value.layers), asmr: { ...value.asmr, layers: withoutIds(value.asmr.layers) } };
+  }, link);
 }
 
 async function observeContexts(page: Page) {
@@ -80,14 +85,14 @@ test('@live preview ends automatically without changing the session, storage, tr
   test.setTimeout(45000); await observeContexts(page); await page.goto('/');
   await page.locator('[data-asmr-sound=brush]').click();
   await page.locator('#asmr-listening-space').selectOption('soft');
-  const before = await shareLink(page), storage = await page.evaluate(() => JSON.stringify(localStorage));
+  const before = await sharedSettings(page), storage = await page.evaluate(() => JSON.stringify(localStorage));
   await page.getByRole('button', { name: 'Preview sound 1', exact: true }).click();
   await expect(page.locator('#asmr-preview-status')).toContainText('Previewing one sound');
   await expect(page.getByRole('button', { name: 'Stop preview of sound 1', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#status')).toHaveText('Ready when you are');
   await expect(page.locator('#play')).toContainText('Start listening');
   await expect(page.locator('#trigger-enable')).not.toBeChecked();
-  expect(await shareLink(page)).toBe(before);
+  expect(await sharedSettings(page)).toEqual(before);
   expect(await page.evaluate(() => JSON.stringify(localStorage))).toBe(storage);
   await expect(page.getByRole('button', { name: 'Preview sound 1', exact: true })).toBeEnabled({ timeout: 12000 });
   await expect.poll(() => page.evaluate(() => (window as unknown as { previewContexts: AudioContext[] }).previewContexts.map(context => context.state))).toEqual(['closed']);
@@ -106,6 +111,28 @@ test('@live normal playback closes previews first and paused sessions keep previ
   await expect(page.getByRole('button', { name: 'Preview sound 1', exact: true })).toBeDisabled();
   await page.locator('#play').click(); await expect(page.locator('#status')).toHaveText('Ready when you are');
   await expect(page.getByRole('button', { name: 'Preview sound 1', exact: true })).toBeEnabled();
+});
+
+test('@live a held Start click survives a transport refresh and starts actual playback', async ({ page }) => {
+  await page.goto('/');
+  await page.evaluate(() => {
+    const button = document.querySelector('#play')!, children = [...button.childNodes];
+    Object.assign(window, { transportPolls: 0, startChildren: children });
+    new MutationObserver(() => { (window as unknown as { transportPolls: number }).transportPolls++; })
+      .observe(document.querySelector('#status')!, { childList: true });
+  });
+  const label = page.locator('#play span').last(); await label.scrollIntoViewIfNeeded();
+  const bounds = await label.boundingBox();
+  expect(bounds).not.toBeNull();
+  await page.mouse.move(bounds!.x + bounds!.width / 2, bounds!.y + bounds!.height / 2);
+  await page.mouse.down();
+  try {
+    await page.waitForFunction(() => (window as unknown as { transportPolls: number }).transportPolls > 0);
+    expect(await page.evaluate(() => [...document.querySelector('#play')!.childNodes]
+      .every((node, index) => node === (window as unknown as { startChildren: Node[] }).startChildren[index]))).toBe(true);
+  } finally { await page.mouse.up(); }
+  await expect(page.locator('#status')).toHaveText('● Listening');
+  await page.locator('#play').click(); await expect(page.locator('#status')).toHaveText('Ready when you are');
 });
 
 test('@live manual and emergency stop, undo, presets and page lifecycle close the preview context', async ({ page }) => {
