@@ -5,12 +5,13 @@ import { fileURLToPath } from 'node:url';
 import { chromium, firefox, expect } from '@playwright/test';
 import { browserLaunchOptions } from '../scripts/browser-options.mjs';
 import { checkHrtfProfiles } from './helpers/hrtf-production.ts';
+import { checkRecordedPack } from './helpers/recorded-pack-production.ts';
 import AxeBuilder from '@axe-core/playwright';
 import { makeBwgFixture } from './helpers/bwg.ts';
 import { setSources } from './helpers/listening-sources.ts';
 
 const root = fileURLToPath(new URL('../dist/', import.meta.url));
-const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.txt': 'text/plain', '.ogg': 'audio/ogg', '.mp3': 'audio/mpeg' };
+const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.txt': 'text/plain', '.ogg': 'audio/ogg', '.mp3': 'audio/mpeg', '.flac': 'audio/flac' };
 function expectShortWav(wav) {
   expect(wav.length).toBe(176444);
   expect(wav.toString('ascii', 0, 4)).toBe('RIFF');
@@ -94,6 +95,7 @@ try {
           await expect(page.getByLabel('Enable light triggers', { exact: true })).toBeChecked();
         }
         await checkHrtfProfiles(page, origin, prefix, true);
+        await checkRecordedPack(page, origin, prefix, true);
         await page.locator('#asmr-browse').click(); await page.locator('[data-load-preset="asmr-hands-close"]').click();
         const recording = page.waitForResponse(origin + prefix + 'audio/asmr/hand-rubbing.ogg');
         await page.locator('#asmr-only').click(); await page.locator('#play').click();

@@ -5,6 +5,7 @@
     "paths": { "/src/*": ["./src/*"] }
   },
   "include": [
+    "tests/asmr-recorded-pack.spec.ts",
     "tests/hrtf-audio.spec.ts",
     "tests/hrtf-integration.spec.ts",
     "tests/hrtf-ui.spec.ts",

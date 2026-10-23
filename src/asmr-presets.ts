@@ -5,6 +5,7 @@ import { asmrGesturePresets } from './asmr-gesture-presets';
 import { asmrSpatialExperiences } from './asmr-spatial-experiences';
 import { asmrDetailExperiences } from './asmr-detail-experiences';
 import { asmrSpaceExperiences } from './asmr-space-experiences';
+import { asmrRecordedExperiences } from './asmr-recorded-experiences';
 
 const layer = (sound: AsmrSound, values: Partial<AsmrLayer> = {}): AsmrLayer => ({ ...makeAsmrLayer(sound), ...values });
 export interface AsmrPreset {
@@ -74,4 +75,5 @@ export const asmrPresets: AsmrPreset[] = [
   ...asmrSpatialExperiences,
   ...asmrDetailExperiences,
   ...asmrSpaceExperiences,
+  ...asmrRecordedExperiences,
 ];

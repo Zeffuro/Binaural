@@ -7,9 +7,10 @@ import { browserLaunchOptions } from './browser-options.mjs';
 import { makeBwgFixture } from '../tests/helpers/bwg.ts';
 import { setSources } from '../tests/helpers/listening-sources.ts';
 import { checkHrtfProfiles } from '../tests/helpers/hrtf-production.ts';
+import { checkRecordedPack } from '../tests/helpers/recorded-pack-production.ts';
 
 const root = resolve(fileURLToPath(new URL('../dist/', import.meta.url)));
-const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.webp': 'image/webp', '.png': 'image/png', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json', '.txt': 'text/plain', '.ogg': 'audio/ogg', '.mp3': 'audio/mpeg' };
+const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.webp': 'image/webp', '.png': 'image/png', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json', '.txt': 'text/plain', '.ogg': 'audio/ogg', '.mp3': 'audio/mpeg', '.flac': 'audio/flac' };
 function expectShortWav(wav) {
   expect(wav.length).toBe(176444);
   expect(wav.toString('ascii', 0, 4)).toBe('RIFF');
@@ -60,7 +61,7 @@ try {
         await expect(page.locator('#status')).toHaveText('Ready when you are');
         await page.getByRole('button', { name: 'Explore all presets' }).click();
         await page.getByLabel('With visual settings', { exact: true }).check();
-        await expect(page.locator('.explore-card')).toHaveCount(79);
+        await expect(page.locator('.explore-card')).toHaveCount(91);
         await page.locator('[data-load-preset="forest-clearing"]').click();
         await expect(page.locator('#ambient')).toHaveValue('wind');
         await expect(page.locator('#status')).toHaveText('Ready when you are');
@@ -242,6 +243,7 @@ try {
         await expect(page.getByRole('dialog', { name: 'Immersive visualization' })).toBeVisible();
         await page.getByRole('button', { name: 'Close visualization' }).click();
         await checkHrtfProfiles(page, origin, prefix);
+        await checkRecordedPack(page, origin, prefix);
         await page.setViewportSize({ width: 390, height: 844 });
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
         await page.goto(origin + prefix + 'credits.html');

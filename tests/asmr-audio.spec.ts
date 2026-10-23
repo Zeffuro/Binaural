@@ -94,7 +94,7 @@ test('ASMR schema is bounded and legacy sessions still load; WAV contains the ac
     return { rejected, legacy: parseSession(initialSession()).asmr === undefined, presets: asmrPresets.map((preset: { make: () => unknown }) => parseAsmr(preset.make()).layers.length), left, right };
   });
   expect(result.rejected).toBe(true); expect(result.legacy).toBe(true);
-  expect(result.presets).toHaveLength(73); expect(result.presets.every((count: number) => count >= 1 && count <= 6)).toBe(true);
+  expect(result.presets).toHaveLength(85); expect(result.presets.every((count: number) => count >= 1 && count <= 6)).toBe(true);
   expect(result.left).toBeGreaterThan(10000); expect(result.right).toBe(0);
 });
 

@@ -123,7 +123,7 @@ test('starter experiences use the existing mixes and the compact and expanded wo
   }
   await page.locator('#asmr-browse').click();
   await expect(page.locator('#preset-category')).toHaveValue('ASMR');
-  await expect(page.locator('.explore-card')).toHaveCount(73);
+  await expect(page.locator('.explore-card')).toHaveCount(85);
   await page.locator('#close-explorer').click();
   await page.locator('.asmr-advanced').evaluateAll(nodes => nodes.forEach(node => { (node as HTMLDetailsElement).open = true; }));
   for (const theme of ['light', 'dark']) {

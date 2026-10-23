@@ -19,6 +19,8 @@ const families: Record<AsmrSound, AsmrCueKind> = {
   'recorded-hands': 'brush', 'recorded-crinkles': 'inspect', 'recorded-metal': 'tap',
   'recorded-cloth': 'brush', 'recorded-grass': 'brush', 'recorded-pages': 'inspect',
   'recorded-hair': 'brush', 'recorded-spray': 'follow', 'recorded-writing': 'trace',
+  'recorded-blanket': 'brush', 'recorded-zipper': 'trace', 'recorded-sketchbook': 'inspect',
+  'recorded-sketching': 'trace', 'recorded-mist': 'follow', 'recorded-running-water': 'drop',
 };
 export const asmrCueKind = (sound: AsmrSound): AsmrCueKind => families[sound];
 const clamp = (value: number, min = 0, max = 1) => Math.max(min, Math.min(max, value));

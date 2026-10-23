@@ -8,4 +8,10 @@ export const recordedAsmrSounds = [
   { id: 'recorded-hair', name: 'Hair brushing', file: 'hair-brushing.mp3', description: 'Recorded brush strokes through hair' },
   { id: 'recorded-spray', name: 'Spray bottle', file: 'spray-bottle.mp3', description: 'Recorded spray pumps and mist' },
   { id: 'recorded-writing', name: 'Pencil writing', file: 'pencil-writing.mp3', description: 'Recorded pencil strokes on paper' },
+  { id: 'recorded-blanket', name: 'Blanket folds', file: 'blanket-movement.flac', description: 'Recorded blanket movement and fabric folds' },
+  { id: 'recorded-zipper', name: 'Zipper touches', file: 'zipper-slide.flac', description: 'Recorded bag zipper movements' },
+  { id: 'recorded-sketchbook', name: 'Sketchbook pages', file: 'sketchbook-pages.flac', description: 'Recorded sketchbook page turns' },
+  { id: 'recorded-sketching', name: 'Pencil sketching', file: 'pencil-sketching.flac', description: 'Recorded pencil scratches and drawing strokes' },
+  { id: 'recorded-mist', name: 'Bottle mist', file: 'bottle-mist.flac', description: 'Recorded bottle pumps and fine spray' },
+  { id: 'recorded-running-water', name: 'Running water', file: 'running-water.flac', description: 'Recorded water flowing from a tap' },
 ] as const;
