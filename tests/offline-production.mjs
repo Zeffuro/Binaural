@@ -147,13 +147,12 @@ try {
         await expect(page.getByLabel('Enable MilkDrop visuals')).not.toBeChecked();
         await expect(page.getByLabel('Enable light triggers', { exact: true })).not.toBeChecked();
         await expect(page.locator('#status')).toHaveText('Ready when you are');
-        // Playback must outlast video decoding and the subsequent update checks.
         await page.locator('#import-file').setInputFiles({ name: 'synthetic.bwg', mimeType: 'application/octet-stream',
-          buffer: Buffer.from(makeBwgFixture([{ voices: 1, length: 120, repeats: 1 }])) });
+          buffer: Buffer.from(makeBwgFixture()) });
         await page.getByRole('button', { name: 'Load imported session' }).click();
         await expect(page.getByRole('dialog', { name: 'Review BWGen import', exact: true })).toHaveCount(0);
         await expect(page.locator('#playing-title')).toHaveText('Synthetic compatibility fixture');
-        await expect(page.locator('#minutes')).toHaveValue('2');
+        await expect(page.locator('#minutes')).toHaveValue('10');
         await expect(page.getByLabel('Enable light triggers', { exact: true })).not.toBeChecked();
         await page.evaluate(() => {
           window.offlineExportWorkers = [];
