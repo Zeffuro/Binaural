@@ -11,7 +11,7 @@ async function controlled(page: Page): Promise<void> {
       return { promise, resolve, reject };
     };
     const h: any = { engines: [], events: [], states: [], blockStart: false, blockStop: false, deferred };
-    h.session = initialSession(); h.session.mode = 'mixed'; h.session.master = 1.4; h.session.volumeBoost = true;
+    h.session = initialSession(); h.session.mode = 'mixed'; h.session.master = 1.4; h.session.volumeBoost = true; h.session.dynamics = 'open';
     h.session.asmr = { level: .72, focus: true,
       variation: { mode: 'turns', seed: 1, amount: 1, phraseSeconds: 30, turnSeconds: 600 },
       space: { amount: .25, size: 1.3, warmth: .8 }, layers: [
@@ -56,11 +56,12 @@ test('preview snapshots only one steady sound, current levels and space without 
     return { preserved, frozen, unchanged: JSON.stringify(h.session) === before,
       keys: Object.keys(isolated).sort(), asmrKeys: Object.keys(isolated.asmr).sort(),
       levels: [isolated.master, isolated.volumeBoost, isolated.asmr.level, isolated.timelineDuration, isolated.minutes],
-      muted: isolated.tonesMuted, mode: isolated.mode, ambient: isolated.ambient,
+      muted: isolated.tonesMuted, mode: isolated.mode, ambient: isolated.ambient, dynamics: isolated.dynamics,
       background: [isolated.ambientLevel, isolated.musicLevel], phases: h.states.map((state: any) => state.phase), active: h.preview.active };
   });
   expect(result.preserved).toBe(true); expect(result.frozen).toBe(true); expect(result.unchanged).toBe(true);
-  expect(result.keys).toEqual(['ambient', 'ambientLevel', 'asmr', 'layers', 'master', 'minutes', 'mode', 'musicLevel', 'name', 'timelineDuration', 'tonesMuted', 'version', 'volumeBoost']);
+  expect(result.keys).toEqual(['ambient', 'ambientLevel', 'asmr', 'dynamics', 'layers', 'master', 'minutes', 'mode', 'musicLevel', 'name', 'timelineDuration', 'tonesMuted', 'version', 'volumeBoost']);
+  expect(result.dynamics).toBe('open');
   expect(result.asmrKeys).toEqual(['layers', 'level', 'space']); expect(result.levels).toEqual([1.4, true, .72, 5, 0]);
   expect(result.muted).toBe(true); expect(result.mode).toBe('asmr'); expect(result.ambient).toBe('none'); expect(result.background).toEqual([0, 0]);
   expect(result.phases).toEqual(['loading', 'playing', 'stopping', 'idle']); expect(result.active).toBe(false);

@@ -5,6 +5,7 @@ import { backgroundSources, type BackgroundSource } from './import/bwg-backgroun
 import { parseVisualSettings, type VisualSettings } from './visual-state';
 import { parseAsmr, type AsmrSettings } from './asmr-state';
 import { listeningModes, type ListeningMode } from './listening-mode';
+import { outputDynamicsProfiles, type OutputDynamicsProfile } from './output-dynamics';
 
 export type Route = 'binaural' | 'mixed' | 'left' | 'right';
 export type Ambient = 'none' | 'white' | 'pink' | 'brown' | 'ocean' | GeneratedBackgroundId;
@@ -33,6 +34,7 @@ export interface Session {
   musicLevel: number;
   master: number;
   volumeBoost?: boolean;
+  dynamics?: OutputDynamicsProfile;
   minutes: number;
   tonesMuted?: boolean;
   visual?: VisualSettings;
@@ -94,6 +96,7 @@ export function parseSession(value: unknown): Session {
   if (value.tonesMuted !== undefined && typeof value.tonesMuted !== 'boolean') throw new Error('Invalid tone mute state.');
   if (value.volumeBoost !== undefined && typeof value.volumeBoost !== 'boolean') throw new Error('Invalid volume boost state.');
   if (value.mode !== undefined && !listeningModes.includes(value.mode as ListeningMode)) throw new Error('Invalid listening mode.');
+  if (value.dynamics !== undefined && !outputDynamicsProfiles.some(profile => profile.id === value.dynamics)) throw new Error('Invalid output dynamics profile.');
   if (value.bwgMuted !== undefined && typeof value.bwgMuted !== 'boolean') throw new Error('Invalid imported audio mute state.');
   const duration = value.timelineDuration;
   if (native ? duration !== bwgDuration(native.preset) : duration !== undefined && !number(duration, 0.01, 10800)) {
@@ -126,6 +129,7 @@ export function parseSession(value: unknown): Session {
     ...(value.bwgBackgroundSource === undefined ? {} : { bwgBackgroundSource: value.bwgBackgroundSource as BackgroundSource }),
     ...(value.tonesMuted === undefined ? {} : { tonesMuted: value.tonesMuted }),
     ...(value.volumeBoost === undefined ? {} : { volumeBoost: value.volumeBoost }),
+    ...(value.dynamics === undefined ? {} : { dynamics: value.dynamics as OutputDynamicsProfile }),
     ...(value.bwgMuted === undefined ? {} : { bwgMuted: value.bwgMuted }),
     ...(value.mode === undefined ? {} : { mode: value.mode as ListeningMode }),
     ...(value.visual === undefined ? {} : { visual: parseVisualSettings(value.visual) }),

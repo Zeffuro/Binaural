@@ -30,6 +30,8 @@
     "tests/asmr-space-ui.spec.ts",
     "tests/asmr-preview.spec.ts",
     "tests/asmr-preview-ui.spec.ts",
+    "tests/output-dynamics.spec.ts",
+    "tests/output-dynamics-ui.spec.ts",
     "tests/visual-timing.spec.ts",
     "tests/light-timing-ui.spec.ts",
     "tests/asmr-gestures.spec.ts",

@@ -21,6 +21,7 @@ function previewSession(session: Session, id: string): Session {
     version: 2, name: session.name, layers: structuredClone(session.layers),
     tonesMuted: true, mode: 'asmr', ambient: 'none', ambientLevel: 0, musicLevel: 0,
     master: session.master, ...(session.volumeBoost === undefined ? {} : { volumeBoost: session.volumeBoost }),
+    ...(session.dynamics === undefined ? {} : { dynamics: session.dynamics }),
     minutes: 0, timelineDuration: 5,
     asmr: { level: session.asmr.level, layers: [{ ...structuredClone(layer), muted: false, solo: false }],
       ...(session.asmr.space ? { space: structuredClone(session.asmr.space) } : {}) },

@@ -7,6 +7,7 @@ import { AsmrMixer } from './asmr-mixer';
 import { listeningMode, modeGains } from '../listening-mode';
 import { phaseCycles, setSinePhase } from './render-timing';
 import { asmrBackgroundGain } from '../asmr-focus';
+import { OutputDynamics } from './output-dynamics';
 
 function seededNoise(): () => number {
   let seed = 0x6b2f916d;
@@ -44,16 +45,14 @@ export function exportGraph(context: OfflineAudioContext, session: Session, offs
     native?: [Float32Array, Float32Array], music?: AudioBuffer): () => void {
   const localEnd = end === undefined ? undefined : end - offset;
   const master = context.createGain(); master.gain.value = session.master;
-  const compressor = context.createDynamicsCompressor();
-  compressor.threshold.value = -10; compressor.knee.value = 6; compressor.ratio.value = 12;
-  compressor.attack.value = .003; compressor.release.value = .25;
+  const dynamics = new OutputDynamics(context, session.dynamics);
   const gate = context.createGain();
   const duration = session.timelineDuration ?? session.minutes * 60;
   const fadeIn = duration > 0 ? Math.min(.5, duration / 4) : .5;
   schedule(gate.gain, [{ time: 0, value: 0, curve: 'step' }, { time: fadeIn, value: 1, curve: 'linear' },
     ...(end === undefined ? [] : [{ time: end - Math.min(2, duration / 2), value: 1, curve: 'step' as const },
       { time: end, value: 0, curve: 'linear' as const }])], -offset, 0);
-  master.connect(compressor).connect(gate).connect(context.destination);
+  master.connect(dynamics.node).connect(gate).connect(context.destination);
   const gains = modeGains(listeningMode(session)), tones = context.createGain();
   tones.gain.value = session.tonesMuted ? 0 : gains.tones; tones.connect(master);
   if (!session.bwg) for (const layer of session.layers) offlineTone(context, layer, tones, session.layers.length, localEnd, offset);
@@ -73,5 +72,5 @@ export function exportGraph(context: OfflineAudioContext, session: Session, offs
     if (localEnd !== undefined) source.stop(localEnd);
   }
   const asmr = new AsmrMixer(context, master, localEnd, offset); asmr.update(session.asmr, !!gains.asmr);
-  return () => asmr.dispose();
+  return () => { asmr.dispose(); dynamics.dispose(); };
 }

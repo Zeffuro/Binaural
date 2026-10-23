@@ -31,6 +31,7 @@ import { listeningMode, modeForSources, modeGains, type ListeningMode } from './
 import { setupListeningMode } from './mode-controls';
 import { defaultAsmr, makeAsmrLayer } from './asmr-state';
 import { AsmrPreview } from './audio/asmr-preview';
+import { setupOutputDynamicsControls } from './output-dynamics-controls';
 
 const $ = <T extends HTMLElement = HTMLElement>(selector: string): T => document.querySelector<T>(selector)!;
 $('#app').innerHTML = layout;
@@ -98,6 +99,13 @@ const asmr = setupAsmr({ get: () => session.asmr, beforeEdit: checkpoint, busy: 
   muteImported(value) { session.bwgMuted = value; engine.update(session); },
 });
 preview = new AsmrPreview(() => asmr.refreshPreview());
+const dynamics = setupOutputDynamicsControls($('#transport'), { get: () => session.dynamics,
+  busy: () => busy || musicBusy || backgroundBusy,
+  edit(profile) {
+    checkpoint(); void preview?.stop().catch(report);
+    if (profile === undefined) delete session.dynamics; else session.dynamics = profile;
+    session.version = 2; engine.update(session);
+  } });
 document.addEventListener('visibilitychange', () => { if (document.hidden) void preview?.stop().catch(report); });
 window.addEventListener('pagehide', () => { void preview?.stop().catch(report); });
 const modes = setupListeningMode({ get: () => listeningMode(session), change: setListeningMode, busy: () => busy || musicBusy || backgroundBusy });
@@ -151,6 +159,7 @@ function setName(name: string): void {
 }
 function renderSession(): void {
   setName(session.name);
+  dynamics.refresh();
   $<HTMLInputElement>('#master').max = session.volumeBoost ? '2' : '1';
   $<HTMLInputElement>('#volume-boost').checked = !!session.volumeBoost;
   $<HTMLInputElement>('#preset-name').value = session.name;
@@ -170,6 +179,7 @@ function renderTransport(): void {
   offline.update();
   timeline.update();
   asmr.transport();
+  dynamics.transport();
   modes.refresh();
   const playing = engine.playing;
   const playLabel = `<span aria-hidden="true">${playing ? '■' : '▶'}</span><span>${playing ? 'Stop listening' : 'Start listening'}</span>`;

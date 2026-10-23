@@ -10,6 +10,7 @@ import { listeningMode, modeGains } from '../listening-mode';
 import { asmrAudioReady, prepareAsmrAudio } from './asmr-phrase-source';
 import { asmrBackgroundGain } from '../asmr-focus';
 import { AsmrCueTimeline, visualOutputTime, type VisualTimeline } from './visual-timing';
+import { OutputDynamics } from './output-dynamics';
 
 export interface AudioCaptureLease {
   stream: MediaStream;
@@ -23,6 +24,7 @@ export class AudioEngine {
   private master?: GainNode;
   private gate?: GainNode;
   private transport?: GainNode;
+  private dynamics?: OutputDynamics;
   private musicGain?: GainNode;
   private toneBus?: GainNode;
   private voices = new Map<string, ToneVoice>();
@@ -140,14 +142,9 @@ export class AudioEngine {
       if (duration > 0) this.sequenceEnd = context.currentTime + duration;
       this.gate.gain.setValueAtTime(0, context.currentTime);
       this.gate.gain.linearRampToValueAtTime(1, context.currentTime + (duration > 0 ? Math.min(0.5, duration / 4) : 0.5));
-      const compressor = context.createDynamicsCompressor();
-      compressor.threshold.value = -10;
-      compressor.knee.value = 6;
-      compressor.ratio.value = 12;
-      compressor.attack.value = 0.003;
-      compressor.release.value = 0.25;
+      this.dynamics = new OutputDynamics(context, session.dynamics);
       this.analysis = new VisualAnalysis(context);
-      this.master.connect(compressor).connect(this.gate).connect(this.transport).connect(this.analysis.node).connect(context.destination);
+      this.master.connect(this.dynamics.node).connect(this.gate).connect(this.transport).connect(this.analysis.node).connect(context.destination);
       if (duration > 0 && !this.continues) {
         this.endAt = context.currentTime + duration;
         this.gate.gain.setValueAtTime(1, this.endAt - Math.min(2, duration / 2));
@@ -195,6 +192,7 @@ export class AudioEngine {
       session.asmr?.layers.map(layer => [layer.id, layer.sound, !!layer.spatial, layer.muted, layer.solo, layer.level > 0])]);
     if (cueSignature !== this.cueSignature) { this.cueTimeline.clear(); this.cueSignature = cueSignature; }
     smooth(this.master.gain, session.master, context.currentTime);
+    this.dynamics?.update(session.dynamics);
     this.visualGain = session.master;
     if (this.toneBus) smooth(this.toneBus.gain, session.tonesMuted ? 0 : gains.tones, context.currentTime);
     for (const [id, voice] of this.voices) {
@@ -383,6 +381,7 @@ export class AudioEngine {
     for (const capture of this.captures) capture.dispose();
     await context.close();
     this.asmr?.dispose(); this.asmr = undefined;
+    this.dynamics?.dispose(); this.dynamics = undefined;
     this.voices.clear();
     this.bwgNode?.disconnect();
     this.bwgNode = undefined;
