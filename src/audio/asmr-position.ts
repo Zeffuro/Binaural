@@ -36,7 +36,8 @@ export class AsmrPosition {
     this.output = context.createGain(); this.nativeGain = context.createGain();
     this.panner.connect(this.nativeGain).connect(this.output).connect(output);
     this.sine = context.createOscillator(); this.cosine = context.createOscillator(); this.harmonic = context.createOscillator();
-    if (offsetSeconds > 0) {
+    // Custom profiles use one oscillator algorithm at full and section origins.
+    if (offsetSeconds > 0 || settings.profile) {
       setSinePhase(context, this.sine, phaseCycles(1 / period, offsetSeconds));
       setSinePhase(context, this.cosine, phaseCycles(1 / period, offsetSeconds) + .25);
       setSinePhase(context, this.harmonic, phaseCycles(2 / period, offsetSeconds));

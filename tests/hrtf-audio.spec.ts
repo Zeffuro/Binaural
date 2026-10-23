@@ -252,33 +252,74 @@ test('all custom trajectories preserve oscillator phase and FIR history across o
   test.setTimeout(120_000);
   await page.goto('/');
   const result = await page.evaluate(async () => {
-    const loaderPath = '/src/audio/hrtf-audio.ts', positionPath = '/src/audio/asmr-position.ts';
+    const loaderPath = '/src/audio/hrtf-audio.ts', positionPath = '/src/audio/asmr-position.ts', spatialPath = '/src/asmr-spatial.ts';
     const { prepareHrtfAudio } = await import(loaderPath), { AsmrPosition } = await import(positionPath);
+    const { sampleSpatialPosition } = await import(spatialPath);
     const results = [], rate = 48000, offset = 1.28, count = rate * 3;
     const samples = new Float32Array(count); let seed = 617;
     for (let i = 0; i < count; i++) { seed = Math.imul(seed, 1664525) + 1013904223 | 0; samples[i] = seed / 2147483648 * .02; }
     for (const motion of ['still', 'orbit', 'sweep', 'approach', 'rise', 'figure-eight']) {
       const spatial = { profile: 'sadie-d1', azimuth: 170, elevation: 50, distance: .7, motion };
-      const render = async (start: number) => {
-        const length = count - Math.round(start * rate), context = new OfflineAudioContext(2, length, rate);
-        await prepareHrtfAudio(context, { layers: [{ spatial }] });
+      const render = async (start: number, custom = true) => {
+        const length = count - Math.round(start * rate), context = new OfflineAudioContext(5, length, rate);
+        const renderSpatial = custom ? spatial : { ...spatial, profile: undefined };
+        await prepareHrtfAudio(context, { layers: [{ spatial: renderSpatial }] });
         const source = context.createBufferSource(), buffer = context.createBuffer(1, count, rate);
         buffer.getChannelData(0).set(samples); source.buffer = buffer;
-        const position = new AsmrPosition(context, source, context.destination, spatial, 2, undefined, start);
+        const sink = context.createGain(), merger = context.createChannelMerger(5), splitter = context.createChannelSplitter(2);
+        const position = new AsmrPosition(context, source, sink, renderSpatial, 2, undefined, start);
+        sink.connect(splitter); splitter.connect(merger, 0, 0); splitter.connect(merger, 1, 1);
+        const centers = [position.panner.positionX, position.panner.positionY, position.panner.positionZ].map((parameter: AudioParam, axis: number) => {
+          const constant = context.createConstantSource(); constant.offset.value = parameter.value;
+          constant.connect(merger, 0, axis + 2); constant.start(); return constant;
+        });
+        position.matrix.forEach((coefficient: GainNode, index: number) => coefficient.connect(merger, 0, Math.floor(index / 3) + 2));
+        merger.connect(context.destination);
+        const types = [position.sine.type, position.cosine.type, position.harmonic.type];
         source.start(0, start); const output = await context.startRendering(); position.dispose();
-        return [output.getChannelData(0), output.getChannelData(1)];
+        centers.forEach(constant => { constant.stop(); constant.disconnect(); }); merger.disconnect();
+        return { audio: [output.getChannelData(0), output.getChannelData(1)],
+          coordinates: [output.getChannelData(2), output.getChannelData(3), output.getChannelData(4)], types };
       };
-      const full = await render(0), section = await render(offset); let max = 0, finite = true, power = 0;
-      for (let ear = 0; ear < 2; ear++) for (let i = 1024; i < section[ear].length; i++) {
-        max = Math.max(max, Math.abs(section[ear][i] - full[ear][i + Math.round(offset * rate)]));
-        finite &&= Number.isFinite(section[ear][i]); power += section[ear][i] ** 2;
+      const full = await render(0), section = await render(offset); let max = 0, finite = true, power = 0, squaredError = 0;
+      let maxFrame = 0, maxEar = 0, actual = 0, expected = 0;
+      const coordinateError = [0, 0, 0], fullAnalyticError = [0, 0, 0], sectionAnalyticError = [0, 0, 0];
+      for (let ear = 0; ear < 2; ear++) for (let i = 1024; i < section.audio[ear].length; i++) {
+        const reference = full.audio[ear][i + Math.round(offset * rate)], value = section.audio[ear][i], error = Math.abs(value - reference);
+        if (error > max) { max = error; maxFrame = i; maxEar = ear; actual = value; expected = reference; }
+        finite &&= Number.isFinite(value); power += value ** 2; squaredError += error ** 2;
       }
-      results.push({ motion, max, finite, power });
+      for (let frame = 1024; frame < section.audio[0].length; frame++) {
+        for (let axis = 0; axis < 3; axis++) coordinateError[axis] = Math.max(coordinateError[axis],
+          Math.abs(section.coordinates[axis][frame] - full.coordinates[axis][frame + Math.round(offset * rate)]));
+        if (frame % 32 === 0) {
+          const reference = sampleSpatialPosition(spatial, offset + frame / rate, 2);
+          (['x', 'y', 'z'] as const).forEach((axis, index) => {
+            fullAnalyticError[index] = Math.max(fullAnalyticError[index], Math.abs(full.coordinates[index][frame + Math.round(offset * rate)] - reference[axis]));
+            sectionAnalyticError[index] = Math.max(sectionAnalyticError[index], Math.abs(section.coordinates[index][frame] - reference[axis]));
+          });
+        }
+      }
+      let nativeControlBaseline;
+      if (motion === 'orbit') {
+        const originalFull = await render(0, false), originalSection = await render(offset, false), error = [0, 0, 0];
+        for (let frame = 1024; frame < originalSection.coordinates[0].length; frame++) for (let axis = 0; axis < 3; axis++) {
+          error[axis] = Math.max(error[axis], Math.abs(originalSection.coordinates[axis][frame] - originalFull.coordinates[axis][frame + Math.round(offset * rate)]));
+        }
+        nativeControlBaseline = { coordinateError: error, fullTypes: originalFull.types, sectionTypes: originalSection.types };
+      }
+      results.push({ motion, max, finite, power, relativeRms: Math.sqrt(squaredError / power), maxFrame, maxEar, actual, expected,
+        absoluteMaxFrame: maxFrame + Math.round(offset * rate), coordinateError, fullAnalyticError, sectionAnalyticError,
+        fullTypes: full.types, sectionTypes: section.types, nativeControlBaseline });
     }
     return results;
   });
-  for (const row of result) { expect(row.finite).toBe(true); expect(row.power).toBeGreaterThan(.01); expect(row.max).toBeLessThan(.00002); }
   await test.info().attach('trajectory-offset-pcm.json', { body: JSON.stringify(result, null, 2), contentType: 'application/json' });
+  for (const row of result) {
+    const diagnostic = JSON.stringify(row);
+    expect(row.finite, diagnostic).toBe(true); expect(row.power, diagnostic).toBeGreaterThan(.01); expect(row.max, diagnostic).toBeLessThan(.00002);
+    expect(row.fullTypes).toEqual(['custom', 'custom', 'custom']); expect(row.sectionTypes).toEqual(row.fullTypes);
+  }
 });
 
 test('profile changes crossfade paired filters while retaining the same input history', async ({ page }) => {
