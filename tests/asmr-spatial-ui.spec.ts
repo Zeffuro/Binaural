@@ -85,7 +85,7 @@ test('all 3D path choices share complete settings and saved figure eight reloads
   await expect(movement.locator('option')).toHaveText([
     'Stay in place', 'Orbit around your head', 'Side to side', 'Near and far', 'Up and down', 'Figure eight',
   ]);
-  await expect(page.locator('.asmr-position .fine-print').first()).toContainText('Distance limits');
+  await expect(page.locator('.asmr-position .fine-print').filter({ hasText: 'Distance limits' })).toHaveCount(1);
   await range(page.getByLabel('Sound 1 direction', { exact: true }), '65');
   await range(page.getByLabel('Sound 1 height', { exact: true }), '-25');
   await range(page.getByLabel('Sound 1 distance', { exact: true }), '.8');
