@@ -65,8 +65,8 @@ test('real HRTF graphs preserve full and sectioned WAV, FLAC, room and motion ex
     const diagnostic = JSON.stringify(item);
     expect(item.bytes).toBe(44 + 31 * 44100 * 4); expect(item.finite).toBe(true);
     expect(item.energy, diagnostic).toBeGreaterThan(1); expect(item.peak, diagnostic).toBeLessThan(1);
-    expect(item.peakError, diagnostic).toBeLessThan(item.motion === 'still' ? .00015 : .005);
-    expect(item.boundaryError, diagnostic).toBeLessThan(item.motion === 'still' ? .00015 : .005);
+    expect(item.peakError, diagnostic).toBeLessThan(.00015);
+    expect(item.boundaryError, diagnostic).toBeLessThan(.00015);
     expect(item.relativeRms, diagnostic).toBeLessThan(.025);
     if (item.motion === 'still') { expect(item.flacFrames).toBe(22050); expect(item.flacError, diagnostic).toBeLessThan(.00015); }
   }
@@ -184,8 +184,11 @@ test('@live stopping a pending HRTF preview prevents late adoption and failed lo
   await page.unroute('**/audio/hrtf/sadie-d1-*.bin');
   let fail = true;
   await page.route('**/audio/hrtf/sadie-h10-*.bin', route => fail ? route.fulfill({ status: 503, body: 'Unavailable' }) : route.continue());
-  await page.evaluate(async () => { const state = window as any; state.hrtfSession.asmr.layers[0].spatial.profile = 'sadie-h10';
-    await state.hrtfPreview.start(state.hrtfSession, state.hrtfSession.asmr.layers[0].id); });
+  const error = await page.evaluate(async () => { const state = window as any; state.hrtfSession.asmr.layers[0].spatial.profile = 'sadie-h10';
+    try { await state.hrtfPreview.start(state.hrtfSession, state.hrtfSession.asmr.layers[0].id); return 'Unexpected successful preview'; }
+    catch (failure) { return (failure as Error).message; } });
+  expect(error).toBe('HRTF profile could not be loaded. Please try again.');
+  expect(await page.evaluate(() => (window as any).hrtfPreview.state.phase)).toBe('idle');
   expect(await page.evaluate(() => (window as any).hrtfPreview.state.error)).toContain('HRTF profile could not be loaded');
   fail = false;
   await page.evaluate(async () => { const state = window as any; await state.hrtfPreview.start(state.hrtfSession, state.hrtfSession.asmr.layers[0].id); });

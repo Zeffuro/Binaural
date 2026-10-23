@@ -4,6 +4,7 @@ import { phaseCycles, setSinePhase } from './render-timing';
 import { preparedHrtfPack } from './hrtf-audio';
 import type { HrtfPack } from './hrtf-pack';
 import type { HrtfProfile } from '../hrtf-profiles';
+import { HrtfMotionClock } from './hrtf-motion';
 
 export class AsmrPosition {
   private mono: GainNode;
@@ -12,6 +13,10 @@ export class AsmrPosition {
   private nativeGain: GainNode;
   private customGain?: GainNode;
   private custom?: AudioWorkletNode;
+  private customMotion?: AudioWorkletNode;
+  private customSplitter?: ChannelSplitterNode;
+  private customMatrix: GainNode[] = [];
+  private motionClock!: HrtfMotionClock;
   private profile?: HrtfProfile;
   private profilePending = false;
   private queuedPack?: HrtfPack;
@@ -36,8 +41,7 @@ export class AsmrPosition {
     this.output = context.createGain(); this.nativeGain = context.createGain();
     this.panner.connect(this.nativeGain).connect(this.output).connect(output);
     this.sine = context.createOscillator(); this.cosine = context.createOscillator(); this.harmonic = context.createOscillator();
-    // Custom profiles use one oscillator algorithm at full and section origins.
-    if (offsetSeconds > 0 || settings.profile) {
+    if (offsetSeconds > 0) {
       setSinePhase(context, this.sine, phaseCycles(1 / period, offsetSeconds));
       setSinePhase(context, this.cosine, phaseCycles(1 / period, offsetSeconds) + .25);
       setSinePhase(context, this.harmonic, phaseCycles(2 / period, offsetSeconds));
@@ -46,20 +50,22 @@ export class AsmrPosition {
     [this.panner.positionX, this.panner.positionY, this.panner.positionZ].forEach((parameter, axis) => {
       [this.sine, this.cosine, this.harmonic].forEach((oscillator, component) => oscillator.connect(this.matrix[axis * 3 + component]).connect(parameter));
     });
-    if (settings.profile) {
-      this.createCustom(settings.profile);
-      this.nativeGain.gain.value = 0; this.customGain!.gain.value = 1;
-    }
     this.configure(settings, period, true);
     input.connect(this.mono).connect(this.panner);
     const startAt = context.currentTime;
+    this.motionClock = new HrtfMotionClock(period, offsetSeconds, startAt);
+    if (settings.profile) {
+      this.createCustom(settings.profile, startAt);
+      this.nativeGain.gain.value = 0; this.customGain!.gain.value = 1;
+      this.configure(settings, period, true);
+    }
     for (const oscillator of [this.sine, this.cosine, this.harmonic]) {
       oscillator.start(startAt);
       if (endAt !== undefined) oscillator.stop(Math.max(context.currentTime, endAt));
     }
   }
 
-  private createCustom(profile: HrtfProfile): void {
+  private createCustom(profile: HrtfProfile, editTime: number): void {
     const pack = preparedHrtfPack(this.context, profile);
     const node = new AudioWorkletNode(this.context, 'asmr-hrtf', {
       numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2],
@@ -69,16 +75,27 @@ export class AsmrPosition {
     this.custom = node; this.profile = profile;
     this.customGain = this.context.createGain(); this.customGain.gain.value = 0;
     this.mono.connect(node).connect(this.customGain).connect(this.output);
+    this.customMotion = new AudioWorkletNode(this.context, 'asmr-hrtf-motion', {
+      numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [3], channelInterpretation: 'discrete',
+      parameterData: { frequency: this.motionClock.frequency(editTime) },
+      processorOptions: { state: this.motionClock.snapshot(), originFrame: Math.round(editTime * this.context.sampleRate),
+        stopFrame: this.endAt === undefined ? undefined : Math.ceil(this.endAt * this.context.sampleRate) },
+    });
+    this.customSplitter = this.context.createChannelSplitter(3); this.customMotion.connect(this.customSplitter);
+    this.customMatrix = this.matrix.map(original => { const gain = this.context.createGain(); gain.gain.value = original.gain.value; return gain; });
     ['positionX', 'positionY', 'positionZ'].forEach((name, axis) => {
       node.parameters.get(name)!.value = [this.panner.positionX, this.panner.positionY, this.panner.positionZ][axis].value;
-      for (let component = 0; component < 3; component++) this.matrix[axis * 3 + component].connect(node.parameters.get(name)!);
+      for (let component = 0; component < 3; component++) {
+        this.customSplitter!.connect(this.customMatrix[axis * 3 + component], component);
+        this.customMatrix[axis * 3 + component].connect(node.parameters.get(name)!);
+      }
     });
     node.port.onmessage = event => {
       if (!event.data.profileApplied || this.disposed) return;
       this.profilePending = false;
       if (this.queuedPack) { const pack = this.queuedPack; this.queuedPack = undefined; this.sendProfile(pack); }
     };
-    node.onprocessorerror = () => {
+    node.onprocessorerror = this.customMotion.onprocessorerror = () => {
       if (this.disposed) return;
       this.output.gain.cancelScheduledValues(this.context.currentTime); this.output.gain.value = 0;
       this.dispose(); this.onFailure?.();
@@ -91,11 +108,11 @@ export class AsmrPosition {
     this.custom!.port.postMessage({ pack });
   }
 
-  private selectProfile(profile: HrtfProfile | undefined): void {
+  private selectProfile(profile: HrtfProfile | undefined, editTime: number): void {
     let warmup = 0;
     if (profile) {
       const pack = preparedHrtfPack(this.context, profile);
-      if (!this.custom) { this.createCustom(profile); warmup = pack.taps / this.context.sampleRate; }
+      if (!this.custom) { this.createCustom(profile, editTime); warmup = pack.taps / this.context.sampleRate; }
       else if (profile !== this.profile) { this.sendProfile(pack); this.profile = profile; }
     }
     if (!this.customGain) return;
@@ -109,18 +126,21 @@ export class AsmrPosition {
     if (!Number.isFinite(period) || period < 2 || period > 60) throw new Error('Invalid ASMR spatial motion period.');
   }
 
-  private configure(settings: AsmrSpatialSettings, period: number, initial = false): void {
+  private configure(settings: AsmrSpatialSettings, period: number, initial = false, editTime = this.context.currentTime): void {
     const path = spatialTrajectory(settings);
-    const set = (param: AudioParam, value: number) => {
+    const set = (param: AudioParam, value: number, custom = false) => {
       if (initial) param.value = value;
-      else smooth(param, value, this.context.currentTime);
+      else smooth(param, value, custom ? editTime : this.context.currentTime);
     };
     // Shared phases keep motion continuous through position and trajectory edits.
     [this.panner.positionX, this.panner.positionY, this.panner.positionZ].forEach((parameter, axis) => {
       const key = (['x', 'y', 'z'] as const)[axis]; set(parameter, path.center[key]);
-      if (this.custom) set(this.custom.parameters.get(['positionX', 'positionY', 'positionZ'][axis])!, path.center[key]);
+      if (this.custom) set(this.custom.parameters.get(['positionX', 'positionY', 'positionZ'][axis])!, path.center[key], true);
       [path.sine, path.cosine, path.harmonic].forEach((coefficient, component) => set(this.matrix[axis * 3 + component].gain, coefficient[key]));
+      if (this.customMatrix.length) [path.sine, path.cosine, path.harmonic].forEach((coefficient, component) => set(this.customMatrix[axis * 3 + component].gain, coefficient[key], true));
     });
+    if (!initial) this.motionClock.update(period, editTime);
+    if (this.customMotion) set(this.customMotion.parameters.get('frequency')!, 1 / period, true);
     for (const oscillator of [this.sine, this.cosine]) set(oscillator.frequency, 1 / period);
     set(this.harmonic.frequency, 2 / period);
   }
@@ -128,8 +148,10 @@ export class AsmrPosition {
   update(settings: AsmrSpatialSettings, period: number): void {
     if (this.disposed || (this.endAt !== undefined && this.context.currentTime >= this.endAt)) return;
     settings = parseAsmrSpatial(settings); this.checkPeriod(period);
-    this.selectProfile(settings.profile);
-    this.configure(settings, period);
+    const editTime = this.context.currentTime;
+    this.motionClock.update(period, editTime);
+    this.selectProfile(settings.profile, editTime);
+    this.configure(settings, period, false, editTime);
   }
 
   dispose(): void {
@@ -141,6 +163,11 @@ export class AsmrPosition {
       this.custom.onprocessorerror = null; this.custom.port.onmessage = null;
       this.custom.port.postMessage({ stop: true }); this.custom.port.close(); this.custom.disconnect();
     }
+    if (this.customMotion) {
+      this.customMotion.onprocessorerror = null; this.customMotion.port.postMessage({ stop: true });
+      this.customMotion.port.close(); this.customMotion.disconnect();
+    }
+    this.customSplitter?.disconnect(); this.customMatrix.forEach(gain => gain.disconnect());
     this.queuedPack = undefined; this.customGain?.disconnect();
     for (const node of [this.mono, this.panner, this.output, this.nativeGain, this.sine, this.cosine, this.harmonic, ...this.matrix]) node.disconnect();
   }

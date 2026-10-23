@@ -261,7 +261,7 @@ test('all custom trajectories preserve oscillator phase and FIR history across o
     for (const motion of ['still', 'orbit', 'sweep', 'approach', 'rise', 'figure-eight']) {
       const spatial = { profile: 'sadie-d1', azimuth: 170, elevation: 50, distance: .7, motion };
       const render = async (start: number, custom = true) => {
-        const length = count - Math.round(start * rate), context = new OfflineAudioContext(5, length, rate);
+        const length = start < 3 ? count - Math.round(start * rate) : Math.round(rate * .1), context = new OfflineAudioContext(5, length, rate);
         const renderSpatial = custom ? spatial : { ...spatial, profile: undefined };
         await prepareHrtfAudio(context, { layers: [{ spatial: renderSpatial }] });
         const source = context.createBufferSource(), buffer = context.createBuffer(1, count, rate);
@@ -269,14 +269,16 @@ test('all custom trajectories preserve oscillator phase and FIR history across o
         const sink = context.createGain(), merger = context.createChannelMerger(5), splitter = context.createChannelSplitter(2);
         const position = new AsmrPosition(context, source, sink, renderSpatial, 2, undefined, start);
         sink.connect(splitter); splitter.connect(merger, 0, 0); splitter.connect(merger, 1, 1);
-        const centers = [position.panner.positionX, position.panner.positionY, position.panner.positionZ].map((parameter: AudioParam, axis: number) => {
+        const parameters = custom ? ['positionX', 'positionY', 'positionZ'].map(name => position.custom.parameters.get(name)) :
+          [position.panner.positionX, position.panner.positionY, position.panner.positionZ];
+        const centers = parameters.map((parameter: AudioParam, axis: number) => {
           const constant = context.createConstantSource(); constant.offset.value = parameter.value;
           constant.connect(merger, 0, axis + 2); constant.start(); return constant;
         });
-        position.matrix.forEach((coefficient: GainNode, index: number) => coefficient.connect(merger, 0, Math.floor(index / 3) + 2));
+        (custom ? position.customMatrix : position.matrix).forEach((coefficient: GainNode, index: number) => coefficient.connect(merger, 0, Math.floor(index / 3) + 2));
         merger.connect(context.destination);
-        const types = [position.sine.type, position.cosine.type, position.harmonic.type];
-        source.start(0, start); const output = await context.startRendering(); position.dispose();
+        const types = custom ? Array(3).fill(position.customMotion ? 'worklet' : 'missing') : [position.sine.type, position.cosine.type, position.harmonic.type];
+        source.start(0, start < 3 ? start : 0); const output = await context.startRendering(); position.dispose();
         centers.forEach(constant => { constant.stop(); constant.disconnect(); }); merger.disconnect();
         return { audio: [output.getChannelData(0), output.getChannelData(1)],
           coordinates: [output.getChannelData(2), output.getChannelData(3), output.getChannelData(4)], types };
@@ -300,6 +302,13 @@ test('all custom trajectories preserve oscillator phase and FIR history across o
           });
         }
       }
+      const longOffset = 10800, longSection = await render(longOffset), longAnalyticError = [0, 0, 0];
+      for (let frame = 0; frame < longSection.coordinates[0].length; frame += 32) {
+        const reference = sampleSpatialPosition(spatial, longOffset + frame / rate, 2);
+        (['x', 'y', 'z'] as const).forEach((axis, index) => {
+          longAnalyticError[index] = Math.max(longAnalyticError[index], Math.abs(longSection.coordinates[index][frame] - reference[axis]));
+        });
+      }
       let nativeControlBaseline;
       if (motion === 'orbit') {
         const originalFull = await render(0, false), originalSection = await render(offset, false), error = [0, 0, 0];
@@ -310,7 +319,7 @@ test('all custom trajectories preserve oscillator phase and FIR history across o
       }
       results.push({ motion, max, finite, power, relativeRms: Math.sqrt(squaredError / power), maxFrame, maxEar, actual, expected,
         absoluteMaxFrame: maxFrame + Math.round(offset * rate), coordinateError, fullAnalyticError, sectionAnalyticError,
-        fullTypes: full.types, sectionTypes: section.types, nativeControlBaseline });
+        fullTypes: full.types, sectionTypes: section.types, longAnalyticError, nativeControlBaseline });
     }
     return results;
   });
@@ -318,7 +327,9 @@ test('all custom trajectories preserve oscillator phase and FIR history across o
   for (const row of result) {
     const diagnostic = JSON.stringify(row);
     expect(row.finite, diagnostic).toBe(true); expect(row.power, diagnostic).toBeGreaterThan(.01); expect(row.max, diagnostic).toBeLessThan(.00002);
-    expect(row.fullTypes).toEqual(['custom', 'custom', 'custom']); expect(row.sectionTypes).toEqual(row.fullTypes);
+    expect(row.fullTypes).toEqual(['worklet', 'worklet', 'worklet']); expect(row.sectionTypes).toEqual(row.fullTypes);
+    expect(Math.max(...row.coordinateError), diagnostic).toBeLessThan(.000002);
+    expect(Math.max(...row.fullAnalyticError, ...row.sectionAnalyticError, ...row.longAnalyticError), diagnostic).toBeLessThan(.000002);
   }
 });
 
@@ -382,6 +393,9 @@ test('@live custom profile edits reuse bounded nodes and a processor failure sil
       for (let i = 0; i < 30; i++) {
         position.update({ ...base, ...(i % 3 === 0 ? {} : { profile: i % 3 === 1 ? 'sadie-d1' : 'sadie-h10' }) }, 2);
       }
+      const deadline = performance.now() + 2000;
+      while ((position.profilePending || position.queuedPack) && performance.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10));
+      const protocolIdle = !position.profilePending && !position.queuedPack;
       await new Promise(resolve => setTimeout(resolve, 250));
       const values = new Float32Array(1024); analyser.getFloatTimeDomainData(values);
       const energy = values.reduce((sum, value) => sum + value ** 2, 0), stableOutput = position.outputNode === output;
@@ -395,12 +409,89 @@ test('@live custom profile edits reuse bounded nodes and a processor failure sil
       analyser.getFloatTimeDomainData(values);
       const silent = values.every(value => value === 0), disposed = position.disposed;
       position.dispose(); position.dispose();
-      return { worklets: worklets.length, panners, energy, stableOutput, processorFailed, beforeFailure, failures, silent, disposed };
+      return { worklets: worklets.length, panners, energy, stableOutput, protocolIdle, processorFailed, beforeFailure, failures, silent, disposed };
     } finally {
       position?.dispose(); source?.stop(); window.AudioWorkletNode = original; await context.close();
     }
   });
-  expect(result.worklets).toBe(1); expect(result.panners).toBe(1); expect(result.stableOutput).toBe(true);
+  await test.info().attach('hrtf-live-disposal.json', { body: JSON.stringify(result, null, 2), contentType: 'application/json' });
+  expect(result.worklets).toBe(2); expect(result.panners).toBe(1); expect(result.stableOutput).toBe(true); expect(result.protocolIdle).toBe(true);
   expect(result.energy).toBeGreaterThan(.000001); expect(result.beforeFailure).toBe(0);
   expect(result.processorFailed).toBe(true); expect(result.failures).toBe(1); expect(result.silent).toBe(true); expect(result.disposed).toBe(true);
+});
+
+test('@live late custom motion starts at the audio frame and stays continuous through period and profile edits', async ({ page }) => {
+  test.setTimeout(60_000); await page.goto('/'); await page.locator('h1').click();
+  const result = await page.evaluate(async () => {
+    const loaderPath = '/src/audio/hrtf-audio.ts', positionPath = '/src/audio/asmr-position.ts';
+    const { prepareHrtfAudio } = await import(loaderPath), { AsmrPosition } = await import(positionPath);
+    const context = new AudioContext(), source = context.createOscillator(), level = context.createGain();
+    let position: any, observer: AudioWorkletNode | undefined, zero: GainNode | undefined, moduleUrl = '';
+    const wait = async (seconds: number) => {
+      const target = context.currentTime + seconds, deadline = performance.now() + 5000;
+      while (context.currentTime < target && performance.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10));
+      if (context.currentTime < target) throw new Error('Audio clock did not advance.');
+    };
+    try {
+      await prepareHrtfAudio(context, { layers: ['sadie-d1', 'sadie-h10'].map(profile => ({ spatial: { profile } })) });
+      await context.resume(); source.frequency.value = 400; level.gain.value = .01; source.connect(level); source.start();
+      const base = { azimuth: 60, elevation: 25, distance: .6, motion: 'orbit' };
+      position = new AsmrPosition(context, level, context.destination, base, 2);
+      await wait(.12); position.update(base, 6); await wait(.04);
+      position.update({ ...base, profile: 'sadie-d1' }, 3);
+      const state = position.motionClock.snapshot(), createdAt = context.currentTime, motionNode = position.customMotion, output = position.outputNode;
+      moduleUrl = URL.createObjectURL(new Blob([`
+        class Capture extends AudioWorkletProcessor {
+          constructor() { super(); this.values = Array.from({length:3}, () => new Float32Array(Math.round(sampleRate*.4))); this.used=0; this.frame=-1; this.done=false; }
+          process(inputs) {
+            if(this.done || !inputs[0] || inputs[0].length<3) return true;
+            if(this.frame<0) this.frame=currentFrame;
+            const length=Math.min(inputs[0][0].length,this.values[0].length-this.used);
+            for(let channel=0;channel<3;channel++) this.values[channel].set(inputs[0][channel].subarray(0,length),this.used);
+            this.used+=length;
+            if(this.used===this.values[0].length) { this.done=true; this.port.postMessage({frame:this.frame,rate:sampleRate,channels:this.values},this.values.map(value=>value.buffer)); }
+            return true;
+          }
+        }
+        registerProcessor('hrtf-motion-capture',Capture);
+      `], { type: 'text/javascript' }));
+      await context.audioWorklet.addModule(moduleUrl);
+      observer = new AudioWorkletNode(context, 'hrtf-motion-capture', {
+        numberOfInputs: 1, numberOfOutputs: 1, channelCount: 3, channelCountMode: 'explicit', channelInterpretation: 'discrete', outputChannelCount: [1],
+      });
+      const captured = new Promise<{ frame: number; rate: number; channels: Float32Array[] }>((resolve, reject) => {
+        observer!.port.onmessage = event => resolve(event.data); setTimeout(() => reject(new Error('Motion capture did not complete.')), 5000);
+      });
+      zero = context.createGain(); zero.gain.value = 0; position.customMotion.connect(observer); observer.connect(zero).connect(context.destination);
+      await wait(.08); position.update({ ...base, profile: 'sadie-h10' }, 8);
+      await wait(.08); position.update(base, 4);
+      await wait(.08); position.update({ ...base, profile: 'sadie-d1' }, 2.5);
+      const data = await captured;
+      const elapsed = Math.max(0, data.frame / data.rate - state.time);
+      const cycles = state.phase + state.target * elapsed + (state.from - state.target) * .035 * (1 - Math.exp(-elapsed / .035));
+      const firstError = Math.max(Math.abs(data.channels[0][0] - Math.sin(2 * Math.PI * cycles)), Math.abs(data.channels[1][0] - Math.cos(2 * Math.PI * cycles)));
+      const phaseIntegrationBound = 2 * Math.PI * Math.abs((state.from - state.target) * (1 - Math.exp(-elapsed / .035))) / data.rate;
+      let maxStep = 0, maxCircleError = 0, harmonicError = 0, finite = true;
+      for (let frame = 1; frame < data.channels[0].length; frame++) {
+        const sine = data.channels[0][frame], cosine = data.channels[1][frame], previousSine = data.channels[0][frame - 1], previousCosine = data.channels[1][frame - 1];
+        maxStep = Math.max(maxStep, Math.abs(Math.atan2(sine * previousCosine - cosine * previousSine, sine * previousSine + cosine * previousCosine)));
+        maxCircleError = Math.max(maxCircleError, Math.abs(sine ** 2 + cosine ** 2 - 1));
+        harmonicError = Math.max(harmonicError, Math.abs(data.channels[2][frame] - 2 * sine * cosine));
+        finite &&= Number.isFinite(sine + cosine + data.channels[2][frame]);
+      }
+      return { firstError, phaseIntegrationBound, maxStep, maxCircleError, harmonicError, finite, rate: data.rate, createdAt,
+        captureAt: data.frame / data.rate, state, customReused: position.customMotion === motionNode, output: position.outputNode === output };
+    } finally {
+      position?.dispose(); observer?.disconnect(); observer?.port.close(); zero?.disconnect(); source.stop();
+      if (moduleUrl) URL.revokeObjectURL(moduleUrl); await context.close();
+    }
+  });
+  await test.info().attach('hrtf-live-motion-continuity.json', { body: JSON.stringify(result, null, 2), contentType: 'application/json' });
+  const diagnostic = JSON.stringify(result);
+  expect(result.finite, diagnostic).toBe(true);
+  // A monotone frequency ramp's sampled integral differs by at most one sample of its frequency change.
+  expect(result.firstError, diagnostic).toBeLessThan(result.phaseIntegrationBound + .000002);
+  expect(result.maxStep, diagnostic).toBeLessThan(2 * Math.PI * .5 / result.rate + .000002);
+  expect(result.maxCircleError, diagnostic).toBeLessThan(.000001); expect(result.harmonicError, diagnostic).toBeLessThan(.000001);
+  expect(result.customReused).toBe(true); expect(result.output).toBe(true);
 });
