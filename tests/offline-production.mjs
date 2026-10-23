@@ -54,11 +54,13 @@ try {
     for (const [name, launcher] of [['chromium', chromium], ['firefox', firefox]]) {
       mount = prefix; revision = ''; failAsset = false; disconnected = false;
       const browser = await launcher.launch(browserLaunchOptions(name));
+      let page;
+      const errors = [], failedRequests = [];
       try {
         const context = await browser.newContext();
-        const page = await context.newPage();
-        const errors = [];
+        page = await context.newPage();
         page.on('pageerror', error => errors.push(error.message));
+        page.on('requestfailed', request => failedRequests.push({ url: request.url(), error: request.failure()?.errorText }));
         await page.goto(origin + prefix);
         await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true);
         await page.locator('.offline-tools summary').click();
@@ -149,15 +151,32 @@ try {
         await page.locator('#import-file').setInputFiles({ name: 'synthetic.bwg', mimeType: 'application/octet-stream',
           buffer: Buffer.from(makeBwgFixture([{ voices: 1, length: 120, repeats: 1 }])) });
         await page.getByRole('button', { name: 'Load imported session' }).click();
+        await expect(page.getByRole('dialog', { name: 'Review BWGen import', exact: true })).toHaveCount(0);
+        await expect(page.locator('#playing-title')).toHaveText('Synthetic compatibility fixture');
+        await expect(page.locator('#minutes')).toHaveValue('2');
         await expect(page.getByLabel('Enable light triggers', { exact: true })).not.toBeChecked();
+        await page.evaluate(() => {
+          window.offlineExportWorkers = [];
+          // Short exports can terminate a worker before the debugger attaches to it.
+          window.Worker = new Proxy(window.Worker, { construct(target, args, newTarget) {
+            const worker = Reflect.construct(target, args, newTarget);
+            window.offlineExportWorkers.push(String(args[0])); return worker;
+          } });
+        });
         await page.locator('#render-audio').click();
         const nativeExport = page.getByRole('dialog', { name: 'Export audio', exact: true });
         await nativeExport.getByLabel('Duration in seconds', { exact: true }).fill('1');
-        const [nativeWorker, nativeDownload] = await Promise.all([page.waitForEvent('worker'), page.waitForEvent('download'),
-          nativeExport.getByRole('button', { name: 'Render WAV', exact: true }).click()]);
-        const workerPath = new URL(nativeWorker.url()).pathname;
+        const [nativeDownload] = await Promise.all([page.waitForEvent('download'),
+          nativeExport.getByRole('button', { name: 'Render WAV', exact: true }).click()]).catch(async error => {
+            const details = await page.evaluate(() => ({ export: document.querySelector('#audio-export-status')?.textContent,
+              notice: document.querySelector('#notice')?.textContent, workers: window.offlineExportWorkers }));
+            throw new Error(`Native export: ${JSON.stringify(details)}`, { cause: error });
+          });
+        const nativeWorker = await page.evaluate(() => window.offlineExportWorkers.find(url => /\/bwg-export-worker-/.test(url)));
+        expect(nativeWorker, 'Native WAV must use the offline BWGen worker').toBeTruthy();
+        const workerPath = new URL(nativeWorker).pathname;
         expect(workerPath).toMatch(/\/assets\/bwg-export-worker-[^/]+\.js$/);
-        expect(nativeWorker.url().startsWith(origin + prefix)).toBe(true);
+        expect(nativeWorker.startsWith(origin + prefix)).toBe(true);
         expect(cached).toContain(workerPath);
         expectShortWav(await readFile(await nativeDownload.path()));
         await page.locator('#music-file').setInputFiles({ name: 'local-export.wav', mimeType: 'audio/wav', buffer: await readFile(await nativeDownload.path()) });
@@ -167,11 +186,12 @@ try {
         await flacExport.getByLabel('File format').selectOption('flac');
         await expect(flacExport.getByLabel('Include local music')).toBeChecked();
         await flacExport.getByLabel('Duration in seconds').fill('1');
-        const [flacWorker, flacDownload] = await Promise.all([
-          page.waitForEvent('worker', worker => /\/flac-export-worker-/.test(worker.url())), page.waitForEvent('download'),
+        const [flacDownload] = await Promise.all([page.waitForEvent('download'),
           flacExport.getByRole('button', { name: 'Render FLAC', exact: true }).click()]);
-        expect(flacWorker.url().startsWith(origin + prefix)).toBe(true);
-        expect(cached).toContain(new URL(flacWorker.url()).pathname);
+        const flacWorker = await page.evaluate(() => window.offlineExportWorkers.find(url => /\/flac-export-worker-/.test(url)));
+        expect(flacWorker, 'FLAC must use its offline encoder worker').toBeTruthy();
+        expect(flacWorker.startsWith(origin + prefix)).toBe(true);
+        expect(cached).toContain(new URL(flacWorker).pathname);
         expect(cached.some(path => /\/libflac\.wasm-/.test(path))).toBe(true);
         const flac = await readFile(await flacDownload.path());
         expect(flacDownload.suggestedFilename()).toMatch(/\.flac$/);
@@ -293,6 +313,13 @@ try {
         expect(await page.evaluate(() => caches.has('unrelated-app-cache'))).toBe(true);
         expect(errors).toEqual([]);
         console.log(`${name} ${prefix}: complete offline assets/scenes/worklet/share, native BWGen WAV/export worker, recorded Ogg playback, playback-safe intertab update, waiting old-tab retention, failed/successful rollback and cache isolation passed`);
+      } catch (error) {
+        const state = await page?.evaluate(() => ({ status: document.querySelector('#status')?.textContent,
+          notice: document.querySelector('#notice')?.textContent, clock: document.querySelector('#clock')?.textContent,
+          export: document.querySelector('#audio-export-status')?.textContent, workers: window.offlineExportWorkers,
+          startDisabled: document.querySelector('#play')?.disabled })).catch(() => undefined);
+        console.error(`${name} ${prefix}: ${JSON.stringify({ state, errors, failedRequests: failedRequests.slice(-20) })}`);
+        throw error;
       } finally { await browser.close(); }
     }
   }
