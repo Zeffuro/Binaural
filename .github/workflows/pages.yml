@@ -62,7 +62,7 @@ jobs:
         env:
           PLAYWRIGHT_HTML_OPEN: never
       - name: Check ASMR playback, gestures and discovery
-        run: xvfb-run -a node scripts/test-browser.mjs --full tests/asmr-phrases.spec.ts tests/asmr-variation-ui.spec.ts tests/asmr-cues.spec.ts tests/asmr-gestures.spec.ts tests/asmr-library.spec.ts tests/visual-timing.spec.ts tests/experience.spec.ts --forbid-only --workers=1 --reporter=list,html
+        run: xvfb-run -a node scripts/test-browser.mjs --full tests/asmr-phrases.spec.ts tests/asmr-variation-ui.spec.ts tests/asmr-cues.spec.ts tests/asmr-gestures.spec.ts tests/asmr-library.spec.ts tests/visual-timing.spec.ts tests/experience.spec.ts tests/session-experience.spec.ts --forbid-only --workers=1 --reporter=list,html
         env:
           PLAYWRIGHT_HTML_OPEN: never
       - name: Check listening workspace and visual controls
