@@ -1,6 +1,6 @@
 interface AudioState {
   playing: boolean; paused: boolean; busy: boolean; muted: boolean;
-  clock: string; name: string; volume: number;
+  clock: string; name: string; volume: number; volumeBoost: boolean;
 }
 
 export function setupImmersiveAudio(actions: { playPause(): void; stop(): void; mute(): void; volume(value: number): void }) {
@@ -27,6 +27,7 @@ export function setupImmersiveAudio(actions: { playPause(): void; stop(): void; 
       play.disabled = state.busy; stop.disabled = state.busy || !state.playing; mute.disabled = state.busy;
       volume.disabled = state.busy;
       mute.textContent = state.muted ? 'Unmute tones' : 'Mute tones'; mute.setAttribute('aria-pressed', String(state.muted));
+      volume.max = state.volumeBoost ? '2' : '1';
       volume.value = String(state.volume); bar.querySelector('output')!.textContent = `${Math.round(state.volume * 100)}%`;
       volume.setAttribute('aria-valuetext', `${Math.round(state.volume * 100)}%`);
     }

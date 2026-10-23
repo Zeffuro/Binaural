@@ -36,6 +36,76 @@ test('ASMR variation migrates safely, rejects malformed values and plans bounded
   expect(result.bags.every((size: number) => size === 3)).toBe(true);
 });
 
+test('seeded turn bags avoid boundary repeats, prefer different selected families and remain bounded at huge indices', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const path = '/src/audio/asmr-phrases.ts', sourcePath = '/src/audio/asmr-phrase-source.ts', statePath = '/src/asmr-state.ts';
+    const { asmrTurn } = await import(path), { phraseConfig } = await import(sourcePath), { makeAsmrLayer } = await import(statePath);
+    let repeated = 0, missing = 0, familyRepeats = 0, changed = 0;
+    const families = ['brush', 'brush', 'tap', 'tap', 'follow', 'follow'];
+    const sounds = ['brush', 'comb', 'wood', 'glass', 'air', 'recorded-spray'];
+    for (const seed of [1, 2, 731, 2147483647]) for (let size = 1; size <= 6; size++) {
+      const eligible = Array.from({ length: size }, (_, index) => index * 2);
+      for (const cycle of [0, 1, 2, 127, 4294967295, 1000000000000]) {
+        const turns = Array.from({ length: size * 2 }, (_, index) => asmrTurn(seed, cycle * size + index, eligible));
+        if (new Set(turns.slice(0, size)).size !== size || new Set(turns.slice(size)).size !== size) missing++;
+        for (let index = 1; index < turns.length; index++) if (size > 1 && turns[index] === turns[index - 1]) repeated++;
+      }
+      for (let index = 0; index < 120; index++) {
+        if (asmrTurn(seed, index, eligible) !== asmrTurn(seed + 1, index, eligible)) changed++;
+      }
+    }
+    for (const seed of [1, 731, 2147483647]) {
+      const eligible = [0, 1, 2, 3, 4, 5];
+      for (const cycle of [0, 1, 127, 1000000000000]) {
+        const turns = Array.from({ length: 30 }, (_, index) => asmrTurn(seed, cycle * 6 + index, eligible, families, sounds));
+        for (let index = 1; index < turns.length; index++) if (families[turns[index]!] === families[turns[index - 1]!]) familyRepeats++;
+      }
+    }
+    const settings = { level: 1, layers: [makeAsmrLayer('brush'), makeAsmrLayer('comb'), makeAsmrLayer('wood'), makeAsmrLayer('air')] };
+    settings.layers[1].muted = true; settings.layers[2].level = 0;
+    const config = phraseConfig(settings, 0), none = asmrTurn(731, 1000000000000, []);
+    return { repeated, missing, familyRepeats, changed, none, eligible: config.eligible,
+      selectedFamilies: config.eligible.map((ordinal: number) => config.families[ordinal]),
+      selectedSounds: config.eligible.map((ordinal: number) => config.sounds[ordinal]) };
+  });
+  expect(result.repeated).toBe(0); expect(result.missing).toBe(0); expect(result.familyRepeats).toBe(0);
+  expect(result.changed).toBeGreaterThan(100); expect(result.none).toBeUndefined(); expect(result.eligible).toEqual([0, 3]);
+  expect(result.selectedFamilies).toEqual(['brush', 'follow']); expect(result.selectedSounds).toEqual(['brush', 'air']);
+});
+
+test('adjacent phrases rotate source regions, variants, rates and quiet gaps without requiring prior playback', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const phrasePath = '/src/audio/asmr-phrases.ts', variationPath = '/src/asmr-variation.ts';
+    const { planAsmrPhrase } = await import(phrasePath), { defaultAsmrVariation } = await import(variationPath);
+    const variation = { ...defaultAsmrVariation(), mode: 'natural', amount: .8 };
+    const config = { variation, ordinal: 0, eligible: [0] };
+    let repeats = 0, offsetDistance = 1, rateDistance = 1, leadingDistance = 1, trailingDistance = 1, reproduced = true;
+    for (const first of [0, 127, 4294967295, 1000000000000]) {
+      const plans = Array.from({ length: 240 }, (_, index) => planAsmrPhrase(config, first + index, 12));
+      for (let index = 1; index < plans.length; index++) {
+        const before = plans[index - 1], after = plans[index], offset = Math.abs(before.offset - after.offset) / 12;
+        if (before.variant === after.variant) repeats++;
+        offsetDistance = Math.min(offsetDistance, offset, 1 - offset);
+        rateDistance = Math.min(rateDistance, Math.abs(before.rate - after.rate));
+        if (first === 0) {
+          const gap = (phrase: typeof before) => variation.phraseSeconds - (phrase.start - phrase.cell * variation.phraseSeconds + phrase.duration);
+          leadingDistance = Math.min(leadingDistance, Math.abs((before.start - before.cell * variation.phraseSeconds) - (after.start - after.cell * variation.phraseSeconds)));
+          trailingDistance = Math.min(trailingDistance, Math.abs(gap(before) - gap(after)));
+        }
+        reproduced &&= JSON.stringify(after) === JSON.stringify(planAsmrPhrase(config, after.cell, 12));
+      }
+    }
+    const zero = planAsmrPhrase({ ...config, variation: { ...variation, amount: 0 } }, 99, 12);
+    return { repeats, offsetDistance, rateDistance, leadingDistance, trailingDistance, reproduced, zero };
+  });
+  expect(result.repeats).toBe(0); expect(result.offsetDistance).toBeGreaterThanOrEqual(.049999);
+  expect(result.rateDistance).toBeGreaterThanOrEqual(.019199); expect(result.leadingDistance).toBeGreaterThan(.1151);
+  expect(result.trailingDistance).toBeGreaterThan(.2207); expect(result.reproduced).toBe(true);
+  expect(result.zero.rate).toBe(1); expect(result.zero.gain).toBe(1); expect(result.zero.active).toBe(true);
+});
+
 test('shared phrase renderer preserves exact stereo PCM at fractional rates, arbitrary section starts, quiet gaps and long turns', async ({ page }) => {
   await page.goto('/');
   const result = await page.evaluate(async () => {

@@ -80,9 +80,11 @@ h2 { font-family: 'Manrope', sans-serif; font-weight: 600; font-size: 17px; lett
 .play-button.is-playing { background: #5d6d50; }
 .clock { font-family: 'Manrope', sans-serif; font-size: 24px; letter-spacing: -1px; font-variant-numeric: tabular-nums; }
 .timer-caption { font-size: 11px; color: #8b947f; max-width: 35px; line-height: 1.5; }
-.master-row { display: flex; gap: 13px; align-items: center; }
+.master-row { display: flex; gap: 13px; align-items: center; flex-wrap: wrap; }
 .master-row label { font-size: 11px; color: #71836c; white-space: nowrap; }
-.master-row input { flex: 1; }
+.master-row > input { flex: 1; min-width: 80px; }
+.master-row .volume-boost { display: inline-flex; gap: 5px; align-items: center; }
+.volume-boost input { margin: 0; }
 output { font-size: 11px; color: #78886d; min-width: 27px; text-align: right; }
 .listening-note { margin: 18px 0 0; color: #839078; font-size: 11px; line-height: 1.6; }
 .section-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 19px; }

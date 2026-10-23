@@ -22,6 +22,7 @@
     "tests/asmr-focus.spec.ts",
     "tests/asmr-phrases.spec.ts",
     "tests/asmr-cues.spec.ts",
+    "tests/visual-timing.spec.ts",
     "tests/asmr-gestures.spec.ts",
     "tests/asmr-variation-ui.spec.ts",
     "tests/asmr-visuals.spec.ts",

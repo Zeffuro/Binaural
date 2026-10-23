@@ -10,6 +10,48 @@ test('volume reaches 100 percent and survives saving', async ({ page }) => {
   await expect(page.getByLabel('Master volume')).toHaveValue('1');
 });
 
+test('optional volume boost survives save, share, JSON import and undo with matching immersive limits', async ({ page }) => {
+  await page.goto('/');
+  const boost = page.getByRole('checkbox', { name: 'Boost to 200%' });
+  const master = page.getByLabel('Master volume', { exact: true });
+  await expect(boost).not.toBeChecked(); await expect(master).toHaveAttribute('max', '1');
+  await boost.check(); await master.fill('2');
+  await expect(page.locator('#master-value')).toHaveText('200%');
+  for (const input of await page.locator('.immersive-volume input').all()) await expect(input).toHaveAttribute('max', '2');
+  await boost.uncheck(); await expect(master).toHaveValue('1');
+  await page.locator('#undo-edit').click();
+  await expect(boost).toBeChecked(); await expect(master).toHaveValue('2');
+  await page.getByRole('button', { name: 'Save to my presets' }).click();
+  const json = await page.evaluate(() => JSON.parse(localStorage.getItem('binaural.presets.v1')!)[0]);
+  expect(json).toMatchObject({ master: 2, volumeBoost: true });
+  await page.reload(); await page.locator('.saved-preset').click();
+  await expect(boost).toBeChecked(); await expect(master).toHaveValue('2');
+  await page.locator('#share-session').click();
+  const link = await page.getByRole('textbox', { name: 'Session link' }).inputValue();
+  await page.getByRole('button', { name: 'Close share', exact: true }).click();
+  await page.goto('/credits.html'); await page.goto(link);
+  await expect(master).toHaveValue('2'); await expect(boost).toBeChecked();
+  await boost.uncheck();
+  await page.locator('#import-file').setInputFiles({ name: 'boost.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(json)) });
+  await expect(master).toHaveValue('2'); await expect(boost).toBeChecked();
+  await boost.uncheck(); await expect(master).toHaveValue('1'); await expect(master).toHaveAttribute('max', '1');
+  for (const input of await page.locator('.immersive-volume input').all()) await expect(input).toHaveAttribute('max', '1');
+});
+
+test('boost parsing accepts only explicit booleans and bounds master gain', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const { initialSession, parseSession } = await import('/src/model.ts');
+    const session = initialSession(), rejected = [];
+    for (const values of [{ master: 2 }, { master: 2, volumeBoost: false }, { master: 2, volumeBoost: 'true' },
+      { volumeBoost: 1 }, { volumeBoost: null }, { master: 2.01, volumeBoost: true }, { master: -1, volumeBoost: true }]) {
+      try { parseSession({ ...session, ...values }); rejected.push(false); } catch { rejected.push(true); }
+    }
+    return { rejected, legacy: parseSession(session).volumeBoost ?? false, accepted: parseSession({ ...session, master: 2, volumeBoost: true }).master };
+  });
+  expect(result).toEqual({ rejected: Array(7).fill(true), legacy: false, accepted: 2 });
+});
+
 test('pause freezes audio timer, resumes, and can stop while paused', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Start listening' }).click();

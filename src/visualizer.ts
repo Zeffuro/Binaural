@@ -1,4 +1,5 @@
 import type { VisualFrame } from './audio/visual-analysis';
+import type { VisualTimeline } from './audio/visual-timing';
 import { libraryControls, libraryOptions, setupSceneLibrary } from './scene-library';
 import { type VisualSettings, visualBudget, visualRatio } from './visual-state';
 import type { VisualDock } from './visual-dock';
@@ -7,7 +8,7 @@ import { setupTriggerControls } from './trigger-controls';
 import { TriggerRenderer } from './trigger-renderer';
 import { captureSurface, type VisualCapture } from './visual-capture';
 
-export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | undefined, changed: () => void, dock?: VisualDock, beforeEdit: () => void = () => {}, reduced = matchMedia('(prefers-reduced-motion: reduce)')) {
+export function setupVisualizer(host: HTMLElement, audio: (timeline?: VisualTimeline) => VisualFrame | undefined, changed: () => void, dock?: VisualDock, beforeEdit: () => void = () => {}, reduced = matchMedia('(prefers-reduced-motion: reduce)')) {
   host.innerHTML = `<div class="scene-heading"><h3>Visualizations</h3><span class="small-muted">For music or a quiet moment</span></div>
     <label for="scene-mode">Scene</label><select id="scene-mode"><option value="off">Off</option><optgroup label="Music patterns"><option value="spectrum">Spectrum</option><option value="scope">Oscilloscope</option><option value="orbits">Orbital trails</option></optgroup><optgroup label="Moodscapes"><option value="aurora">Aurora</option><option value="water">Quiet water</option><option value="local">Your photo or video</option></optgroup><optgroup label="Light triggers"><option value="triggers">Light triggers and gestures</option></optgroup>${libraryOptions}</select>
     <div id="scene-preview"><div class="scene-viewport" hidden><div class="scene-media"></div><canvas class="scene-drawing" aria-label="Music visualization"></canvas></div></div>${libraryControls}
@@ -105,7 +106,7 @@ export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | un
       canvas.width = Math.round(width * ratio); canvas.height = Math.round(height * ratio);
     }
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-    if (running && drawing) { const current = audio(); lastFrame = current ? { ...current } : undefined; }
+    if (running && drawing) { const current = audio('output'); lastFrame = current ? { ...current } : undefined; }
     const frame = lastFrame;
     library.render(mode.value, frame, delta, elapsed, captureSize(), drawing);
     const waveform = frame?.waveform;
@@ -324,10 +325,24 @@ export function setupVisualizer(host: HTMLElement, audio: () => VisualFrame | un
     createCapture(width: number, height: number, fps = 30): VisualCapture {
       captureSource();
       const surface = captureSurface(width, height, fps);
-      let disposed = false, failure: unknown;
+      const renderer = new TriggerRenderer();
+      let disposed = false, failure: unknown, painted = false, captureSettings = '';
+      let captureFrame: VisualFrame | undefined;
       const capture = { width, height, update() {
         if (failure) return;
-        try { surface.paint(captureSource()); } catch (error) { failure = error; }
+        try {
+          const source = captureSource();
+          if (mode.value === 'triggers') {
+            const settings = triggers.state(), signature = JSON.stringify(settings);
+            if (!active() && painted && captureSettings === signature) return;
+            if (active()) captureFrame = running ? audio('capture') : undefined;
+            renderer.render(surface.context, width, height, settings, {
+              glass: glassPhase, light: lightPhase, energy, pan, cues: captureFrame?.asmr,
+            });
+            captureSettings = signature;
+          } else { surface.paint(source); captureSettings = ''; }
+          painted = true;
+        } catch (error) { failure = error; }
       } };
       const lease: VisualCapture = { canvas: surface.canvas,
         draw() {

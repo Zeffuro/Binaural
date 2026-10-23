@@ -30,7 +30,7 @@ export const layout = `
           <section id="transport" class="transport panel" aria-label="Playback" tabindex="-1">
             <div class="transport-top"><div><span class="eyebrow">CURRENT SESSION</span><h2 id="playing-title">Quiet morning</h2></div><span id="status" class="status">Ready when you are</span></div>
             <div class="transport-controls"><button id="play" class="play-button"><span aria-hidden="true">▶</span><span>Start listening</span></button><button id="pause" class="secondary-button" hidden>Ⅱ Pause</button><span id="clock" class="clock">20:00</span><span class="timer-caption">session time</span></div>
-            <div class="master-row"><label for="master">Master volume</label><input id="master" type="range" min="0" max="1" step="0.01" value="0.2" /><output id="master-value" for="master">20%</output></div>
+            <div class="master-row"><label for="master">Master volume</label><input id="master" type="range" min="0" max="1" step="0.01" value="0.2" /><output id="master-value" for="master">20%</output><label class="volume-boost"><input id="volume-boost" type="checkbox" />Boost to 200%</label></div>
             <p class="listening-note">♧ Stereo headphones for binaural beats. Start with low device volume.</p>
             <div id="visual-quick"></div>
           </section>

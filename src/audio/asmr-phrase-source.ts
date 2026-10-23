@@ -1,5 +1,6 @@
 import type { AsmrLayer, AsmrSettings } from '../asmr-state';
 import { defaultAsmrVariation } from '../asmr-variation';
+import { asmrCueKind } from './asmr-cues';
 import { ASMR_RATE, asmrSample, asmrVariantSample } from './asmr-synthesis';
 import { asmrRecordingsReady, prepareAsmrRecordings, recordedAsmrBuffer } from './asmr-assets';
 import { AsmrPhraseRenderer, type AsmrPhraseConfig, type AsmrPhrasePcm } from './asmr-phrases';
@@ -34,6 +35,7 @@ function phrasePcm(layer: AsmrLayer): AsmrPhrasePcm {
 export function phraseConfig(settings: AsmrSettings, ordinal: number): AsmrPhraseConfig {
   const solo = settings.layers.some(layer => layer.solo && !layer.muted);
   return { variation: settings.variation ?? defaultAsmrVariation(), ordinal,
+    families: settings.layers.map(layer => asmrCueKind(layer.sound)), sounds: settings.layers.map(layer => layer.sound),
     eligible: settings.layers.flatMap((layer, index) => !layer.muted && layer.level > 0 && (!solo || layer.solo) ? [index] : []) };
 }
 

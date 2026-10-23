@@ -48,7 +48,7 @@ let videoExport: ReturnType<typeof setupVideoExport> | undefined;
 let noticeTimer: ReturnType<typeof setTimeout>;
 const engine = new AudioEngine();
 const history = new EditHistory<{ session: Session; saved: Session[] }>();
-const visual = setupVisuals(() => engine.visualFrame(), () => { session.visual = visual.getState(); session.version = 2; }, () => { experienceRevision++; checkpoint(); });
+const visual = setupVisuals(timeline => engine.visualFrame(timeline ?? 'output'), () => { session.visual = visual.getState(); session.version = 2; }, () => { experienceRevision++; checkpoint(); });
 const controls = setupStudioControls({
   playPause: () => { void playPause().catch(report); }, stop: () => { void stop().catch(report); }, mute: toggleMute,
   visual: () => { experienceRevision++; checkpoint(); visual.toggle(); }, fullscreen: () => { checkpoint(); visual.fullscreen(); }, next: direction => { experienceRevision++; checkpoint(); visual.next(direction); },
@@ -142,6 +142,8 @@ function setName(name: string): void {
 }
 function renderSession(): void {
   setName(session.name);
+  $<HTMLInputElement>('#master').max = session.volumeBoost ? '2' : '1';
+  $<HTMLInputElement>('#volume-boost').checked = !!session.volumeBoost;
   $<HTMLInputElement>('#preset-name').value = session.name;
   for (const [selector, value] of [
     ['#master', session.master], ['#ambient-level', session.ambientLevel],
@@ -170,6 +172,7 @@ function renderTransport(): void {
   $<HTMLButtonElement>('#music-button').disabled = busy || musicBusy;
   $<HTMLButtonElement>('#remove-music').disabled = busy || musicBusy;
   $<HTMLInputElement>('#minutes').disabled = playing || busy || session.timelineDuration !== undefined;
+  $<HTMLInputElement>('#volume-boost').disabled = busy || musicBusy || backgroundBusy;
   $<HTMLButtonElement>('#make-static').disabled = playing || busy;
   backgrounds.transport(playing || busy || musicBusy);
   $('#status').textContent = engine.paused ? 'Ⅱ Paused' : playing ? (engine.loadingAsmr ? 'Loading ASMR recording…' : engine.state === 'running' ? '● Listening' : 'Audio suspended. Press Resume') : 'Ready when you are';
@@ -183,15 +186,21 @@ function renderTransport(): void {
   controls.update({ playing, paused: engine.paused || engine.state === 'suspended', busy, muted: !!session.tonesMuted,
     clock: $('#clock').textContent!, name: session.name, undo: history.canUndo, redo: history.canRedo });
   immersiveAudio.update({ playing, paused: engine.paused || engine.state === 'suspended', busy: busy || musicBusy || backgroundBusy,
-    muted: !!session.tonesMuted, clock: $('#clock').textContent!, name: session.name, volume: session.master });
+    muted: !!session.tonesMuted, clock: $('#clock').textContent!, name: session.name, volume: session.master, volumeBoost: !!session.volumeBoost });
 }
 function setMaster(value: number): void {
   if (busy || musicBusy || backgroundBusy || !Number.isFinite(value)) { $<HTMLInputElement>('#master').value = String(session.master); return; }
-  session.master = Math.max(0, Math.min(1, value));
+  session.master = Math.max(0, Math.min(session.volumeBoost ? 2 : 1, value));
   $<HTMLInputElement>('#master').value = String(session.master); $('#master-value').textContent = `${Math.round(session.master * 100)}%`;
   engine.update(session); renderTransport();
 }
 function snapshot(): { session: Session; saved: Session[] } { return structuredClone({ session: { ...session, version: 2 as const, visual: visual.getState() }, saved }); }
+$('#volume-boost').addEventListener('change', event => {
+  if (busy || musicBusy || backgroundBusy) { $<HTMLInputElement>('#volume-boost').checked = !!session.volumeBoost; return; }
+  checkpoint(); session.volumeBoost = (event.target as HTMLInputElement).checked;
+  session.master = Math.min(session.master, session.volumeBoost ? 2 : 1);
+  engine.update(session); renderSession();
+});
 async function applyTimeline(next: Session): Promise<void> {
   if (busy || engine.playing || musicBusy || backgroundBusy) throw new Error('Stop listening before applying a timeline.');
   const parsed = parseSession(next); checkpoint(); await stop(); session = parsed; renderSession();

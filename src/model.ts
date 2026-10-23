@@ -32,6 +32,7 @@ export interface Session {
   ambientLevel: number;
   musicLevel: number;
   master: number;
+  volumeBoost?: boolean;
   minutes: number;
   tonesMuted?: boolean;
   visual?: VisualSettings;
@@ -87,10 +88,11 @@ export function parseSession(value: unknown): Session {
   if (!record(value) || (value.version !== 1 && value.version !== 2) || !name(value.name) ||
       !Array.isArray(value.layers) || value.layers.length < 1 || value.layers.length > MAX_LAYERS ||
       !ambients.includes(value.ambient as Ambient) || !number(value.ambientLevel, 0, 1) ||
-      !number(value.musicLevel, 0, 1) || !number(value.master, 0, 1) || !number(value.minutes, 0, native ? 360000000 : 180)) {
+      !number(value.musicLevel, 0, 1) || !number(value.master, 0, value.volumeBoost === true ? 2 : 1) || !number(value.minutes, 0, native ? 360000000 : 180)) {
     throw new Error('Invalid preset. Use a Binaural JSON file with 1–10 layers.');
   }
   if (value.tonesMuted !== undefined && typeof value.tonesMuted !== 'boolean') throw new Error('Invalid tone mute state.');
+  if (value.volumeBoost !== undefined && typeof value.volumeBoost !== 'boolean') throw new Error('Invalid volume boost state.');
   if (value.mode !== undefined && !listeningModes.includes(value.mode as ListeningMode)) throw new Error('Invalid listening mode.');
   if (value.bwgMuted !== undefined && typeof value.bwgMuted !== 'boolean') throw new Error('Invalid imported audio mute state.');
   const duration = value.timelineDuration;
@@ -123,6 +125,7 @@ export function parseSession(value: unknown): Session {
     ...(native ? { bwg: native.program } : {}),
     ...(value.bwgBackgroundSource === undefined ? {} : { bwgBackgroundSource: value.bwgBackgroundSource as BackgroundSource }),
     ...(value.tonesMuted === undefined ? {} : { tonesMuted: value.tonesMuted }),
+    ...(value.volumeBoost === undefined ? {} : { volumeBoost: value.volumeBoost }),
     ...(value.bwgMuted === undefined ? {} : { bwgMuted: value.bwgMuted }),
     ...(value.mode === undefined ? {} : { mode: value.mode as ListeningMode }),
     ...(value.visual === undefined ? {} : { visual: parseVisualSettings(value.visual) }),

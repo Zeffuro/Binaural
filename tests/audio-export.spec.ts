@@ -1,5 +1,52 @@
 import { expect, test } from '@playwright/test';
 
+test('boost doubles quiet WAV output through the protected master graph', async ({ page }) => {
+  await page.goto('/'); await page.locator('h1').click();
+  const result = await page.evaluate(async () => {
+    const { initialSession } = await import('/src/model.ts');
+    const { renderWav } = await import('/src/audio/export.ts');
+    const session = initialSession();
+    session.minutes = 0; session.ambient = 'none'; session.master = 1; session.layers[0].level = .02;
+    const energy = (data: Float32Array): number => Math.sqrt(data.reduce((sum, value) => sum + value * value, 0) / data.length);
+    const wavLevel = async (): Promise<number> => {
+      const view = new DataView(await (await renderWav(session, 1.2)).arrayBuffer());
+      const samples = new Float32Array(22050);
+      for (let i = 0; i < samples.length; i++) samples[i] = view.getInt16(44 + (26460 + i) * 4, true) / 32768;
+      return energy(samples);
+    };
+    const normalWav = await wavLevel(); session.volumeBoost = true; session.master = 2;
+    const boostedWav = await wavLevel();
+    return { normalWav, boostedWav };
+  });
+  expect(result.normalWav).toBeGreaterThan(.001); expect(result.boostedWav / result.normalWav).toBeCloseTo(2, 2);
+});
+
+test('@live boost doubles quiet playback and preserves master mute', async ({ page }) => {
+  test.setTimeout(60_000);
+  await page.goto('/'); await page.locator('h1').click();
+  const result = await page.evaluate(async () => {
+    const { AudioEngine } = await import('/src/audio/engine.ts'), { initialSession } = await import('/src/model.ts');
+    const clockPath = '/tests/helpers/audio-clock.ts', { waitForAudioTime } = await import(clockPath);
+    const session = initialSession();
+    session.minutes = 0; session.ambient = 'none'; session.master = 1; session.volumeBoost = true; session.layers[0].level = .02;
+    const energy = (data: Float32Array): number => Math.sqrt(data.reduce((sum, value) => sum + value * value, 0) / data.length);
+    const engine = new AudioEngine(); await engine.start(session);
+    const internals = engine as unknown as { context: AudioContext; gate: GainNode };
+    const analyser = internals.context.createAnalyser(); analyser.fftSize = 8192; internals.gate.connect(analyser);
+    const read = async (): Promise<number> => {
+      await waitForAudioTime(internals.context, Math.max(.9, internals.context.currentTime + .4));
+      const samples = new Float32Array(analyser.fftSize); analyser.getFloatTimeDomainData(samples); return energy(samples);
+    };
+    try {
+      const normalLive = await read(); session.master = 2; engine.update(session);
+      const boostedLive = await read(); session.master = 0; engine.update(session);
+      return { normalLive, boostedLive, muted: await read() };
+    } finally { analyser.disconnect(); await engine.stop(); }
+  });
+  expect(result.normalLive).toBeGreaterThan(.001); expect(result.boostedLive / result.normalLive).toBeCloseTo(2, 1);
+  expect(result.muted).toBeLessThan(.00001);
+});
+
 test('WAV export encodes stereo PCM and preserves every ear route', async ({ page }) => {
   await page.goto('/');
   const results = await page.evaluate(async () => {

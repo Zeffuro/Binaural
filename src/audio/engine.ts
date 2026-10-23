@@ -9,6 +9,7 @@ import { AsmrMixer } from './asmr-mixer';
 import { listeningMode, modeGains } from '../listening-mode';
 import { asmrAudioReady, prepareAsmrAudio } from './asmr-phrase-source';
 import { asmrBackgroundGain } from '../asmr-focus';
+import { AsmrCueTimeline, outputTime, type VisualTimeline } from './visual-timing';
 
 export interface AudioCaptureLease {
   stream: MediaStream;
@@ -48,6 +49,8 @@ export class AudioEngine {
   private visualGain = 0;
   private visualFadeIn = .5;
   private captures = new Set<AudioCaptureLease>();
+  private cueTimeline = new AsmrCueTimeline();
+  private cueSignature = '';
   get loadingAsmr(): boolean { return this.asmrPending; }
   failure?: string;
 
@@ -57,18 +60,20 @@ export class AudioEngine {
   get state(): string { return this.context?.state ?? 'stopped'; }
   get paused(): boolean { return this.isPaused; }
   get selectedMusicFile(): File | undefined { return this.musicFile; }
-  visualFrame(): VisualFrame | undefined {
+  visualFrame(timeline: VisualTimeline = 'analysis'): VisualFrame | undefined {
     const frame = this.analysis?.read(), context = this.context;
     if (!frame || !context) return frame;
     const audible = !this.stopping && !this.isPaused && context.state === 'running' && !this.asmrPending &&
       this.visualGain > 0 && (this.endAt === undefined || context.currentTime < this.endAt);
-    if (!audible) { this.asmr?.clearCues(); frame.asmr = []; }
+    if (!audible) { this.asmr?.clearCues(); this.cueTimeline.clear(); frame.asmr = []; }
     else {
       const fadeIn = Math.min(1, (context.currentTime - this.origin) / this.visualFadeIn);
       const fadeOut = this.endAt === undefined ? 1 : Math.min(1, (this.endAt - context.currentTime) / Math.min(2, (this.endAt - this.origin) / 2));
       frame.asmr = this.asmr?.readCues(this.visualGain * Math.max(0, Math.min(fadeIn, fadeOut)), frame.time) ?? [];
+      this.cueTimeline.push(frame.time, frame.asmr);
     }
-    return frame;
+    return timeline === 'analysis' ? frame : { ...frame,
+      asmr: this.cueTimeline.read(timeline === 'capture' ? context.currentTime : outputTime(context), context.sampleRate) };
   }
   captureAudio(): AudioCaptureLease {
     const context = this.context, transport = this.transport;
@@ -106,6 +111,8 @@ export class AudioEngine {
     if (this.context) return;
     const context = new AudioContext({ latencyHint: 'playback' });
     this.context = context;
+    this.cueTimeline.clear(); this.cueSignature = '';
+    context.addEventListener('sinkchange', () => this.cueTimeline.clear());
     const current = () => this.context === context && !this.stopping;
     this.failure = undefined;
     try {
@@ -172,9 +179,13 @@ export class AudioEngine {
   update(session: Session): void {
     const context = this.context;
     if (!context || !this.master || !this.musicGain) return;
+    const gains = modeGains(listeningMode(session));
+    const cueSignature = JSON.stringify([!!gains.asmr, session.master > 0, (session.asmr?.level ?? 0) > 0,
+      session.asmr?.variation?.mode !== 'steady' && !!session.asmr?.variation,
+      session.asmr?.layers.map(layer => [layer.id, layer.sound, !!layer.spatial, layer.muted, layer.solo, layer.level > 0])]);
+    if (cueSignature !== this.cueSignature) { this.cueTimeline.clear(); this.cueSignature = cueSignature; }
     smooth(this.master.gain, session.master, context.currentTime);
     this.visualGain = session.master;
-    const gains = modeGains(listeningMode(session));
     if (this.toneBus) smooth(this.toneBus.gain, session.tonesMuted ? 0 : gains.tones, context.currentTime);
     for (const [id, voice] of this.voices) {
       if (!session.layers.some(layer => layer.id === id)) {
@@ -332,6 +343,7 @@ export class AudioEngine {
     await context.suspend();
     this.music?.pause();
     this.isPaused = true;
+    this.cueTimeline.clear();
   }
 
   async resume(): Promise<void> {
@@ -342,12 +354,14 @@ export class AudioEngine {
     if (this.context !== context || this.stopping) return;
     smooth(this.transport!.gain, 1, context.currentTime);
     this.isPaused = false;
+    this.cueTimeline.clear();
   }
 
   async stop(): Promise<void> {
     const context = this.context;
     if (!context || this.stopping) return;
     this.stopping = true;
+    this.cueTimeline.clear();
     this.visualGain = 0; this.asmr?.clearCues();
     ++this.asmrRevision; this.asmrPending = false;
     if (this.gate && context.state === 'running') {
