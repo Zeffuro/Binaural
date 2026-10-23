@@ -1,4 +1,4 @@
-import { parseHrtfProfile, type HrtfProfile } from './hrtf-profiles';
+import { parseHrtfProfile, type HrtfProfile } from './hrtf-profiles.ts';
 
 export const asmrSpatialMotions = ['still', 'orbit', 'sweep', 'approach', 'rise', 'figure-eight'] as const;
 export const asmrSpatialMotionLabels = {
