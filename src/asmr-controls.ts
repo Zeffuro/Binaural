@@ -4,6 +4,7 @@ import { openPresetExplorer } from './explorer';
 import { asmrSpatialMotions, asmrSpatialMotionLabels, asmrSpatialRanges, defaultSpatial } from './asmr-spatial';
 import { defaultAsmrVariation, type AsmrVariation } from './asmr-variation';
 import { setupAsmrSpaceControls } from './asmr-space-controls';
+import type { AsmrPreviewState } from './audio/asmr-preview';
 import './asmr-controls.css';
 
 export function setupAsmr(options: {
@@ -16,9 +17,10 @@ export function setupAsmr(options: {
   muteImported: (value: boolean) => void;
   enabled?: () => boolean;
   enable?: () => void;
+  preview?: { state(): AsmrPreviewState; blocked(): boolean; start(id: string): void; stop(): void };
 }) {
   const host = document.querySelector<HTMLElement>('#asmr-controls')!;
-  const quickSounds: [AsmrSound, string][] = [['brush', 'Brush'], ['fingertip-taps', 'Tapping'], ['fabric', 'Fabric'], ['recorded-crinkles', 'Crinkle'], ['air', 'Air'], ['water', 'Water']];
+  const quickSounds: [AsmrSound, string][] = [['brush', 'Brush'], ['fingertip-taps', 'Tapping'], ['fabric', 'Fabric'], ['recorded-crinkles', 'Crinkle'], ['air', 'Air'], ['water', 'Water'], ['recorded-hair', 'Hair'], ['recorded-writing', 'Writing']];
   const starters = [['hands-close', 'Hands up close'], ['slow-ear-sweep', 'Hands moving slowly'], ['woven-hush', 'Soft fabric'], ['soft-crinkle-room', 'Delicate crinkles'], ['fingertip-duet', 'Fingertip tapping'], ['ear-cupping', 'Warm ear cups']];
   host.innerHTML = `<div class="section-heading"><div><span class="eyebrow">UP CLOSE</span><h2>ASMR mixer <span id="asmr-count" class="count">0 / 6</span></h2></div><button id="asmr-add" class="text-button">＋ Add sound</button></div>
     <p class="small-muted">Choose a sound for close listening. Stereo headphones work best.</p>
@@ -39,7 +41,8 @@ export function setupAsmr(options: {
     <button id="asmr-browse" class="secondary-button">Browse all ASMR experiences ↗</button>
     <details id="asmr-mixer" class="asmr-mixer"><summary>Current sounds <span id="asmr-enabled-status"></span></summary>
     <label class="range-heading" for="asmr-level">ASMR volume <output id="asmr-volume" aria-hidden="true"></output></label><input id="asmr-level" aria-label="ASMR volume" type="range" min="0" max="1" step=".01" />
-    <div id="asmr-layers"></div><p id="asmr-empty" class="fine-print">Choose a mix or add a sound. Nothing plays until you start listening.</p>
+    <p id="asmr-preview-status" class="fine-print" role="status"></p>
+    <div id="asmr-layers"></div><p id="asmr-empty" class="fine-print">Choose a mix or add a sound. Nothing plays until you choose Preview or start listening.</p>
     <div class="asmr-actions"><button id="asmr-only" class="text-button">Listen to ASMR only</button><button id="asmr-clear" class="text-button">Clear sounds</button></div>
     <label id="asmr-imported-row" class="visual-toggle" hidden><span>Mute imported BWGen audio</span><input id="asmr-imported-mute" type="checkbox" /></label>
     <p class="fine-print">Ear cupping changes warmth and level to suggest a close, muffled sound.</p></details>
@@ -91,6 +94,21 @@ export function setupAsmr(options: {
       button.disabled = options.busy() || (full && !settings().layers.some(layer => layer.sound === button.dataset.asmrSound));
     });
     spaceControls.transport();
+    refreshPreview();
+  }
+  function refreshPreview(): void {
+    const state: AsmrPreviewState = options.preview?.state() ?? { phase: 'idle' };
+    const blocked = !options.preview || options.preview.blocked();
+    host.querySelectorAll<HTMLButtonElement>('[data-preview]').forEach(button => {
+      const selected = state.id === button.dataset.preview;
+      button.disabled = blocked || options.busy() || state.phase === 'stopping';
+      button.textContent = selected ? 'Stop preview' : 'Preview';
+      button.setAttribute('aria-label', `${selected ? 'Stop preview of' : 'Preview'} sound ${button.dataset.previewIndex}`);
+      button.setAttribute('aria-pressed', String(selected));
+    });
+    $('#asmr-preview-status').textContent = state.phase === 'loading' ? 'Loading preview…' : state.phase === 'playing'
+      ? 'Previewing one sound. Stops after five seconds.' : state.phase === 'stopping' ? 'Stopping preview…'
+      : state.error ?? (blocked ? 'Stop listening before previewing a sound.' : 'Preview one sound for five seconds at your current volume.');
   }
   function placement(layer: AsmrLayer, action: string): void {
     if (action === 'cupping') { layer.pressure = layer.pressure > 0 ? 0 : .8; return; }
@@ -130,6 +148,7 @@ export function setupAsmr(options: {
     const expanded = new Set([...host.querySelectorAll<HTMLDetailsElement>('.asmr-advanced[open]')].map(details => details.closest<HTMLElement>('[data-asmr]')!.dataset.asmr));
     const focused = document.activeElement as HTMLElement | null;
     const focusedLayer = focused?.closest<HTMLElement>('[data-asmr]')?.dataset.asmr;
+    const focusedPreview = focused?.dataset.preview;
     const focusedField = focused?.dataset.field, focusedPosition = focused?.dataset.position, focusedPlacement = focused?.dataset.placement;
     $<HTMLInputElement>('#asmr-level').value = String(state.level); $('#asmr-volume').textContent = format('level', state.level);
     $<HTMLInputElement>('#asmr-focus').checked = !!state.focus;
@@ -151,7 +170,7 @@ export function setupAsmr(options: {
       <div class="asmr-layer-top"><label for="asmr-sound-${i}">Sound ${i + 1}</label><select id="asmr-sound-${i}" aria-label="Sound ${i + 1} trigger" data-field="sound">${[recordedAsmrSounds, generatedAsmrSounds].map((sounds, index) => `<optgroup label="${index ? 'Textures' : 'Recordings'}">${sounds.map(sound => `<option value="${sound.id}" ${sound.id === layer.sound ? 'selected' : ''}>${sound.name}</option>`).join('')}</optgroup>`).join('')}</select>
         <button class="text-button" data-action="remove" aria-label="Remove sound ${i + 1}">×</button></div>
       ${ranges(layer, i, ['level'])}
-      <div class="asmr-flags"><button class="secondary-button" data-action="muted" aria-label="Mute sound ${i + 1}" aria-pressed="${layer.muted}">Mute</button></div>
+      <div class="asmr-flags"><button class="secondary-button" data-action="muted" aria-label="Mute sound ${i + 1}" aria-pressed="${layer.muted}">Mute</button><button class="secondary-button" data-preview="${layer.id}" data-preview-index="${i + 1}" aria-label="Preview sound ${i + 1}">Preview</button></div>
       <div class="asmr-placement" role="group" aria-label="Sound ${i + 1} placement">${[['left', 'Left ear'], ['center', 'Center'], ['right', 'Right ear'], ['slow', 'Move slowly'], ['cupping', 'Cupping']].map(([action, label]) => `<button class="secondary-button" data-placement="${action}" aria-pressed="${placementSelected(layer, action)}">${label}</button>`).join('')}</div>
       <details class="asmr-advanced" ${expanded.has(layer.id) ? 'open' : ''}><summary>Adjust</summary>
       <div class="asmr-flags"><button class="secondary-button" data-action="solo" aria-label="Solo sound ${i + 1}" aria-pressed="${layer.solo}">Solo</button><button class="text-button" data-action="duplicate" aria-label="Duplicate sound ${i + 1}">Duplicate</button></div>
@@ -161,6 +180,7 @@ export function setupAsmr(options: {
       ${ranges(layer, i, layer.spatial ? ['pressure', 'period', 'rate', 'tone', 'pressurePhase'] : ['pan', 'pressure', 'width', 'period', 'rate', 'tone', 'pressurePhase'])}${layer.spatial ? positionRanges(layer, i, ['elevation']) : ''}</details></article>`).join('');
     host.querySelectorAll<HTMLInputElement>('input[data-field]').forEach(input => input.setAttribute('aria-valuetext', format(input.dataset.field!, Number(input.value))));
     transport();
+    if (focusedPreview) host.querySelector<HTMLElement>(`[data-preview="${focusedPreview}"]`)?.focus({ preventScroll: true });
     if (focusedLayer && (focusedField || focusedPosition || focusedPlacement)) {
       const attribute = focusedField ? 'data-field' : focusedPosition ? 'data-position' : 'data-placement';
       host.querySelector<HTMLElement>(`[data-asmr="${focusedLayer}"] [${attribute}="${focusedField ?? focusedPosition ?? focusedPlacement}"]`)?.focus({ preventScroll: true });
@@ -234,6 +254,12 @@ export function setupAsmr(options: {
   host.addEventListener('click', event => {
     const button = (event.target as HTMLElement).closest<HTMLButtonElement>('button');
     if (!button || options.busy()) return;
+    if (button.dataset.preview) {
+      if (!options.preview || options.preview.blocked() || button.disabled) return;
+      if (options.preview.state().id === button.dataset.preview) options.preview.stop();
+      else options.preview.start(button.dataset.preview);
+      return;
+    }
     if (button.id === 'asmr-browse') { openPresetExplorer('ASMR'); return; }
     if (button.dataset.asmrPreset) {
       loadPreset(button.dataset.asmrPreset); return;
@@ -282,5 +308,5 @@ export function setupAsmr(options: {
       } else render();
     }
   });
-  render(); return { refresh: render, transport };
+  render(); return { refresh: render, transport, refreshPreview };
 }

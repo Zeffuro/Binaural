@@ -30,6 +30,7 @@ import { setupAsmr } from './asmr-controls';
 import { listeningMode, modeForSources, modeGains, type ListeningMode } from './listening-mode';
 import { setupListeningMode } from './mode-controls';
 import { defaultAsmr, makeAsmrLayer } from './asmr-state';
+import { AsmrPreview } from './audio/asmr-preview';
 
 const $ = <T extends HTMLElement = HTMLElement>(selector: string): T => document.querySelector<T>(selector)!;
 $('#app').innerHTML = layout;
@@ -47,6 +48,7 @@ let backgroundBusy = false;
 let videoExport: ReturnType<typeof setupVideoExport> | undefined;
 let noticeTimer: ReturnType<typeof setTimeout>;
 const engine = new AudioEngine();
+let preview: AsmrPreview | undefined;
 const history = new EditHistory<{ session: Session; saved: Session[] }>();
 const visual = setupVisuals((timeline, offsetMs, needCues) => engine.visualFrame(timeline ?? 'output', offsetMs, needCues), () => { session.visual = visual.getState(); session.version = 2; }, () => { experienceRevision++; checkpoint(); }, () => engine.requestVisualCues());
 const controls = setupStudioControls({
@@ -56,7 +58,7 @@ const controls = setupStudioControls({
   emergency: () => { experienceRevision++; visual.stop(); document.querySelectorAll<HTMLDialogElement>('dialog[open]').forEach(dialog => dialog.close()); void stop().catch(report); },
 });
 const immersiveAudio = setupImmersiveAudio({ playPause: () => { void playPause().catch(report); }, stop: () => { void stop().catch(report); }, mute: toggleMute, volume: setMaster });
-const offline = setupOffline({ isPlaying: () => busy || engine.playing || !!videoExport?.active() });
+const offline = setupOffline({ isPlaying: () => busy || engine.playing || !!preview?.active || !!videoExport?.active() });
 const timeline = setupTimelineEditor({ session: () => snapshot().session, apply: applyTimeline, isBusy: () => busy || engine.playing || musicBusy || backgroundBusy });
 $('#scene-mute-tones').addEventListener('click', toggleMute);
 setupAudioExport({ session: () => snapshot().session, music: () => engine.selectedMusicFile, notify: message => notice(message) });
@@ -78,9 +80,12 @@ setupExplorer(async (preset, play) => {
 });
 setupSessionGuide({ load: useSession, start: playPause });
 const asmr = setupAsmr({ get: () => session.asmr, beforeEdit: checkpoint, busy: () => busy || musicBusy || backgroundBusy,
+  preview: { state: () => preview?.state ?? { phase: 'idle' }, blocked: () => engine.playing || busy || musicBusy || backgroundBusy || !!videoExport?.active(),
+    start: id => { void preview?.start(session, id).catch(report); }, stop: () => { void preview?.stop().catch(report); } },
   enabled: () => !!modeGains(listeningMode(session)).asmr,
-  enable() { session.mode = modeForSources(!!modeGains(listeningMode(session)).tones, true); session.version = 2; engine.update(session); modes.refresh(); },
+  enable() { void preview?.stop().catch(report); session.mode = modeForSources(!!modeGains(listeningMode(session)).tones, true); session.version = 2; engine.update(session); modes.refresh(); },
   update(value, light) {
+    void preview?.stop().catch(report);
     const previousMode = listeningMode(session);
     session.asmr = value; session.version = 2;
     session.mode = previousMode;
@@ -88,13 +93,17 @@ const asmr = setupAsmr({ get: () => session.asmr, beforeEdit: checkpoint, busy: 
     if (light) void visual.applyAsmrTrigger(light).then(enabled => { notice(enabled ? 'Sounds and lights ready. Start listening when you want.' : 'Sounds loaded. Your visual is unchanged.'); }).catch(report);
     modes.refresh();
   },
-  isolate() { session.mode = 'asmr'; engine.update(session); renderSession(); },
+  isolate() { void preview?.stop().catch(report); session.mode = 'asmr'; engine.update(session); renderSession(); },
   importedMute: () => session.bwg ? !!session.bwgMuted : undefined,
   muteImported(value) { session.bwgMuted = value; engine.update(session); },
 });
+preview = new AsmrPreview(() => asmr.refreshPreview());
+document.addEventListener('visibilitychange', () => { if (document.hidden) void preview?.stop().catch(report); });
+window.addEventListener('pagehide', () => { void preview?.stop().catch(report); });
 const modes = setupListeningMode({ get: () => listeningMode(session), change: setListeningMode, busy: () => busy || musicBusy || backgroundBusy });
 function setListeningMode(mode: ListeningMode): void {
   if (busy || musicBusy || backgroundBusy || mode === listeningMode(session)) return;
+  void preview?.stop().catch(report);
   checkpoint(); session.mode = mode; session.version = 2;
   if (modeGains(mode).asmr && !session.asmr?.layers.length) session.asmr = { ...(session.asmr ?? defaultAsmr()), layers: [makeAsmrLayer('brush')] };
   engine.update(session); renderSession();
@@ -191,12 +200,14 @@ function renderTransport(): void {
 function setMaster(value: number): void {
   if (busy || musicBusy || backgroundBusy || !Number.isFinite(value)) { $<HTMLInputElement>('#master').value = String(session.master); return; }
   session.master = Math.max(0, Math.min(session.volumeBoost ? 2 : 1, value));
+  void preview?.stop().catch(report);
   $<HTMLInputElement>('#master').value = String(session.master); $('#master-value').textContent = `${Math.round(session.master * 100)}%`;
   engine.update(session); renderTransport();
 }
 function snapshot(): { session: Session; saved: Session[] } { return structuredClone({ session: { ...session, version: 2 as const, visual: visual.getState() }, saved }); }
 $('#volume-boost').addEventListener('change', event => {
   if (busy || musicBusy || backgroundBusy) { $<HTMLInputElement>('#volume-boost').checked = !!session.volumeBoost; return; }
+  void preview?.stop().catch(report);
   checkpoint(); session.volumeBoost = (event.target as HTMLInputElement).checked;
   session.master = Math.min(session.master, session.volumeBoost ? 2 : 1);
   engine.update(session); renderSession();
@@ -225,6 +236,8 @@ async function playPause(): Promise<void> {
   const ticket = ++transportRevision;
   busy = true; renderTransport();
   try {
+    await preview?.stop();
+    if (ticket !== transportRevision) return;
     if (!engine.playing) { await engine.start(session); rememberPreset(session.name); renderSaved(); }
     else if (engine.paused || engine.state === 'suspended') await engine.resume();
     else await engine.pause();
@@ -235,7 +248,7 @@ function stop(): Promise<void> {
   ++transportRevision;
   busy = true;
   renderTransport();
-  stopping = engine.stop().finally(() => { stopping = undefined; busy = false; renderTransport(); });
+  stopping = Promise.all([engine.stop(), preview?.stop()]).then(() => {}).finally(() => { stopping = undefined; busy = false; renderTransport(); });
   return stopping;
 }
 async function useSession(next: Session, current: () => boolean = () => true): Promise<void> {
