@@ -5,9 +5,9 @@ import { loadAsmrExperience } from './helpers/asmr-discovery';
 test('one explorer opens all families by default and ASMR browse resets stale filters', async ({ page }) => {
   await page.goto('/');
   await page.locator('#explore-presets').click();
-  await expect(page.locator('.explore-card')).toHaveCount(115);
+  await expect(page.locator('.explore-card')).toHaveCount(121);
   await page.locator('#preset-category').selectOption('ASMR');
-  await expect(page.locator('.explore-card')).toHaveCount(85);
+  await expect(page.locator('.explore-card')).toHaveCount(91);
   await expect(page.locator('#preset-results')).not.toContainText('Hz');
   await page.locator('#preset-search').fill('temple');
   await page.locator('#preset-with-visuals').check();
@@ -18,13 +18,13 @@ test('one explorer opens all families by default and ASMR browse resets stale fi
   await expect(page.locator('#preset-search')).toHaveValue('');
   await expect(page.locator('#preset-with-visuals')).not.toBeChecked();
   await expect(page.locator('#preset-favorites')).not.toBeChecked();
-  await expect(page.locator('.explore-card')).toHaveCount(115);
+  await expect(page.locator('.explore-card')).toHaveCount(121);
   await page.locator('#preset-search').fill('missing');
   await page.locator('#close-explorer').click();
   await page.locator('#asmr-browse').click();
   await expect(page.locator('#preset-category')).toHaveValue('ASMR');
   await expect(page.locator('#preset-search')).toHaveValue('');
-  await expect(page.locator('.explore-card')).toHaveCount(85);
+  await expect(page.locator('.explore-card')).toHaveCount(91);
   await expect(page.locator('#preset-explorer')).toHaveCount(1);
   await expect(page.locator('#asmr-preset, #asmr-search, #asmr-library-list')).toHaveCount(0);
   await expect(page.locator('#status')).toHaveText('Ready when you are');
@@ -178,8 +178,8 @@ test('every ASMR recipe adapts to a complete validated shared experience with it
         soft: entry.session.visual.triggers.brightness === .3 && entry.session.visual.triggers.speed <= .015 && entry.session.visual.triggers.drift <= .06 && entry.session.visual.triggers.lightSpeed <= .05 && entry.session.visual.triggers.reaction <= .2 };
     });
   });
-  expect(result).toHaveLength(85);
-  expect(new Set(result.map((entry: { id: string }) => entry.id)).size).toBe(85);
+  expect(result).toHaveLength(91);
+  expect(new Set(result.map((entry: { id: string }) => entry.id)).size).toBe(91);
   expect(result.every((entry: { duration: boolean; mix: boolean; hasVisual: boolean; soft: boolean }) => entry.duration && entry.mix && entry.hasVisual && entry.soft)).toBe(true);
 });
 

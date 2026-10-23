@@ -5,6 +5,8 @@
     "paths": { "/src/*": ["./src/*"] }
   },
   "include": [
+    "tests/asmr-recorded-markers.spec.ts",
+    "tests/asmr-recorded-gesture-presets.spec.ts",
     "tests/asmr-recorded-pack.spec.ts",
     "tests/hrtf-audio.spec.ts",
     "tests/hrtf-integration.spec.ts",

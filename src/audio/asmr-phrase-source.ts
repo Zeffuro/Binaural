@@ -7,6 +7,7 @@ import { asmrRecordingsReady, prepareAsmrRecordings, recordedAsmrBuffer } from '
 import { AsmrPhraseRenderer, type AsmrPhraseConfig, type AsmrPhrasePcm } from './asmr-phrases';
 import workletUrl from './asmr-phrase-worklet.ts?worker&url';
 import { hrtfAudioReady, prepareHrtfAudio } from './hrtf-audio';
+import { recordedMarkerEvents } from './asmr-recorded-markers';
 
 const prepared = new WeakSet<BaseAudioContext>(), pending = new WeakMap<BaseAudioContext, Promise<void>>();
 const usesPhrases = (settings?: AsmrSettings) => !!settings?.variation && settings.variation.mode !== 'steady' && settings.layers.length > 0;
@@ -28,8 +29,12 @@ export async function prepareAsmrAudio(context: BaseAudioContext, settings?: Asm
 
 function phrasePcm(layer: AsmrLayer): AsmrPhrasePcm {
   const recorded = recordedAsmrBuffer(layer.sound);
-  if (recorded) return { sampleRate: recorded.sampleRate,
-    channels: Array.from({ length: recorded.numberOfChannels }, (_, ear) => recorded.getChannelData(ear)) };
+  if (recorded) {
+    const events = recordedMarkerEvents(recorded);
+    return { sampleRate: recorded.sampleRate,
+      channels: Array.from({ length: recorded.numberOfChannels }, (_, ear) => recorded.getChannelData(ear)),
+      events: [events, events, events] };
+  }
   const samples = [asmrGeneratedSample(layer.sound), asmrGeneratedSample(layer.sound, 1), asmrGeneratedSample(layer.sound, 2)];
   return { channels: [samples[0].samples], sampleRate: ASMR_RATE,
     variants: samples.slice(1).map(sample => [sample.samples]),

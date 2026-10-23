@@ -27,8 +27,8 @@ export function setupAsmr(options: {
     <p class="small-muted">Choose a sound for close listening. Stereo headphones work best.</p>
     <label class="visual-toggle"><span>ASMR focus</span><input id="asmr-focus" type="checkbox" aria-describedby="asmr-focus-help" /></label>
     <p id="asmr-focus-help" class="fine-print">Lower atmosphere and music by 10 dB while ASMR sounds are active. Your volume settings are kept.</p>
-    <label for="asmr-flow">Session flow</label><select id="asmr-flow"><option value="steady">Steady</option><option value="natural">Natural layers</option><option value="turns">Take turns</option></select>
-    <p class="fine-print">Natural layers vary phrases and pauses. Take turns gives each selected sound its own moment.</p>
+    <label for="asmr-flow">Session flow</label><select id="asmr-flow" aria-describedby="asmr-flow-help"><option value="steady">Steady</option><option value="natural">Natural layers</option><option value="turns">Take turns</option></select>
+    <p id="asmr-flow-help" class="fine-print">Natural layers vary phrases and pauses. Take turns gives each selected sound its own moment. In both modes, synced light gestures follow activity inside recordings.</p>
     <details id="asmr-variation-settings" hidden><summary>Adjust variation</summary>
       <label class="range-heading" for="asmr-variation-amount">Variation <output id="asmr-variation-value" aria-hidden="true"></output></label><input id="asmr-variation-amount" type="range" min="0" max="1" step=".01" />
       <label class="range-heading" for="asmr-phrase-seconds">Phrase length <output id="asmr-phrase-value" aria-hidden="true"></output></label><input id="asmr-phrase-seconds" type="range" min="4" max="30" step="1" />

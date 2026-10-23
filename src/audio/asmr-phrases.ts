@@ -95,7 +95,7 @@ export interface AsmrPhrasePcm {
   channels: Float32Array[];
   sampleRate: number;
   variants?: Float32Array[][];
-  events?: readonly AsmrMarkerEvent[][];
+  events?: readonly (readonly AsmrMarkerEvent[])[];
 }
 
 export class AsmrPhraseRenderer {

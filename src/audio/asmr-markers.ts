@@ -1,4 +1,7 @@
-export interface AsmrMarkerEvent { start: number; length: number }
+export interface AsmrMarkerEvent {
+  start: number; length: number;
+  contact?: { stride: number; values: Float32Array };
+}
 export interface AsmrMarkerPose { progress: number; contact: number }
 export interface AsmrMarkerSample {
   time: number;
@@ -11,7 +14,13 @@ export function sourceMarker(events: readonly AsmrMarkerEvent[], position: numbe
   const index = sourceMarkerIndex(events, position, sourceLength);
   if (index < 0) return;
   const event = events[index], age = (position - event.start + sourceLength) % sourceLength;
-  return { index, pose: { progress: age / event.length, contact: .85 * Math.exp(-age / sourceRate / .065) } };
+  let contact = .85 * Math.exp(-age / sourceRate / .065);
+  if (event.contact) {
+    const { values, stride } = event.contact, envelopePosition = Math.max(0, Math.min(values.length - 1, age / stride - .5));
+    const first = Math.floor(envelopePosition), fraction = envelopePosition - first;
+    contact = Math.min(.85, values[first] + (values[Math.min(first + 1, values.length - 1)] - values[first]) * fraction);
+  }
+  return { index, pose: { progress: age / event.length, contact } };
 }
 
 export function sourceMarkerIndex(events: readonly AsmrMarkerEvent[], position: number, sourceLength: number): number {
