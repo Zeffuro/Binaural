@@ -32,10 +32,15 @@ test('@live boost doubles quiet playback and preserves master mute', async ({ pa
     const energy = (data: Float32Array): number => Math.sqrt(data.reduce((sum, value) => sum + value * value, 0) / data.length);
     const engine = new AudioEngine(); await engine.start(session);
     const internals = engine as unknown as { context: AudioContext; gate: GainNode };
-    const analyser = internals.context.createAnalyser(); analyser.fftSize = 8192; internals.gate.connect(analyser);
-    const read = async (): Promise<number> => {
+    const splitter = internals.context.createChannelSplitter(2), analysers = [0, 1].map(ear => {
+      const analyser = internals.context.createAnalyser(); analyser.fftSize = 8192; splitter.connect(analyser, ear); return analyser;
+    });
+    internals.gate.connect(splitter);
+    const read = async (): Promise<number[]> => {
       await waitForAudioTime(internals.context, internals.context.currentTime + 1.25);
-      const samples = new Float32Array(analyser.fftSize); analyser.getFloatTimeDomainData(samples); return energy(samples);
+      return analysers.map(analyser => {
+        const samples = new Float32Array(analyser.fftSize); analyser.getFloatTimeDomainData(samples); return energy(samples);
+      });
     };
     try {
       const normalLive = await read(), normalTime = internals.context.currentTime;
@@ -43,11 +48,13 @@ test('@live boost doubles quiet playback and preserves master mute', async ({ pa
       const boostedLive = await read(), boostedTime = internals.context.currentTime;
       session.master = 0; engine.update(session);
       return { normalLive, boostedLive, normalTime, boostedTime, muted: await read() };
-    } finally { analyser.disconnect(); await engine.stop(); }
+    } finally { internals.gate.disconnect(splitter); splitter.disconnect(); analysers.forEach(analyser => analyser.disconnect()); await engine.stop(); }
   });
-  expect(result.normalLive).toBeGreaterThan(.001);
-  expect(result.boostedLive / result.normalLive, JSON.stringify(result)).toBeCloseTo(2, 1);
-  expect(result.muted).toBeLessThan(.00001);
+  for (const ear of [0, 1]) {
+    expect(result.normalLive[ear]).toBeGreaterThan(.001);
+    expect(result.boostedLive[ear] / result.normalLive[ear], JSON.stringify(result)).toBeCloseTo(2, 1);
+    expect(result.muted[ear]).toBeLessThan(.00001);
+  }
 });
 
 test('WAV export encodes stereo PCM and preserves every ear route', async ({ page }) => {
