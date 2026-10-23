@@ -448,7 +448,9 @@ test('@live custom profile edits reuse bounded nodes and a processor failure sil
   expect(result.earEnergy.every(energy => energy > .000001)).toBe(true);
   expect(result.armed).toBe(true);
   expect(result.errors).toEqual(['asmr-hrtf']);
-  expect(result.errorEvents.every(event => event.targetMatches && event.type === 'processorerror')).toBe(true);
+  expect(result.errorEvents).toHaveLength(1);
+  expect(result.errorEvents.every(event => event.targetMatches && ['error', 'processorerror'].includes(event.type) &&
+    event.message.includes('HRTF grid does not cover this direction.'))).toBe(true);
   expect(result.processorFailed).toBe(true); expect(result.failures).toBe(1); expect(result.silent).toBe(true); expect(result.disposed).toBe(true);
 });
 
