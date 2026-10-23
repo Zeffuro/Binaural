@@ -42,7 +42,11 @@ jobs:
       - name: Check audio models and adaptive quality
         run: node --experimental-strip-types --test tests/asmr-model.test.mjs tests/asmr-library.test.mjs tests/adaptive-visual-quality.test.mjs
       - name: Install Chromium and Firefox
-        run: npx playwright install --with-deps chromium firefox
+        run: |
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            sudo sed -i 's#http://azure.archive.ubuntu.com/ubuntu#https://archive.ubuntu.com/ubuntu#g' /etc/apt/apt-mirrors.txt
+          fi
+          npx playwright install --with-deps chromium firefox
       - name: Start the virtual audio output
         run: |
           sudo apt-get update
