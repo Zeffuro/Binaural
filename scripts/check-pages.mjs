@@ -58,7 +58,7 @@ try {
         await expect(page.locator('#status')).toHaveText('Ready when you are');
         await page.getByRole('button', { name: 'Explore all presets' }).click();
         await page.getByLabel('With visual settings', { exact: true }).check();
-        await expect(page.locator('.explore-card')).toHaveCount(59);
+        await expect(page.locator('.explore-card')).toHaveCount(67);
         await page.locator('[data-load-preset="forest-clearing"]').click();
         await expect(page.locator('#ambient')).toHaveValue('wind');
         await expect(page.locator('#status')).toHaveText('Ready when you are');
