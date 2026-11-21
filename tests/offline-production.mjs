@@ -25,6 +25,15 @@ function expectShortWav(wav) {
   expect(wav.readUInt32LE(40)).toBe(wav.length - 44);
   expect(wav.subarray(44).some(value => value !== 0)).toBe(true);
 }
+async function checkOfflineAssets(page, files) {
+  const results = await page.evaluate(async files => Promise.all(files.map(async file => {
+    const response = await fetch(file);
+    // Close unused streams so the outgoing worker can become idle before an update.
+    await response.body?.cancel();
+    return response.ok;
+  })), files);
+  expect(results.every(Boolean)).toBe(true);
+}
 async function observeUpdate(page) {
   await page.evaluate(async () => {
     const worker = (await navigator.serviceWorker.getRegistration()).waiting;
@@ -75,7 +84,7 @@ try {
   for (const prefix of ['/', '/Binaural/']) {
     for (const [name, launcher] of [['chromium', chromium], ['firefox', firefox]]) {
       mount = prefix; revision = ''; failAsset = false; disconnected = false;
-      const browser = await launcher.launch(browserLaunchOptions(name));
+      const browser = await launcher.launch({ ...browserLaunchOptions(name), ...(name === 'chromium' ? { channel: 'chromium' } : {}) });
       let page, other;
       const errors = [], failedRequests = [], navigation = [];
       try {
@@ -105,10 +114,7 @@ try {
         disconnected = true; await context.setOffline(true);
         await page.reload();
         await expect(page.locator('h1')).toContainText('Find your own');
-        const offlineAssets = await page.evaluate(async files => Promise.all(files.map(async file => {
-          const response = await fetch(file); return response.ok;
-        })), files);
-        expect(offlineAssets.every(Boolean)).toBe(true);
+        await checkOfflineAssets(page, files);
         expect(await page.evaluate(() => fetch('./private-local-file.json').then(() => true, () => false))).toBe(false);
         await setSources(page, 'asmr');
         for (const id of ['glass-lantern', 'red-sweep', 'rose-brushes', 'paper-prism', 'blue-droplets', 'torch-whisper']) {
@@ -303,7 +309,7 @@ try {
         disconnected = true; await context.setOffline(true);
         await page.reload();
         await expect(page.locator('h1')).toContainText('Find your own');
-        expect(await page.evaluate(async files => (await Promise.all(files.map(file => fetch(file).then(response => response.ok)))).every(Boolean), files)).toBe(true);
+        await checkOfflineAssets(page, files);
         disconnected = false; await context.setOffline(false);
 
         revision = 'incomplete'; failAsset = true;
@@ -338,7 +344,7 @@ try {
         disconnected = true; await context.setOffline(true);
         await page.reload();
         await expect(page.locator('h1')).toContainText('Find your own');
-        expect(await page.evaluate(async files => (await Promise.all(files.map(file => fetch(file).then(response => response.ok)))).every(Boolean), files)).toBe(true);
+        await checkOfflineAssets(page, files);
         await page.getByRole('button', { name: 'Start listening' }).click();
         await expect(page.locator('#status')).toHaveText('● Listening');
         await page.getByRole('button', { name: 'Stop listening' }).click();
