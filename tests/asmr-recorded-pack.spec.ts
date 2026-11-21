@@ -148,7 +148,7 @@ test('Plastic clicks after dark keeps its single 3D voice and varied click seque
   const spread = page.locator('.asmr-position input[data-position="gapSpread"]');
   await expect(spread).toBeVisible();
   await expect(spread).toHaveAttribute('aria-label', 'Sound 1 pause variation');
-  await expect(spread).toHaveJSProperty('valueAsNumber', 3);
+  await expect(spread).toHaveValue('3');
   await spread.evaluate((input: HTMLInputElement) => {
     input.value = '2.5'; input.dispatchEvent(new Event('input', { bubbles: true }));
   });
