@@ -268,6 +268,7 @@ try {
         await expect(other.locator('#status')).toHaveText('● Listening');
         await other.getByRole('button', { name: 'Stop listening' }).click();
         await expect(other.locator('#status')).toHaveText('Ready when you are');
+        await expect(other.locator('#play')).toBeEnabled();
         await Promise.all([page.waitForEvent('domcontentloaded'), page.locator('#app-update').click()]);
         await expect(page.locator('h1')).toContainText('Find your own');
         expect(await other.evaluate(() => window.offlineTabMarker)).toBe('preserve');
@@ -323,7 +324,9 @@ try {
         const state = await page?.evaluate(() => ({ status: document.querySelector('#status')?.textContent,
           notice: document.querySelector('#notice')?.textContent, clock: document.querySelector('#clock')?.textContent,
           export: document.querySelector('#audio-export-status')?.textContent, workers: window.offlineExportWorkers,
-          startDisabled: document.querySelector('#play')?.disabled })).catch(() => undefined);
+          startDisabled: document.querySelector('#play')?.disabled,
+          offline: document.querySelector('#offline-status')?.textContent,
+          updateDisabled: document.querySelector('#app-update')?.disabled })).catch(() => undefined);
         console.error(`${name} ${prefix}: ${JSON.stringify({ state, errors, failedRequests: failedRequests.slice(-20) })}`);
         throw error;
       } finally { await browser.close(); }
