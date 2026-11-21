@@ -43,7 +43,10 @@ test('ASMR cue families, quiet decay, audio-clock progress and onset limits stay
       malformed: malformed.every(value => value === undefined), contacts,
       rms: earRms(new Float32Array([.5, -.5, .5, -.5])), emptyRms: earRms(new Float32Array()) };
   });
-  expect(result.families).toHaveLength(35);
+  expect(result.families).toHaveLength(38);
+  expect(result.families).toEqual(expect.arrayContaining([
+    ['recorded-plastic-switch', 'tap'], ['recorded-plastic-pen', 'tap'], ['recorded-plastic-button', 'tap'],
+  ]));
   expect(new Set(result.families.map((pair: string[]) => pair[1]))).toEqual(new Set(['brush', 'tap', 'inspect', 'trace', 'follow', 'drop', 'ear']));
   expect(result.bounded).toBe(true); expect(result.moved).toBeGreaterThan(.5); expect(result.pan).toBeLessThan(-.8);
   expect(result.frozen).toBe(true); expect(result.gap).toBeUndefined(); expect(result.reversed).toBeUndefined();

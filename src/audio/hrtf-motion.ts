@@ -33,12 +33,15 @@ export class HrtfMotionRenderer {
   private phase?: number;
   constructor(private state: HrtfMotionState, private originFrame: number) {}
   render(output: Float32Array[], frequency: Float32Array, frame: number, rate: number): void {
-    for (let sample = 0; sample < output[0].length; sample++) {
-      if (frame + sample < this.originFrame) { output[0][sample] = output[1][sample] = output[2][sample] = 0; continue; }
+    const [sine, cosine, harmonic, returnClock] = output;
+    for (let sample = 0; sample < sine.length; sample++) {
+      if (frame + sample < this.originFrame) { sine[sample] = cosine[sample] = harmonic[sample] = returnClock[sample] = 0; continue; }
       // Seed from the audio frame even when realtime construction arrives late.
       this.phase ??= motionPhase(this.state, (frame + sample) / rate);
       const angle = 2 * Math.PI * this.phase;
-      output[0][sample] = Math.sin(angle); output[1][sample] = Math.cos(angle); output[2][sample] = Math.sin(2 * angle);
+      const cos = Math.cos(angle);
+      sine[sample] = Math.sin(angle); cosine[sample] = cos;
+      harmonic[sample] = Math.sin(2 * angle); returnClock[sample] = 2 * cos * cos - 1;
       this.phase += frequency[frequency.length === 1 ? 0 : sample] / rate;
       if (this.phase >= 1) this.phase -= 1;
     }

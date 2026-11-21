@@ -145,7 +145,7 @@ test('all bundled recordings match verified CC0 provenance and the size budget',
     if (clip.format === 'MP3') {
       assert.ok(data.toString('ascii', 0, 3) === 'ID3' || (data[0] === 255 && (data[1] & 224) === 224));
       assert.equal(clip.downloadSha256, clip.sha256); assert.equal(clip.downloadBytes, clip.bytes);
-      const sourceFormat = sound.id === 'recorded-plastic-pen' ? 'MP3' : 'WAV';
+      const sourceFormat = ['recorded-plastic-pen', 'recorded-plastic-snap'].includes(sound.id) ? 'MP3' : 'WAV';
       assert.equal(clip.originalMetadata.format, sourceFormat, sound.id);
       assert.equal(clip.verifiedAt, sound.id.startsWith('recorded-plastic-') ? '2026-11-21' : '2026-10-21');
       assert.ok(clip.originalMetadata.durationSeconds < 60); assert.match(clip.changes, /Unchanged public MP3 preview/);

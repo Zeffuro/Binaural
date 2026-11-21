@@ -23,7 +23,7 @@ test('source switches preserve the mix, keep controls discoverable and never aut
   await expect(page.getByLabel('Sound 1 ear cupping', { exact: true })).toHaveValue('0.85');
   await expect(page.locator('#asmr-browse')).toBeVisible();
   await expect(page.locator('#asmr-preset')).toHaveCount(0);
-  await expect(page.getByLabel('Sound 1 trigger', { exact: true }).locator('option')).toHaveCount(35);
+  await expect(page.getByLabel('Sound 1 trigger', { exact: true }).locator('option')).toHaveCount(38);
   for (const selected of ['mixed', 'binaural', 'ambient', 'asmr'] as const) {
     await setSources(page, selected);
     await expect(tones).toHaveAttribute('aria-pressed', String(selected === 'mixed' || selected === 'binaural'));
@@ -114,7 +114,7 @@ test('ASMR starts with ordinary and native BWGen buses silent before the audio c
   expect(gains).toEqual([{ tone: 0 }, { tone: 0, native: 0 }]);
 });
 
-test('all bundled recordings retain their channel layout, bounded PCM and actual mixer export', async ({ page }) => {
+test('all bundled recordings retain their channel layout, bounded PCM and actual mixer export', async ({ page, browserName }) => {
   await page.goto('/');
   const requests: string[] = [];
   page.on('request', request => { if (request.url().includes('/audio/asmr/')) requests.push(request.url()); });
@@ -141,7 +141,8 @@ test('all bundled recordings retain their channel layout, bounded PCM and actual
       const seconds = extended ? Math.max(3, Math.ceil(buffer.duration)) : 3;
       const view = new DataView(await (await renderWav(session, seconds)).arrayBuffer()), energy = [0, 0];
       for (let i = 44 + 22050 * 4; i < view.byteLength; i += 4) for (let ear = 0; ear < 2; ear++) energy[ear] += Math.abs(view.getInt16(i + ear * 2, true));
-      results.push({ id: sound.id, file: sound.file, channels: channels.length, duration: buffer.duration, peak, finite, difference, energy, edges });
+      results.push({ id: sound.id, file: sound.file, channels: channels.length, duration: buffer.duration,
+        frames: buffer.length, sampleRate: buffer.sampleRate, peak, finite, difference, energy, edges });
     }
     return results;
   });
@@ -150,7 +151,27 @@ test('all bundled recordings retain their channel layout, bounded PCM and actual
   for (const result of results) {
     const clip = clips.find((clip: { file: string }) => clip.file === result.file);
     expect(clip, result.id).toBeDefined();
-    if (clip.format === 'MP3') {
+    if (result.id === 'recorded-sketching-long') {
+      expect(clip.format).toBe('WAV');
+      const wav = await readFile(`public/audio/asmr/${result.file}`);
+      expect(wav.toString('ascii', 0, 4)).toBe('RIFF'); expect(wav.toString('ascii', 8, 12)).toBe('WAVE');
+      expect(wav.readUInt32LE(4) + 8).toBe(wav.length); expect(wav.length).toBe(clip.bytes);
+      expect(wav.toString('ascii', 12, 16)).toBe('fmt ');
+      expect(wav.readUInt16LE(20)).toBe(1); expect(wav.readUInt16LE(34)).toBe(16);
+      const data = 20 + wav.readUInt32LE(16);
+      expect(wav.toString('ascii', data, data + 4)).toBe('data');
+      const sourceChannels = wav.readUInt16LE(22), sourceRate = wav.readUInt32LE(24), blockAlign = wav.readUInt16LE(32);
+      const dataBytes = wav.readUInt32LE(data + 4), sourceFrames = dataBytes / blockAlign;
+      expect(data + 8 + dataBytes).toBeLessThan(wav.length);
+      expect(blockAlign).toBe(sourceChannels * 2); expect(sourceRate).toBe(clip.sampleRate);
+      expect(sourceFrames).toBe(clip.originalMetadata.frames);
+      expect(sourceFrames / sourceRate).toBe(clip.durationSeconds);
+      expect(sourceChannels).toBe(clip.channels); expect(result.channels, result.id).toBe(sourceChannels);
+      expect(result.sampleRate, result.id).toBe(sourceRate);
+      // Chromium on Windows has returned a 796-frame difference for this metadata-bearing WAV.
+      const durationTolerance = browserName === 'chromium' ? .02 : .01;
+      expect(Math.abs(result.frames - sourceFrames), result.id).toBeLessThan(sourceRate * durationTolerance);
+    } else if (clip.format === 'MP3') {
       expect([1, 2]).toContain(result.channels);
       expect(Math.abs(result.duration - clip.originalMetadata.durationSeconds), result.id).toBeLessThan(.15);
       expect(result.duration, result.id).toBeLessThan(60);

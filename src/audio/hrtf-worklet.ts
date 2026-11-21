@@ -49,7 +49,7 @@ class HrtfMotionProcessor extends AudioWorkletProcessor {
   }
   process(_inputs: Float32Array[][], outputs: Float32Array[][], parameters: Record<string, Float32Array>): boolean {
     if (currentFrame >= this.stopFrame) return false;
-    if (outputs[0]?.[2]) this.renderer.render(outputs[0], parameters.frequency, currentFrame, sampleRate);
+    if (outputs[0]?.[3]) this.renderer.render(outputs[0], parameters.frequency, currentFrame, sampleRate);
     return true;
   }
 }

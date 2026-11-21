@@ -35,7 +35,7 @@ export class AsmrPosition {
   private adjustableMotion?: AudioWorkletNode;
   private adjustableSplitter?: ChannelSplitterNode;
   private adjustableSignature = '';
-  private returnGate?: { clock: OscillatorNode; shape: WaveShaperNode; mix: GainNode };
+  private returnGate?: { clock?: OscillatorNode; shape: WaveShaperNode; mix: GainNode };
   private quietReturn = false;
   private matrix: GainNode[];
   private disposed = false;
@@ -75,12 +75,12 @@ export class AsmrPosition {
     const startAt = context.currentTime;
     this.motionClock = new HrtfMotionClock(period, offsetSeconds, startAt);
     if (settings.quietReturn) this.createAdjustable(settings, startAt, offsetSeconds, clicks);
-    else this.configureReturn(settings.motion === 'quiet-return', period, startAt, true);
     if (settings.profile) {
       this.createCustom(settings.profile, startAt);
       this.nativeGain.gain.value = 0; this.customGain!.gain.value = 1;
       if (!this.adjustableMotion) this.configure(settings, period, true);
     }
+    if (!this.adjustableMotion) this.configureReturn(settings.motion === 'quiet-return', period, startAt, true);
     if (!this.adjustableMotion) for (const oscillator of [this.sine, this.cosine, this.harmonic]) {
       oscillator.start(startAt);
       if (endAt !== undefined) oscillator.stop(Math.max(context.currentTime, endAt));
@@ -134,12 +134,18 @@ export class AsmrPosition {
       this.connectAdjustable(['positionX', 'positionY', 'positionZ'].map(name => node.parameters.get(name)!));
     } else {
       this.customMotion = new AudioWorkletNode(this.context, 'asmr-hrtf-motion', {
-        numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [3], channelInterpretation: 'discrete',
+        numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [4], channelInterpretation: 'discrete',
         parameterData: { frequency: this.motionClock.frequency(editTime) },
         processorOptions: { state: this.motionClock.snapshot(), originFrame: Math.round(editTime * this.context.sampleRate),
           stopFrame: this.endAt === undefined ? undefined : Math.ceil(this.endAt * this.context.sampleRate) },
       });
-      this.customSplitter = this.context.createChannelSplitter(3); this.customMotion.connect(this.customSplitter);
+      this.customSplitter = this.context.createChannelSplitter(4); this.customMotion.connect(this.customSplitter);
+      // The measured trajectory and return envelope share one phase across seeks.
+      if (this.returnGate?.clock) {
+        this.customSplitter.connect(this.returnGate.shape, 3);
+        this.returnGate.clock.stop(); this.returnGate.clock.disconnect();
+        this.returnGate.clock = undefined;
+      }
       this.customMatrix = this.matrix.map(original => { const gain = this.context.createGain(); gain.gain.value = original.gain.value; return gain; });
       ['positionX', 'positionY', 'positionZ'].forEach((name, axis) => {
         node.parameters.get(name)!.value = [this.panner.positionX, this.panner.positionY, this.panner.positionZ][axis].value;
@@ -184,19 +190,25 @@ export class AsmrPosition {
 
   private configureReturn(enabled: boolean, period: number, time: number, initial = false): void {
     if (!this.returnGate && enabled) {
-      const clock = this.context.createOscillator(), shape = this.context.createWaveShaper(), mix = this.context.createGain();
-      const cycles = motionPhase(this.motionClock.snapshot(), time);
-      setSinePhase(this.context, clock, 2 * cycles + .25);
-      clock.frequency.value = 2 * this.motionClock.frequency(time);
+      const shape = this.context.createWaveShaper(), mix = this.context.createGain();
       shape.curve = approachCurve;
       mix.gain.value = initial ? 1 : 0;
-      clock.connect(shape).connect(mix).connect(this.mono.gain);
-      clock.start(time);
-      if (this.endAt !== undefined) clock.stop(Math.max(time, this.endAt));
-      this.returnGate = { clock, shape, mix };
+      shape.connect(mix).connect(this.mono.gain);
+      this.returnGate = { shape, mix };
+      if (this.customSplitter) this.customSplitter.connect(shape, 3);
+      else {
+        const clock = this.context.createOscillator();
+        const cycles = motionPhase(this.motionClock.snapshot(), time);
+        setSinePhase(this.context, clock, 2 * cycles + .25);
+        clock.frequency.value = 2 * this.motionClock.frequency(time);
+        clock.connect(shape);
+        clock.start(time);
+        if (this.endAt !== undefined) clock.stop(Math.max(time, this.endAt));
+        this.returnGate.clock = clock;
+      }
     }
     if (!this.returnGate) return;
-    if (!initial) smooth(this.returnGate.clock.frequency, 2 / period, time);
+    if (!initial && this.returnGate.clock) smooth(this.returnGate.clock.frequency, 2 / period, time);
     if (enabled === this.quietReturn) return;
     this.quietReturn = enabled;
     if (initial) this.mono.gain.value = 0;
@@ -249,8 +261,8 @@ export class AsmrPosition {
     this.disposed = true;
     if (!this.adjustableMotion) for (const oscillator of [this.sine, this.cosine, this.harmonic]) oscillator.stop();
     if (this.returnGate) {
-      this.returnGate.clock.stop();
-      this.returnGate.clock.disconnect(); this.returnGate.shape.disconnect(); this.returnGate.mix.disconnect();
+      this.returnGate.clock?.stop(); this.returnGate.clock?.disconnect();
+      this.returnGate.shape.disconnect(); this.returnGate.mix.disconnect();
     }
     this.input.disconnect(this.mono);
     if (this.adjustableMotion) {

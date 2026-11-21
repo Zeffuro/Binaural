@@ -628,6 +628,7 @@ test('spatial mixer keeps stereo legacy routing and uses HRTF in WAV with the sc
     const spatial = await measure(), moving: { motion: string; audio: Awaited<ReturnType<typeof measure>> }[] = [];
     for (const motion of ['orbit', 'sweep', 'approach', 'rise', 'figure-eight', 'rear-to-front', 'quiet-return']) {
       session.asmr.layers[0].spatial.motion = motion;
+      if (motion === 'quiet-return') session.asmr.layers[0].period = 2;
       moving.push({ motion, audio: await measure() });
     }
     return { legacy, spatial, moving };
