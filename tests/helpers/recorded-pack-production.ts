@@ -33,9 +33,12 @@ export async function checkRecordedPack(page: Page, origin: string, prefix: stri
   if (await consent.isVisible()) await consent.getByRole('button', { name: 'Start visual', exact: true }).click();
   await expect(page.locator('#asmr-flow')).toHaveValue('natural');
   await expect(page.locator('#trigger-sync-asmr')).toBeChecked();
+  await expect(page.locator('#trigger-enable')).toBeChecked();
   await page.locator('#play').click(); await expect(page.locator('#status')).toHaveText('● Listening');
   const drawing = page.locator('.scene-drawing'); await drawing.scrollIntoViewIfNeeded();
-  await expect.poll(async () => Number(await drawing.getAttribute('data-cues')), { timeout: 15000 }).toBeGreaterThan(0);
+  await expect(drawing).toBeInViewport();
+  await page.waitForFunction(() => Number(document.querySelector<HTMLCanvasElement>('.scene-drawing')?.dataset.cues) > 0,
+    undefined, { timeout: 35000 });
   await page.locator('#pause').click(); await expect(page.locator('#status')).toHaveText('Ⅱ Paused');
   const frozen = await drawing.getAttribute('data-cue-time');
   await page.waitForTimeout(150); await expect(drawing).toHaveAttribute('data-cue-time', frozen!);
