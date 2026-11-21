@@ -134,9 +134,9 @@ test('quiet return sliders and optional click timing stay independent through sh
   });
   await page.goto(link); await adjust(page);
   await expect(clickTiming).toBeChecked();
-  await expect(closest).toHaveJSProperty('valueAsNumber', .34);
-  await expect(approach).toHaveJSProperty('valueAsNumber', 6.5);
-  await expect(gap).toHaveJSProperty('valueAsNumber', 2.75);
+  expect(Number(await closest.inputValue())).toBe(.34);
+  expect(Number(await approach.inputValue())).toBe(6.5);
+  expect(Number(await gap.inputValue())).toBe(2.75);
   await page.locator('#save-preset').click(); await expect(page.locator('#notice')).toContainText('saved');
   await page.goto('/'); await page.locator('[data-saved]').click(); await adjust(page);
   await expect(clickTiming).toBeChecked();
