@@ -145,13 +145,15 @@ test('Plastic clicks after dark keeps its single 3D voice and varied click seque
   await expect(page.locator('.asmr-layer')).toHaveCount(1);
   await expect(page.locator('#status')).toHaveText('Ready when you are');
   await page.locator('.asmr-advanced summary').click();
-  const spread = page.getByLabel('Sound 1 pause variation', { exact: true });
+  const spread = page.locator('.asmr-position input[data-position="gapSpread"]');
+  await expect(spread).toBeVisible();
+  await expect(spread).toHaveAttribute('aria-label', 'Sound 1 pause variation');
   await expect(spread).toHaveJSProperty('valueAsNumber', 3);
   await spread.evaluate((input: HTMLInputElement) => {
     input.value = '2.5'; input.dispatchEvent(new Event('input', { bubbles: true }));
   });
   await expect(spread).toHaveAttribute('aria-valuetext', '±2.5 s');
-  await page.getByLabel('Sound 1 trigger', { exact: true }).selectOption('recorded-plastic-switch');
+  await page.locator('.asmr-layer select[data-field="sound"]').selectOption('recorded-plastic-switch');
   const { session } = await shared(page);
   expect(session.minutes).toBe(45);
   expect(session.asmr.layers).toMatchObject([{ sound: 'recorded-plastic-switch', spatial: { motion: 'quiet-return',
