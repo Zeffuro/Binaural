@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test';
 import { setSources } from './helpers/listening-sources';
 import { loadAsmrExperience } from './helpers/asmr-discovery';
+import type { AsmrPreset } from '../src/asmr-presets';
+import type { AsmrSettings } from '../src/asmr-state';
 
 const textureIds = ['fingertip-taps', 'keyboard', 'comb', 'fabric', 'rain-stick', 'soft-clicks'];
 const originalPresetIds = [
@@ -28,7 +30,12 @@ const recordedExperienceIds = ['blanket-folds', 'blanket-left', 'blanket-right',
   'sketchbook-turns', 'paper-and-pencil-hour', 'mist-at-the-temples', 'water-at-the-basin', 'fresh-towels',
   'unpacking-a-sketchbook', 'basin-and-cloth'];
 const recordedGestureIds = ['hands-in-soft-light', 'hairbrush-at-each-ear', 'zipper-and-page-study',
-  'pencil-lines-after-dark', 'mist-across-the-light', 'metal-points-in-the-dark'];
+  'pencil-lines-after-dark', 'mist-across-the-light', 'metal-points-in-the-dark', 'long-pencil-study', 'plastic-clicks-around-you'];
+const plasticIds = ['plastic-quiet-approach', 'calculator-snap-detail', 'zip-ties-and-lids', 'hinge-clicks-by-ear',
+  'casing-snap-by-ear', 'plastic-clicks-after-dark'];
+const contrastIds = ['small-sound-sampler', 'unhurried-materials', 'brushing-with-a-pause'];
+const recipeIds = [...originalPresetIds, ...sensoryPresetIds, ...experienceIds, ...routineIds, ...gestureIds,
+  ...spatialExperienceIds, ...detailExperienceIds, ...spaceExperienceIds, ...recordedExperienceIds, ...recordedGestureIds, ...plasticIds, ...contrastIds];
 interface RecipeSummary {
   id: string; group: string; validLight: boolean; canonical: boolean; repeatable: boolean; freshIds: boolean;
   layerCount: number; sources: string[]; spatialCount: number; knownSources: boolean;
@@ -72,33 +79,34 @@ test('six original textures fill deterministically and retain the caller normali
   for (const rate of [24000, 48000]) expect(new Set(results.textures.filter(item => item.rate === rate).map(item => item.signature)).size).toBe(6);
 });
 
-test('all 91 ASMR recipes are canonical, cover every source, and reference existing lights', async ({ page }) => {
+test('all 102 ASMR recipes are canonical, cover every source, and reference existing lights', async ({ page }) => {
   await page.goto('/');
   const result = await page.evaluate(async () => {
     const statePath = '/src/asmr-state.ts', presetPath = '/src/asmr-presets.ts', lightPath = '/src/trigger-presets.ts', extraPath = '/src/asmr-textures.ts';
-    const { parseAsmr, asmrSounds, generatedAsmrSounds, recordedAsmrSounds } = await import(statePath);
+    const { parseAsmr, asmrSounds, generatedAsmrSounds, recordedAsmrSounds }: typeof import('../src/asmr-state') = await import(statePath);
     const { asmrPresets } = await import(presetPath), { triggerPresets } = await import(lightPath), { extraAsmrTextures } = await import(extraPath);
-    const canonical = (settings: { level: number; focus?: boolean; variation?: unknown; space?: unknown; layers: Record<string, unknown>[] }) =>
+    const canonical = (settings: AsmrSettings) =>
       ({ level: settings.level, focus: settings.focus ?? false, variation: settings.variation, space: settings.space,
         layers: settings.layers.map(({ id: _id, ...layer }) => layer) });
     return { sources: asmrSounds.map(({ id }: { id: string }) => id), generated: generatedAsmrSounds.length, recordings: recordedAsmrSounds.length,
       textures: extraAsmrTextures.map(({ id }: { id: string }) => id), lightCount: triggerPresets.length,
-      presets: asmrPresets.map((preset: { id: string; light: string; group?: string; make: () => { level: number; layers: { id: string; [field: string]: unknown }[] } }) => {
+      presets: asmrPresets.map((preset: AsmrPreset) => {
         const settings = preset.make(), parsed = parseAsmr(settings), next = preset.make();
+        const sources = parsed.layers.flatMap(layer => [layer.sound, ...(layer.spatial?.quietReturn?.sequence?.recordings ?? [])]);
         return { id: preset.id, group: preset.group ?? 'Layered mixes', validLight: triggerPresets.some((light: { id: string }) => light.id === preset.light),
           canonical: JSON.stringify(canonical(settings)) === JSON.stringify(canonical(parsed)),
           repeatable: JSON.stringify(canonical(settings)) === JSON.stringify(canonical(next)),
           freshIds: settings.layers.every((layer: { id: string }, i: number) => layer.id !== next.layers[i].id),
-          layerCount: parsed.layers.length, sources: parsed.layers.map((layer: { sound: string }) => layer.sound),
-          spatialCount: parsed.layers.filter((layer: { spatial?: unknown }) => layer.spatial).length,
-          knownSources: parsed.layers.every((layer: { sound: string }) => asmrSounds.some((source: { id: string }) => source.id === layer.sound)),
+          layerCount: parsed.layers.length, sources,
+          spatialCount: parsed.layers.filter(layer => layer.spatial).length,
+          knownSources: sources.every(id => asmrSounds.some(source => source.id === id)),
         };
       }) as RecipeSummary[] };
   });
-  expect(result.generated).toBe(15); expect(result.recordings).toBe(15); expect(result.lightCount).toBe(26);
+  expect(result.generated).toBe(15); expect(result.recordings).toBe(23); expect(result.lightCount).toBe(26);
   expect(result.textures).toEqual(textureIds);
-  expect(result.presets.map(preset => preset.id)).toEqual([...originalPresetIds, ...sensoryPresetIds, ...experienceIds, ...routineIds, ...gestureIds, ...spatialExperienceIds, ...detailExperienceIds, ...spaceExperienceIds, ...recordedExperienceIds, ...recordedGestureIds]);
-  expect(new Set(result.presets.map(preset => preset.id)).size).toBe(91);
+  expect(result.presets.map(preset => preset.id)).toEqual(recipeIds);
+  expect(new Set(result.presets.map(preset => preset.id)).size).toBe(recipeIds.length);
   expect([...new Set(result.presets.flatMap(preset => preset.sources))].sort()).toEqual([...result.sources].sort());
   const sensory = result.presets.filter(preset => preset.group === 'Sensory textures');
   expect(sensory.map(preset => preset.id)).toEqual(sensoryPresetIds);
@@ -137,11 +145,19 @@ test('every recipe renders finite non-silent bounded offline stereo through the 
   await page.goto('/');
   const results = await page.evaluate(async () => {
     const mixerPath = '/src/audio/asmr-mixer.ts', assetsPath = '/src/audio/asmr-assets.ts', presetPath = '/src/asmr-presets.ts';
+    const hrtfPath = '/src/audio/hrtf-audio.ts';
     const { AsmrMixer } = await import(mixerPath), { prepareAsmrRecordings } = await import(assetsPath), { asmrPresets } = await import(presetPath);
+    const { prepareHrtfAudio } = await import(hrtfPath);
     const results = [];
     for (const preset of asmrPresets) {
-      const settings = preset.make(); await prepareAsmrRecordings(settings);
-      const context = new OfflineAudioContext(2, 60000, 24000), mixer = new AsmrMixer(context, context.destination);
+      const settings: AsmrSettings = preset.make(); await prepareAsmrRecordings(settings);
+      const timing = settings.layers.find(layer => layer.spatial?.quietReturn?.syncClicks)?.spatial?.quietReturn;
+      const duration = timing?.sequence ? Math.ceil(3 * (timing.approach + 1) + 2 * (timing.gap + timing.sequence.gapSpread))
+        : timing || preset.id === 'plastic-quiet-approach' ? 14
+        : preset.id === 'zip-ties-and-lids' || preset.group === 'Sound contrasts' ? 12 : 2.5;
+      const context = new OfflineAudioContext(2, duration * 24000, 24000);
+      await prepareHrtfAudio(context, settings);
+      const mixer = new AsmrMixer(context, context.destination);
       mixer.update(settings); const buffer = await context.startRendering();
       let finite = true, peak = 0, energy = 0;
       const earEnergy = [];
@@ -154,10 +170,10 @@ test('every recipe renders finite non-silent bounded offline stereo through the 
     }
     return results;
   });
-  expect(results.map(preset => preset.id)).toEqual([...originalPresetIds, ...sensoryPresetIds, ...experienceIds, ...routineIds, ...gestureIds, ...spatialExperienceIds, ...detailExperienceIds, ...spaceExperienceIds, ...recordedExperienceIds, ...recordedGestureIds]);
+  expect(results.map(preset => preset.id)).toEqual(recipeIds);
   for (const result of results) {
     expect(result.finite, result.id).toBe(true); expect(result.energy, result.id).toBeGreaterThan(0); expect(result.peak, result.id).toBeLessThan(1);
-    if ([...spatialExperienceIds, ...detailExperienceIds, ...spaceExperienceIds, ...recordedGestureIds, ...recordedExperienceIds.filter(id => !['blanket-left', 'blanket-right'].includes(id))].includes(result.id)) for (const energy of result.earEnergy) expect(energy, result.id).toBeGreaterThan(0);
+    if ([...spatialExperienceIds, ...detailExperienceIds, ...spaceExperienceIds, ...recordedGestureIds, ...plasticIds, ...contrastIds, ...recordedExperienceIds.filter(id => !['blanket-left', 'blanket-right'].includes(id))].includes(result.id)) for (const energy of result.earEnergy) expect(energy, result.id).toBeGreaterThan(0);
   }
 });
 

@@ -19,6 +19,7 @@ test('background sound packs restore matching presets, survive reload and can be
   await expect(page.locator('#bwg-background-status')).toContainText('Ready: Night noises');
   await expect(page.locator('#bwg-background-count')).toContainText('6 imported recordings');
   await page.locator('#save-preset').click();
+  await expect(page.locator('#notice')).toContainText('Preset saved in this browser.');
   await page.reload();
   await page.locator('[data-saved="0"]').click();
   await expect(page.locator('#bwg-background-status')).toContainText('Ready: Night noises');

@@ -258,7 +258,7 @@ test('all custom trajectories preserve oscillator phase and FIR history across o
     const results = [], rate = 48000, offset = 1.28, count = rate * 3;
     const samples = new Float32Array(count); let seed = 617;
     for (let i = 0; i < count; i++) { seed = Math.imul(seed, 1664525) + 1013904223 | 0; samples[i] = seed / 2147483648 * .02; }
-    for (const motion of ['still', 'orbit', 'sweep', 'approach', 'rise', 'figure-eight']) {
+    for (const motion of ['still', 'orbit', 'sweep', 'approach', 'rise', 'figure-eight', 'rear-to-front', 'quiet-return']) {
       const spatial = { profile: 'sadie-d1', azimuth: 170, elevation: 50, distance: .7, motion };
       const render = async (start: number, custom = true) => {
         const length = start < 3 ? count - Math.round(start * rate) : Math.round(rate * .1), context = new OfflineAudioContext(5, length, rate);

@@ -5,6 +5,7 @@ test('volume reaches 100 percent and survives saving', async ({ page }) => {
   await page.getByLabel('Master volume').fill('1');
   await expect(page.locator('#master-value')).toHaveText('100%');
   await page.getByRole('button', { name: 'Save to my presets' }).click();
+  await expect(page.locator('#notice')).toContainText('Preset saved in this browser.');
   await page.reload();
   await page.locator('.saved-preset').click();
   await expect(page.getByLabel('Master volume')).toHaveValue('1');
@@ -22,6 +23,7 @@ test('optional volume boost survives save, share, JSON import and undo with matc
   await page.locator('#undo-edit').click();
   await expect(boost).toBeChecked(); await expect(master).toHaveValue('2');
   await page.getByRole('button', { name: 'Save to my presets' }).click();
+  await expect(page.locator('#notice')).toContainText('Preset saved in this browser.');
   const json = await page.evaluate(() => JSON.parse(localStorage.getItem('binaural.presets.v1')!)[0]);
   expect(json).toMatchObject({ master: 2, volumeBoost: true });
   await page.reload(); await page.locator('.saved-preset').click();
@@ -73,7 +75,7 @@ test('pause freezes audio timer, resumes, and can stop while paused', async ({ p
 test('explorer filters sourced recipes and loads without autoplay', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Explore all presets' }).click();
-  await expect(page.locator('.explore-card')).toHaveCount(121);
+  await expect(page.locator('.explore-card')).toHaveCount(132);
   await page.screenshot({ path: `test-results/preset-explorer-${test.info().project.name}.png` });
   await page.getByRole('searchbox', { name: 'Search', exact: true }).fill('432 theta');
   await expect(page.locator('.explore-card')).toHaveCount(1);

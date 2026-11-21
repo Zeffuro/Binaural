@@ -64,7 +64,9 @@ export async function renderPcm(input: Session, seconds: number, maximum: number
         try {
           const buffer = await context.startRendering();
           // Processor errors are queued on the control thread before a section is encoded.
-          if (session.asmr?.layers.some(layer => layer.spatial?.profile)) await new Promise(resolve => setTimeout(resolve, 0));
+          if (session.asmr?.layers.some(layer => layer.spatial?.profile || layer.spatial?.quietReturn)) {
+            await new Promise(resolve => setTimeout(resolve, 0));
+          }
           if (graphFailure) throw graphFailure;
           signal?.throwIfAborted(); channels = [buffer.getChannelData(0), buffer.getChannelData(1)];
         } finally { cleanup(); }

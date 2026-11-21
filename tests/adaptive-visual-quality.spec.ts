@@ -16,6 +16,7 @@ test('Auto is canonical saved state while its measured quality stays transient',
   await page.getByLabel('Visual quality', { exact: true }).selectOption('auto');
   await expect(page.locator('#visual-quality-status')).toContainText('Auto: Eco');
   await page.getByRole('button', { name: 'Save to my presets' }).click();
+  await expect(page.locator('#notice')).toContainText('Preset saved in this browser.');
   await page.reload();
   await page.locator('.saved-preset').click();
   await expect(page.getByLabel('Visual quality', { exact: true })).toHaveValue('auto');

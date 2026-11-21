@@ -1,6 +1,6 @@
 import { extraAsmrTextures } from './asmr-textures.ts';
 import { parseAsmrSpatial, type AsmrSpatialSettings } from './asmr-spatial.ts';
-import { recordedAsmrSounds } from './asmr-recordings.ts';
+import { recordedAsmrSounds, supportsQuietClicks } from './asmr-recordings.ts';
 import { parseAsmrVariation, type AsmrVariation } from './asmr-variation.ts';
 import { parseAsmrSpace, type AsmrSpaceSettings } from './asmr-space.ts';
 export { recordedAsmrSounds } from './asmr-recordings.ts';
@@ -34,6 +34,7 @@ export interface AsmrLayer {
   tone: number;
   pressure: number;
   pressurePhase: number;
+  clearTone?: boolean;
   spatial?: AsmrSpatialSettings;
 }
 export interface AsmrSettings { level: number; layers: AsmrLayer[]; focus?: boolean; variation?: AsmrVariation; space?: AsmrSpaceSettings }
@@ -54,10 +55,18 @@ export function parseAsmr(value: unknown): AsmrSettings {
     if (!record(input) || !asmrSounds.some(sound => sound.id === input.sound) ||
       !asmrMotions.includes(input.motion as AsmrLayer['motion']) || typeof input.muted !== 'boolean' || typeof input.solo !== 'boolean' ||
       Object.entries(asmrRanges).some(([field, [min, max]]) => !bounded(input[field], min, max))) throw new Error('Invalid ASMR sound layer.');
+    if (input.clearTone !== undefined && (typeof input.clearTone !== 'boolean' ||
+      (input.clearTone && !recordedAsmrSounds.some(sound => sound.id === input.sound)))) throw new Error('Invalid recording tone setting.');
     const layer = makeAsmrLayer(input.sound as AsmrSound);
     for (const field of Object.keys(asmrRanges) as (keyof typeof asmrRanges)[]) layer[field] = input[field] as number;
+    const spatial = input.spatial === undefined ? undefined : parseAsmrSpatial(input.spatial);
+    if (spatial?.quietReturn?.syncClicks && !supportsQuietClicks(layer.sound)) throw new Error('Near-ear click timing requires a plastic click recording.');
+    if (spatial?.quietReturn?.sequence?.recordings.some(recording => recording === layer.sound)) {
+      throw new Error('A near-ear click sequence cannot repeat its main recording.');
+    }
     return { ...layer, motion: input.motion as AsmrLayer['motion'], muted: input.muted, solo: input.solo,
-      ...(input.spatial === undefined ? {} : { spatial: parseAsmrSpatial(input.spatial) }) };
+      ...(input.clearTone ? { clearTone: true } : {}),
+      ...(spatial ? { spatial } : {}) };
   });
   return { level: value.level, layers, focus: value.focus ?? false,
     ...(value.space === undefined ? {} : { space: parseAsmrSpace(value.space) }),

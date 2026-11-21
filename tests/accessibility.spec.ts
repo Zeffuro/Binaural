@@ -57,6 +57,7 @@ test('pointer targets and small control text remain readable at desktop and narr
   await page.getByRole('button', { name: 'Add layer' }).click();
   await page.getByLabel('Preset name', { exact: true }).fill('Accessible targets');
   await page.getByRole('button', { name: 'Save to my presets' }).click();
+  await expect(page.locator('.saved-preset')).toHaveText('Accessible targets');
   await page.getByRole('button', { name: 'Choose ambient color' }).click();
   for (const width of [1280, 390, 320]) {
     await page.setViewportSize({ width, height: 844 });

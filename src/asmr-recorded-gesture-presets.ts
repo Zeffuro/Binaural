@@ -29,4 +29,11 @@ export const asmrRecordedGesturePresets: AsmrPreset[] = [
   { id: 'metal-points-in-the-dark', name: 'Metal points in the dark', group: 'Recorded gestures', minutes: 45, light: 'gesture-tap',
     description: 'Recorded radiator taps drift from side to side at a slow pace. Small points of light accompany the contacts, with varied phrases and pauses.',
     make: () => mix(7981, [layer('recorded-metal', { level: .35, motion: 'sweep', width: .65, period: 50, rate: .85, tone: .35 })], 10) },
+  { id: 'long-pencil-study', name: 'Long pencil study', group: 'Long recordings', minutes: 20, light: 'gesture-trace',
+    description: 'A complete 39-second pencil take in stereo with its finer detail preserved. The take repeats at a gentle pace.',
+    make: () => mix(8011, [layer('recorded-sketching-long', { level: .55, clearTone: true, rate: .9 })], 24, 'steady') },
+  { id: 'plastic-clicks-around-you', name: 'Plastic clicks around you', group: 'Long recordings', minutes: 20, light: 'gesture-tap',
+    description: 'Small plastic lid snaps travel from behind your left and right ears toward the front in 3D headphones.',
+    make: () => mix(8039, [layer('recorded-plastic-lid', { level: .42, clearTone: true, rate: .9, period: 24,
+      spatial: { azimuth: 0, elevation: 0, distance: .8, motion: 'rear-to-front' } })], 24) },
 ];

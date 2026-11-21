@@ -39,6 +39,7 @@ test('all three dynamics choices survive saved presets, share links and JSON imp
     await page.getByLabel('Sound dynamics', { exact: true }).selectOption(profile);
     const name = `Dynamics ${profile}`;
     await page.locator('#preset-name').fill(name); await page.locator('#save-preset').click();
+    await expect(page.locator('#notice')).toContainText('Preset saved in this browser.');
     await page.reload(); await page.locator('.saved-preset').filter({ hasText: name }).click();
     await expect(page.locator('#output-dynamics')).toHaveValue(profile);
     const { link, session } = await sharedSettings(page);

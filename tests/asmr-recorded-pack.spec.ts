@@ -13,6 +13,7 @@ const recordingIds = ['recorded-blanket', 'recorded-zipper', 'recorded-sketchboo
 const presetIds = ['blanket-folds', 'blanket-left', 'blanket-right', 'zipper-details', 'pencil-studies',
   'sketchbook-turns', 'paper-and-pencil-hour', 'mist-at-the-temples', 'water-at-the-basin',
   'fresh-towels', 'unpacking-a-sketchbook', 'basin-and-cloth'];
+const afterDarkAlternates = ['recorded-plastic-switch', 'recorded-plastic-pen', 'recorded-plastic-button'];
 const canonical = (settings: { layers: { id: string }[]; focus?: boolean }) =>
   ({ ...settings, focus: settings.focus ?? false, layers: settings.layers.map(({ id: _id, ...layer }) => layer) });
 
@@ -83,6 +84,91 @@ test('all six original FLAC recordings decode natively and preserve paired wavef
   }
 });
 
+test('all supported near-ear click recordings prepare a bank of padded, audible hits', async ({ page }) => {
+  await page.goto('/');
+  const results = await page.evaluate(async () => {
+    const statePath = '/src/asmr-state.ts', catalogPath = '/src/asmr-recordings.ts', presetPath = '/src/asmr-plastic-presets.ts';
+    const assetsPath = '/src/audio/asmr-assets.ts', clipsPath = '/src/audio/quiet-click-clips.ts';
+    const { makeAsmrLayer }: typeof import('../src/asmr-state') = await import(statePath);
+    const { supportsQuietClicks, recordedAsmrSounds }: typeof import('../src/asmr-recordings') = await import(catalogPath);
+    const { prepareAsmrRecordings, asmrRecordingsReady, recordedAsmrBuffer }: typeof import('../src/audio/asmr-assets') = await import(assetsPath);
+    const { preparedQuietClicks }: typeof import('../src/audio/quiet-click-clips') = await import(clipsPath);
+    const { asmrPlasticPresets }: typeof import('../src/asmr-plastic-presets') = await import(presetPath);
+    const settings = asmrPlasticPresets.find(preset => preset.id === 'plastic-clicks-after-dark')!.make();
+    const [layer] = settings.layers, alternates = layer.spatial?.quietReturn?.sequence?.recordings ?? [];
+    const getBank = (id: string) => {
+      const buffer = recordedAsmrBuffer(id);
+      return buffer && preparedQuietClicks(buffer);
+    };
+    await prepareAsmrRecordings(settings);
+    const ready = asmrRecordingsReady(settings), prepared = [layer.sound, ...alternates].filter(id => getBank(id)?.clips.length);
+    const supported = recordedAsmrSounds.filter(sound => supportsQuietClicks(sound.id));
+    const banks = await Promise.all(supported.map(async ({ id }) => {
+      const single: AsmrSettings = { level: .5, layers: [{ ...makeAsmrLayer(id), spatial: {
+        azimuth: 0, elevation: 0, distance: .85, motion: 'quiet-return',
+        quietReturn: { closest: .2, approach: .5, gap: .25, syncClicks: true },
+      } }] };
+      await prepareAsmrRecordings(single);
+      return { sound: id, ready: asmrRecordingsReady(single), clips: getBank(id)?.clips.map(clip => ({
+        fade: clip[0] === 0 && clip.at(-1) === 0,
+        peak: clip.reduce((max, value) => Math.max(max, Math.abs(value)), 0),
+      })) ?? [] };
+    }));
+    return { ready, prepared, banks, layerCount: settings.layers.length };
+  });
+  expect(results.ready).toBe(true);
+  expect(results.layerCount).toBe(1);
+  expect(results.prepared).toEqual(['recorded-plastic-toy', ...afterDarkAlternates]);
+  expect(results.banks.map(bank => bank.sound)).toEqual(expect.arrayContaining([
+    'recorded-plastic-lid', 'recorded-plastic-snap', 'recorded-plastic-toy', 'recorded-plastic-zip-tie',
+    ...afterDarkAlternates,
+  ]));
+  for (const bank of results.banks) {
+    expect(bank.ready, bank.sound).toBe(true);
+    expect(bank.clips.length, bank.sound).toBeGreaterThan(0);
+    for (const clip of bank.clips) {
+      expect(clip.fade, bank.sound).toBe(true);
+      expect(clip.peak, bank.sound).toBeGreaterThan(0);
+      expect(clip.peak, bank.sound).toBeLessThan(1);
+    }
+  }
+});
+
+test('Plastic clicks after dark keeps its single 3D voice and varied click sequence through save and share', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('#asmr-browse').click();
+  await page.locator('#preset-search').fill('Plastic push button');
+  await page.locator('[data-load-preset="asmr-plastic-clicks-after-dark"]').click();
+  await page.getByRole('dialog', { name: 'Moving visual trigger', exact: true }).getByRole('button', { name: 'Not now', exact: true }).click();
+  await expect(page.locator('#playing-title')).toHaveText('Plastic clicks after dark');
+  await expect(page.locator('#minutes')).toHaveValue('45');
+  await expect(page.locator('.asmr-layer')).toHaveCount(1);
+  await expect(page.locator('#status')).toHaveText('Ready when you are');
+  await page.locator('.asmr-advanced summary').click();
+  const spread = page.getByLabel('Sound 1 pause variation', { exact: true });
+  await expect(spread).toHaveJSProperty('valueAsNumber', 3);
+  await spread.evaluate((input: HTMLInputElement) => {
+    input.value = '2.5'; input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await expect(spread).toHaveAttribute('aria-valuetext', '±2.5 s');
+  await page.getByLabel('Sound 1 trigger', { exact: true }).selectOption('recorded-plastic-switch');
+  const { session } = await shared(page);
+  expect(session.minutes).toBe(45);
+  expect(session.asmr.layers).toMatchObject([{ sound: 'recorded-plastic-switch', spatial: { motion: 'quiet-return',
+    quietReturn: { closest: .2, approach: 3.2, gap: 5.2, syncClicks: true,
+      sequence: { recordings: ['recorded-plastic-toy', ...afterDarkAlternates.slice(1)], gapSpread: 2.5, seed: 26913 } },
+  } }]);
+
+  await page.locator('#preset-name').fill('Plastic clicks after dark');
+  await page.locator('#save-preset').click();
+  await expect(page.locator('#notice')).toContainText('Preset saved in this browser.');
+  await page.reload();
+  await page.locator('.saved-preset').filter({ hasText: 'Plastic clicks after dark' }).click();
+  const { session: saved } = await shared(page);
+  expect(saved.minutes).toBe(45);
+  expect(canonical(saved.asmr)).toEqual(canonical(session.asmr));
+});
+
 test('all twelve everyday recording experiences keep source IDs, flow, duration and lights through discovery and session round trips', async ({ page }) => {
   test.setTimeout(180000); await page.goto('/');
   const recipes: PackRecipe[] = await page.evaluate(async () => {
@@ -121,6 +207,7 @@ test('all twelve everyday recording experiences keep source IDs, flow, duration 
     await page.getByRole('dialog', { name: 'Moving visual trigger', exact: true }).getByRole('button', { name: 'Start visual', exact: true }).click();
     await expect(page.locator('#trigger-enable')).toBeChecked();
     await page.locator('#preset-name').fill(recipe.name); await page.locator('#save-preset').click();
+    await expect(page.locator('#notice')).toContainText('Preset saved in this browser.');
     const saved = await page.evaluate(name => JSON.parse(localStorage.getItem('binaural.presets.v1')!).find((entry: { name: string }) => entry.name === name), recipe.name);
     expect(canonical(saved.asmr), recipe.id).toEqual(canonical(recipe.settings));
     await page.reload(); await page.locator('#asmr-browse').click(); await page.locator('#preset-favorites').check();

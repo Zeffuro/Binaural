@@ -10,7 +10,8 @@ import { hrtfAudioReady, prepareHrtfAudio } from './hrtf-audio';
 import { recordedMarkerEvents } from './asmr-recorded-markers';
 
 const prepared = new WeakSet<BaseAudioContext>(), pending = new WeakMap<BaseAudioContext, Promise<void>>();
-const usesPhrases = (settings?: AsmrSettings) => !!settings?.variation && settings.variation.mode !== 'steady' && settings.layers.length > 0;
+const usesPhrases = (settings?: AsmrSettings) => !!settings?.variation && settings.variation.mode !== 'steady' &&
+  settings.layers.some(layer => !layer.spatial?.quietReturn?.syncClicks);
 export const asmrAudioReady = (context: BaseAudioContext, settings?: AsmrSettings): boolean =>
   asmrRecordingsReady(settings) && hrtfAudioReady(context, settings) && (!usesPhrases(settings) || prepared.has(context));
 
@@ -45,7 +46,8 @@ export function phraseConfig(settings: AsmrSettings, ordinal: number): AsmrPhras
   const solo = settings.layers.some(layer => layer.solo && !layer.muted);
   return { variation: settings.variation ?? defaultAsmrVariation(), ordinal,
     families: settings.layers.map(layer => asmrCueKind(layer.sound)), sounds: settings.layers.map(layer => layer.sound),
-    eligible: settings.layers.flatMap((layer, index) => !layer.muted && layer.level > 0 && (!solo || layer.solo) ? [index] : []) };
+    eligible: settings.layers.flatMap((layer, index) => !layer.spatial?.quietReturn?.syncClicks &&
+      !layer.muted && layer.level > 0 && (!solo || layer.solo) ? [index] : []) };
 }
 
 export interface AsmrSource {

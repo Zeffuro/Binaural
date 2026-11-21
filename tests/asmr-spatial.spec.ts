@@ -40,8 +40,8 @@ test('spatial ASMR validates every bound, preserves legacy stereo and round-trip
       elevated: spatialPosition({ ...base, elevation: 60, distance: 2 }) };
   });
   expect(result.rejected).toBe(true); expect(result.missing).toBe(true); expect(result.invalidLayer).toBe(true);
-  expect(result.boundaries).toBe(48); expect(result.legacy).toBe(true);
-  expect(result.motions.map(({ motion }) => motion)).toEqual(['still', 'orbit', 'sweep', 'approach', 'rise', 'figure-eight']);
+  expect(result.boundaries).toBe(64); expect(result.legacy).toBe(true);
+  expect(result.motions.map(({ motion }) => motion)).toEqual(['still', 'orbit', 'sweep', 'approach', 'rise', 'figure-eight', 'rear-to-front', 'quiet-return']);
   for (const motion of result.motions) { expect(motion.json).toBe(motion.motion); expect(motion.share).toBe(motion.motion); }
   expect(result.json).toEqual({ azimuth: -85, elevation: 35, distance: .3, motion: 'orbit' }); expect(result.shared).toEqual(result.json);
   for (const [index, expected] of [[0, [0, 0, -1]], [1, [1, 0, 0]], [2, [-1, 0, 0]], [3, [0, 0, 1]]] as const) {
@@ -121,10 +121,12 @@ test('all spatial trajectories stay finite and bounded while retaining legacy st
     for (const motion of motions) for (const distance of [.15, .16, .6, 3]) {
       for (const azimuth of [-180, -70, 0, 110, 180]) for (const elevation of [-60, 0, 60]) {
         const settings = { motion, distance, azimuth, elevation }, initial = spatialPosition(settings);
+        const minimumReach = motion === 'quiet-return' ? .6 : motion === 'rear-to-front' ? .45 : .15;
+        const reach = Math.max(minimumReach, distance);
         for (let step = 0; step < 65; step++) {
           const seconds = step / 16, coordinate = sampleSpatialPosition(settings, seconds, 4);
           const radius = Math.hypot(coordinate.x, coordinate.y, coordinate.z);
-          finite &&= Object.values(coordinate).every(Number.isFinite); bounded &&= radius >= .15 - 1e-9 && radius <= distance + 1e-9;
+          finite &&= Object.values(coordinate).every(Number.isFinite); bounded &&= radius >= .15 - 1e-9 && radius <= reach + 1e-9;
           if (motion === 'still' || motion === 'orbit') {
             const angle = 2 * Math.PI * seconds / 4;
             const expected = motion === 'still' ? initial : {
@@ -138,14 +140,369 @@ test('all spatial trajectories stay finite and bounded while retaining legacy st
     }
     for (const motion of motions.filter(motion => motion !== 'still')) {
       const settings = { motion, distance: .6, azimuth: 0, elevation: 0 };
-      const first = sampleSpatialPosition(settings, 0, 4), next = sampleSpatialPosition(settings, 1, 4);
+      const first = sampleSpatialPosition(settings, 0, 4);
+      const next = sampleSpatialPosition(settings, motion === 'rear-to-front' || motion === 'quiet-return' ? .5 : 1, 4);
       variation += Math.hypot(first.x - next.x, first.y - next.y, first.z - next.z) > .1 ? 1 : 0;
     }
     return { finite, bounded, legacyError, variation };
   });
   expect(result.finite).toBe(true); expect(result.bounded).toBe(true);
-  expect(result.legacyError).toBeLessThan(1e-12); expect(result.variation).toBe(5);
+  expect(result.legacyError).toBeLessThan(1e-12); expect(result.variation).toBe(7);
 });
+
+test('rear-to-front passes both ears in turn and rotates with the chosen direction', async ({ page }) => {
+  await page.goto('/');
+  const { ahead, turned } = await page.evaluate(async () => {
+    const path = '/src/asmr-spatial.ts', { sampleSpatialPosition } = await import(path);
+    const at = (azimuth: number) => [1, 3, 5, 7].map(seconds =>
+      sampleSpatialPosition({ azimuth, elevation: 0, distance: .8, motion: 'rear-to-front' }, seconds, 8));
+    return { ahead: at(0), turned: at(90) };
+  });
+  const [rearLeft, frontLeft, rearRight, frontRight] = ahead;
+  expect(rearLeft.x).toBeLessThan(-.2);
+  expect(rearLeft.z).toBeGreaterThan(.2);
+  expect(rearRight.x).toBeCloseTo(-rearLeft.x, 10);
+  expect(rearRight.z).toBeCloseTo(rearLeft.z, 10);
+  for (const front of [frontLeft, frontRight]) {
+    expect(front.x).toBeCloseTo(0, 10);
+    expect(front.z).toBeLessThan(-.2);
+  }
+  for (const [index, point] of ahead.entries()) {
+    expect(turned[index].x).toBeCloseTo(-point.z, 10);
+    expect(turned[index].z).toBeCloseTo(point.x, 10);
+  }
+});
+
+test('plastic clicks preset loads a clear 3D recording with its paired tap visual', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('#asmr-browse').click();
+  await page.locator('#preset-search').fill('plastic lid clicks');
+  const load = page.locator('[data-load-preset="asmr-plastic-clicks-around-you"]');
+  const card = page.locator('.explore-card').filter({ has: load });
+  await expect(card.locator('.experience-label')).toContainText('Points of contact');
+  await load.click();
+  await page.getByRole('dialog', { name: 'Moving visual trigger', exact: true })
+    .getByRole('button', { name: 'Start visual', exact: true }).click();
+  await expect(page.getByLabel('Sound 1 trigger', { exact: true })).toHaveValue('recorded-plastic-lid');
+  await expect(page.getByLabel('Sound 1 clear recording', { exact: true })).toBeChecked();
+  await page.locator('.asmr-advanced summary').first().click();
+  const movement = page.getByLabel('Sound 1 3D movement', { exact: true });
+  await expect(movement).toHaveValue('rear-to-front');
+  await expect(movement.locator('option:checked')).toHaveText('Behind each ear to front');
+  await expect(page.getByLabel('Sound 1 headphone profile', { exact: true })).toHaveValue('native');
+  await expect(page.locator('#trigger-enable')).toBeChecked();
+  await expect(page.locator('#status')).toHaveText('Ready when you are');
+});
+
+test('plastic clicks with a quiet return load with the matching 3D movement and visual', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('#asmr-browse').click();
+  await page.locator('#preset-search').fill('quiet return');
+  await page.locator('[data-load-preset="asmr-plastic-quiet-approach"]').click();
+  await page.getByRole('dialog', { name: 'Moving visual trigger', exact: true })
+    .getByRole('button', { name: 'Start visual', exact: true }).click();
+  await expect(page.getByLabel('Sound 1 trigger', { exact: true })).toHaveValue('recorded-plastic-toy');
+  await expect(page.getByLabel('Sound 1 clear recording', { exact: true })).toBeChecked();
+  await page.locator('.asmr-advanced summary').first().click();
+  const movement = page.getByLabel('Sound 1 3D movement', { exact: true });
+  await expect(movement).toHaveValue('quiet-return');
+  await expect(movement.locator('option:checked')).toHaveText('Approach with quiet return');
+  await expect(page.getByLabel('Sound 1 headphone profile', { exact: true })).toHaveValue('native');
+  await expect(page.locator('#trigger-enable')).toBeChecked();
+  await expect(page.locator('#status')).toHaveText('Ready when you are');
+});
+
+test('adjustable quiet return uses the same timed position and muted gaps for native and SADIE audio', async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.goto('/');
+  const results = await page.evaluate(async () => {
+    const positionPath = '/src/audio/asmr-position.ts', loaderPath = '/src/audio/hrtf-audio.ts';
+    const { AsmrPosition } = await import(positionPath), { prepareHrtfAudio } = await import(loaderPath);
+    const rate = 48000, results = [];
+    for (const profile of [undefined, 'sadie-d1']) {
+      const settings = { azimuth: 0, elevation: 0, distance: .85, motion: 'quiet-return', profile,
+        quietReturn: { closest: .28, approach: 1.5, gap: .8 } };
+      const render = async (offset: number) => {
+        const context = new OfflineAudioContext(6, Math.round((4.6 - offset) * rate), rate);
+        await prepareHrtfAudio(context, { layers: [{ spatial: settings }] });
+        const tone = context.createOscillator(), gain = context.createGain(), sink = context.createGain();
+        tone.frequency.value = 931; gain.gain.value = .025; tone.connect(gain);
+        const position = new AsmrPosition(context, gain, sink, settings, 17, undefined, offset);
+        const ears = context.createChannelSplitter(2), merger = context.createChannelMerger(6);
+        sink.connect(ears); ears.connect(merger, 0, 0); ears.connect(merger, 1, 1);
+        for (let channel = 0; channel < 4; channel++) position.adjustableSplitter.connect(merger, channel, channel + 2);
+        merger.connect(context.destination); tone.start();
+        const buffer = await context.startRendering(); position.dispose();
+        return Array.from({ length: 6 }, (_, index) => buffer.getChannelData(index));
+      };
+      const offset = 2.6, full = await render(0), part = await render(offset);
+      const point = (time: number) => full.slice(2).map(channel => channel[Math.round(time * rate)]);
+      const power = (start: number, end: number) => {
+        let value = 0;
+        const from = Math.round(start * rate), to = Math.round(end * rate);
+        for (let index = from; index < to; index++) value += full[0][index] ** 2 + full[1][index] ** 2;
+        return value / (to - from);
+      };
+      let sectionError = 0;
+      for (let channel = 2; channel < 6; channel++) for (let index = 0; index < part[channel].length; index += 113) {
+        sectionError = Math.max(sectionError, Math.abs(part[channel][index] - full[channel][index + Math.round(offset * rate)]));
+      }
+      results.push({ profile, left: point(.02), near: point(1.5), right: point(2.32),
+        forward: [power(.3, 1.3), power(2.6, 3.6)], quiet: [power(1.73, 2.2), power(4.01, 4.5)], sectionError });
+    }
+    return results;
+  });
+  for (const result of results) {
+    expect(result.left[0]).toBeLessThan(-.5); expect(result.left[2]).toBeGreaterThan(.5);
+    expect(result.right[0]).toBeGreaterThan(.5); expect(result.right[2]).toBeGreaterThan(.5);
+    expect(Math.hypot(...result.near.slice(0, 3))).toBeCloseTo(.28, 4);
+    expect(result.near[2]).toBeCloseTo(-.28, 4);
+    const audible = Math.min(...result.forward);
+    expect(audible).toBeGreaterThan(1e-8);
+    expect(Math.max(...result.quiet)).toBeLessThan(audible * 1e-5);
+    expect(result.sectionError).toBeLessThan(.00002);
+  }
+});
+
+test('editing timings during a quiet gap keeps the gap quiet and preserves which ear comes next', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const rendererPath = '/src/audio/quiet-approach.ts';
+    const { QuietApproachRenderer } = await import(rendererPath);
+    const path = { azimuth: 0, elevation: 0, distance: .85, motion: 'quiet-return',
+      quietReturn: { closest: .2, approach: 1, gap: 2 } };
+    const renderer = new QuietApproachRenderer(path, 0, 0);
+    const output = (count: number) => Array.from({ length: 4 }, () => new Float32Array(count));
+    renderer.render(output(1500), 0, 1000);
+    renderer.configure({ ...path, quietReturn: { closest: .35, approach: 2, gap: 1 } });
+    const next = output(2800);
+    renderer.render(next, 1500, 1000);
+    return { gapSilent: next[3].slice(0, 750).every(value => value === 0),
+      rightX: next[0][850], audible: next[3][1100], closeZ: next[2][2750] };
+  });
+  expect(result.gapSilent).toBe(true);
+  expect(result.rightX).toBeGreaterThan(.5);
+  expect(result.audible).toBeGreaterThan(.8);
+  expect(result.closeZ).toBeCloseTo(-.35, 4);
+});
+
+test('recorded click audio reaches minimum distance at each ear and keeps the full tail through native and measured HRTF', async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.goto('/');
+  const results = await page.evaluate(async () => {
+    const positionPath = '/src/audio/asmr-position.ts', loaderPath = '/src/audio/hrtf-audio.ts';
+    const { AsmrPosition } = await import(positionPath), { prepareHrtfAudio } = await import(loaderPath);
+    const rate = 48000, approach = .75, gap = .45, hold = .30, release = Math.round((approach + hold) * rate) + 1;
+    const leg = release + Math.round(gap * rate), results = [];
+    const clips = [1, .6].map(scale => Float32Array.from({ length: 7200 }, (_, frame) => {
+      if (frame < 960 || frame >= 6000) return 0;
+      return scale * .1 * Math.exp(-(frame - 960) / 1600) * Math.cos((frame - 960) * .17);
+    }));
+    for (const profile of [undefined, 'sadie-d1']) {
+      const settings = { azimuth: 0, elevation: 0, distance: .85, motion: 'quiet-return', profile,
+        quietReturn: { closest: .22, approach, gap, syncClicks: true } };
+      const render = async (offset: number) => {
+        const context = new OfflineAudioContext(6, leg * 2 - offset, rate);
+        await prepareHrtfAudio(context, { layers: [{ spatial: settings }] });
+        const input = context.createGain(), sink = context.createGain();
+        const position = new AsmrPosition(context, input, sink, settings, 17, undefined, offset / rate, undefined,
+          { banks: [{ sampleRate: rate, clips }], speed: 1, destination: input });
+        const ears = context.createChannelSplitter(2), merger = context.createChannelMerger(6);
+        sink.connect(ears); ears.connect(merger, 0, 0); ears.connect(merger, 1, 1);
+        for (let channel = 0; channel < 4; channel++) position.adjustableSplitter.connect(merger, channel, channel + 2);
+        merger.connect(context.destination);
+        const buffer = await context.startRendering(); position.dispose();
+        return Array.from({ length: 6 }, (_, index) => buffer.getChannelData(index));
+      };
+      const offset = release - 5300, full = await render(0), part = await render(offset);
+      const passes = clips.map((clip, index) => {
+        const start = index * leg + release - clip.length, peak = start + 960, quiet = index * leg + release;
+        const sides = [0, 1].map(ear => full[ear].slice(start, quiet).reduce((sum, s) => sum + s * s, 0));
+        const quietPeak = Math.max(...[0, 1].map(ear => full[ear].slice(quiet + 7200, (index + 1) * leg)
+          .reduce((max, value) => Math.max(max, Math.abs(value)), 0)));
+        return { x: full[2][peak], radius: Math.hypot(full[2][peak], full[3][peak], full[4][peak]),
+          exactClip: full[5].slice(start, quiet).every((sample, frame) => sample === clip[frame]),
+          silentGap: full[5].slice(quiet, (index + 1) * leg).every(sample => sample === 0), sides, quietPeak };
+      });
+      results.push({ profile, passes, exactSection: part.slice(2).every((channel, index) =>
+        channel.every((sample, frame) => sample === full[index + 2][frame + offset])) });
+    }
+    return results;
+  });
+  for (const item of results) {
+    expect(item.exactSection).toBe(true);
+    expect(item.passes[0].x).toBeLessThan(-.2); expect(item.passes[1].x).toBeGreaterThan(.2);
+    for (const pass of item.passes) {
+      expect(pass.radius).toBeCloseTo(.22, 6);
+      expect(pass.exactClip).toBe(true); expect(pass.silentGap).toBe(true);
+      expect(Math.max(...pass.sides)).toBeGreaterThan(.0001);
+      expect(pass.quietPeak).toBeLessThan(.0001);
+    }
+  }
+});
+
+test('edits during a click preserve that waveform and apply to the opposite pass', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const path = '/src/audio/quiet-click-renderer.ts', { QuietClickRenderer } = await import(path);
+    const rate = 1000, clip = Float32Array.from({ length: 170 }, (_, i) =>
+      i > 24 && i < 145 ? Math.exp(-(i - 25) / 35) : 0);
+    const bank = { sampleRate: rate, clips: [clip] };
+    const settings = { azimuth: 0, elevation: 0, distance: .85, motion: 'quiet-return',
+      quietReturn: { closest: .2, approach: .5, gap: .25, syncClicks: true } };
+    const edited = { ...settings, quietReturn: { ...settings.quietReturn, closest: .4, approach: 1.5, gap: .8 } };
+    const output = (count: number) => Array.from({ length: 4 }, () => new Float32Array(count));
+    const renderer = new QuietClickRenderer([bank], settings, 1, rate, 0, 0, false);
+    renderer.render(output(680), 0);
+    renderer.configure(edited, .5);
+    const remainder = output(2300); renderer.render(remainder, 680);
+    const original = output(1051);
+    new QuietClickRenderer([bank], settings, 1, rate, 0, 0, false).render(original, 0);
+    const secondPeak = 1051 + 1500 + 601 - 2 * (170 - 25);
+    const partial = output(300);
+    new QuietClickRenderer([bank], settings, 1, rate, 0, .68, true).render(partial, 0);
+    return { unchanged: original.every((channel, index) => channel.slice(680).every((sample, frame) => sample === remainder[index][frame])),
+      peak: remainder[3][secondPeak - 680], right: remainder[0][secondPeak - 680],
+      skipPartial: partial[3].every(sample => sample === 0) };
+  });
+  expect(result.unchanged).toBe(true);
+  expect(result.peak).toBe(1);
+  expect(result.right).toBeGreaterThan(.38);
+  expect(result.skipPartial).toBe(true);
+});
+
+test('a varied click sequence keeps whole hits at opposite ears and can seek past its cycle', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const rendererPath = '/src/audio/quiet-click-renderer.ts', sequencePath = '/src/audio/quiet-click-sequence.ts';
+    const { QuietClickRenderer } = await import(rendererPath), { quietClickTurns } = await import(sequencePath);
+    const rate = 1000, approach = 3200, hold = 301, release = approach + hold;
+    const timing = { closest: .2, approach: approach / rate, gap: 5.2, syncClicks: true,
+      sequence: { recordings: ['recorded-plastic-switch', 'recorded-plastic-pen', 'recorded-plastic-button'],
+        gapSpread: 3, seed: 26913 } };
+    const settings = { azimuth: 0, elevation: 0, distance: .85, motion: 'quiet-return', quietReturn: timing };
+    const banks = Array.from({ length: 4 }, (_, recording) => ({ sampleRate: rate,
+      clips: Array.from({ length: 7 }, (_, clip) => Float32Array.from({ length: 170 + clip * 5 }, (_, frame) =>
+        frame >= 25 && frame < 140 ? (.2 + .1 * recording + .01 * clip) * Math.exp(-(frame - 25) / 30) : 0)) }));
+    const turns: { recording: number; gap: number }[] = quietClickTurns(timing);
+    const cycle = turns.reduce((frames, turn) => frames + release + Math.round(turn.gap * rate), 0);
+    const render = (offset: number, length: number, stop?: number) => {
+      const output = Array.from({ length: 4 }, () => new Float32Array(length));
+      new QuietClickRenderer(banks, settings, 1, rate, 0, offset / rate, false).render(output, 0, stop);
+      return output;
+    };
+    const first = turns.slice(0, 12);
+    const frames = first.reduce((sum, turn) => sum + release + Math.round(turn.gap * rate), 0);
+    const output = render(0, frames), seen = banks.map(() => 0);
+    let start = 0;
+    const visits = first.map((turn, index) => {
+      const bank = banks[turn.recording], clip = bank.clips[seen[turn.recording]++ % bank.clips.length];
+      const end = start + release, firstSample = end - clip.length, peak = firstSample + 25;
+      const distance = Math.hypot(...output.slice(0, 3).map(axis => axis[peak]));
+      const exact = output[3].subarray(firstSample, end).every((sample, frame) => sample === clip[frame]);
+      start = end + Math.round(turn.gap * rate);
+      return { exact, distance, right: output[0][peak] > 0, isRight: index % 2 === 1,
+        silent: output[3].subarray(end, start).every(sample => sample === 0) };
+    });
+    const full = render(cycle - 300, 11_000), section = render(cycle + 3300, 5000);
+    const second = release + Math.round(first[0].gap * rate);
+    const timedEnd = render(0, second + release, second + release - 50)[3];
+    return { cycleSeconds: cycle / rate, visits, seam: section.every((channel, index) =>
+      channel.every((value, frame) => full[index][3600 + frame] === value)),
+      bankRepeat: turns.some((turn, index) => turn.recording === turns[(index + 1) % turns.length].recording),
+      banksPerEar: [0, 1].map(side => new Set(turns.filter((_, i) => i % 2 === side).map(turn => turn.recording)).size),
+      pauses: new Set(first.map(turn => Math.round(turn.gap * rate))).size,
+      inBounds: turns.every(turn => turn.gap >= 2.2 && turn.gap <= 8.2),
+      completeAtEnd: timedEnd.slice(0, second).every((sample, frame) => sample === output[3][frame]) &&
+        timedEnd.slice(second).every(sample => sample === 0),
+      stable: JSON.stringify(turns) === JSON.stringify(quietClickTurns(timing)) };
+  });
+  expect(result.cycleSeconds).toBeGreaterThan(45 * 60);
+  expect(result.bankRepeat).toBe(false); expect(result.banksPerEar).toEqual([4, 4]);
+  expect(result.pauses).toBeGreaterThan(6); expect(result.inBounds).toBe(true);
+  expect(result.stable).toBe(true); expect(result.seam).toBe(true); expect(result.completeAtEnd).toBe(true);
+  for (const hit of result.visits) {
+    expect(hit.exact).toBe(true); expect(hit.silent).toBe(true); expect(hit.right).toBe(hit.isRight);
+    expect(hit.distance).toBeCloseTo(.2, 6);
+  }
+});
+
+test('quiet return approaches from alternating rear sides and reaches the center in front', async ({ page }) => {
+  await page.goto('/');
+  const passes = await page.evaluate(async () => {
+    const path = '/src/asmr-spatial.ts', { sampleSpatialPosition } = await import(path);
+    const settings = { azimuth: 0, elevation: 0, distance: .8, motion: 'quiet-return' };
+    return [1, 5].map(start => Array.from({ length: 33 }, (_, step) =>
+      sampleSpatialPosition(settings, start + step / 16, 8) as { x: number; y: number; z: number }));
+  });
+  const [left, right] = passes;
+  expect(left[0].x).toBeLessThan(-.2);
+  expect(left[0].z).toBeGreaterThan(.2);
+  for (const [step, point] of left.entries()) {
+    expect(right[step].x).toBeCloseTo(-point.x, 10);
+    expect(right[step].z).toBeCloseTo(point.z, 10);
+  }
+  for (const pass of passes) {
+    const front = pass[pass.length - 1];
+    expect(front.x).toBeCloseTo(0, 10);
+    expect(front.z).toBeLessThan(-.15);
+    const distances = pass.map(({ x, y, z }) => Math.hypot(x, y, z));
+    for (let step = 1; step < distances.length; step++) {
+      expect(distances[step]).toBeLessThanOrEqual(distances[step - 1] + 1e-10);
+    }
+    expect(distances[distances.length - 1]).toBeLessThan(distances[0] * .75);
+  }
+});
+
+for (const profile of [undefined, 'sadie-d1']) {
+  test(`both approaches are audible after seeking and both returns are quiet (${profile ?? 'native'})`, async ({ page }) => {
+    test.setTimeout(90_000);
+    await page.goto('/');
+    const result = await page.evaluate(async profile => {
+      const positionPath = '/src/audio/asmr-position.ts', loaderPath = '/src/audio/hrtf-audio.ts';
+      const { AsmrPosition } = await import(positionPath), { prepareHrtfAudio } = await import(loaderPath);
+      const rate = 48000, duration = 8, offset = 1.375;
+      const settings = { azimuth: 0, elevation: 0, distance: .8, motion: 'quiet-return', profile };
+      const samples = new Float32Array(rate * duration);
+      for (const hz of [613, 1097, 2179, 3671]) {
+        const radiansPerFrame = 2 * Math.PI * hz / rate;
+        for (let i = 0; i < samples.length; i++) samples[i] += .015 * Math.sin(radiansPerFrame * i);
+      }
+      const render = async (start: number) => {
+        const context = new OfflineAudioContext(2, Math.round((duration - start) * rate), rate);
+        await prepareHrtfAudio(context, { layers: [{ spatial: settings }] });
+        const source = context.createBufferSource(), buffer = context.createBuffer(1, samples.length, rate);
+        buffer.copyToChannel(samples, 0); source.buffer = buffer;
+        const position = new AsmrPosition(context, source, context.destination, settings, duration, duration - start, start);
+        source.start(0, start);
+        const output = await context.startRendering();
+        position.dispose(); source.disconnect();
+        // Allow both HRTF paths to settle at the start of a section and ring out after each fade.
+        const power = (from: number, to: number) => [0, 1].map(ear => {
+          const channel = output.getChannelData(ear);
+          const first = Math.round((from - start) * rate), end = Math.round((to - start) * rate);
+          let sum = 0;
+          for (let frame = first; frame < end; frame++) sum += channel[frame] ** 2;
+          return sum / (end - first);
+        });
+        return { forward: [power(1.7, 2.3), power(5.7, 6.3)], quiet: [power(3.35, 4.65), power(7.35, 7.85)] };
+      };
+      return { full: await render(0), section: await render(offset) };
+    }, profile);
+    for (const { forward, quiet } of [result.full, result.section]) {
+      const weakerPass = Math.min(...forward.map(([left, right]) => left + right));
+      expect(weakerPass).toBeGreaterThan(1e-8);
+      expect(Math.max(...quiet.flat())).toBeLessThan(weakerPass * 1e-5);
+    }
+    for (const [pass, ears] of result.full.forward.entries()) {
+      for (const [ear, power] of ears.entries()) {
+        const ratio = result.section.forward[pass][ear] / power;
+        expect(ratio).toBeGreaterThan(.75);
+        expect(ratio).toBeLessThan(1.25);
+      }
+    }
+  });
+}
 
 test('native spatial modulation matches absolute trajectory phase including three-hour section offsets', async ({ page }) => {
   await page.goto('/');
@@ -198,7 +555,7 @@ test('native spatial modulation matches absolute trajectory phase including thre
     }
     return results;
   });
-  expect(results).toHaveLength(12);
+  expect(results).toHaveLength(16);
   for (const result of results) {
     expect(result.initialError, JSON.stringify(result)).toBeLessThan(.0001);
     expect(result.nativeError, JSON.stringify(result)).toBeLessThan(.0001); expect(result.peak).toBeLessThan(1.71);
@@ -269,7 +626,7 @@ test('spatial mixer keeps stereo legacy routing and uses HRTF in WAV with the sc
     const legacy = await measure();
     session.asmr.layers[0].spatial = { azimuth: 70, elevation: 20, distance: .4, motion: 'still' };
     const spatial = await measure(), moving: { motion: string; audio: Awaited<ReturnType<typeof measure>> }[] = [];
-    for (const motion of ['orbit', 'sweep', 'approach', 'rise', 'figure-eight']) {
+    for (const motion of ['orbit', 'sweep', 'approach', 'rise', 'figure-eight', 'rear-to-front', 'quiet-return']) {
       session.asmr.layers[0].spatial.motion = motion;
       moving.push({ motion, audio: await measure() });
     }
@@ -285,7 +642,7 @@ test('spatial mixer keeps stereo legacy routing and uses HRTF in WAV with the sc
   }
 });
 
-for (const motion of ['orbit', 'sweep', 'approach', 'rise', 'figure-eight']) test(`@live spatial ${motion} shares live pause, end and voice replacement ownership`, async ({ page }) => {
+for (const motion of ['orbit', 'sweep', 'approach', 'rise', 'figure-eight', 'rear-to-front']) test(`@live spatial ${motion} shares live pause, end and voice replacement ownership`, async ({ page }) => {
   await page.goto('/'); await page.locator('h1').click();
   const result = await page.evaluate(async motion => {
     const enginePath = '/src/audio/engine.ts', statePath = '/src/asmr-state.ts', modelPath = '/src/model.ts', clockPath = '/tests/helpers/audio-clock.ts';

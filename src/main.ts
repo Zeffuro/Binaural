@@ -8,7 +8,7 @@ import { setupTheme } from './theme';
 import { AudioEngine } from './audio/engine';
 import { frequencies, presets } from './catalog';
 import { initialSession, makeLayer, MAX_LAYERS, parseSession, type Layer, type Session } from './model';
-import { downloadPreset, loadPresets, storePresets } from './storage';
+import { applyPresetChange, downloadPreset, loadPresets, PresetConflict, presetStorageKey, withPresetLock, type PresetChange, type PresetEntry } from './storage';
 import { builtinView, frequencyView, layerView, layout, savedView } from './views';
 import { setupExplorer, frequencyDetail } from './explorer';
 import { asmrPresetLight } from './asmr-explorer';
@@ -39,7 +39,7 @@ setupTheme();
 $('#builtins').innerHTML = builtinView();
 $('#frequencies').innerHTML = frequencyView('', favoriteFrequencies());
 let session = initialSession();
-let saved: Session[] = [];
+let saved: PresetEntry[] = [];
 let busy = false;
 let stopping: Promise<void> | undefined;
 let transportRevision = 0;
@@ -50,7 +50,7 @@ let videoExport: ReturnType<typeof setupVideoExport> | undefined;
 let noticeTimer: ReturnType<typeof setTimeout>;
 const engine = new AudioEngine();
 let preview: AsmrPreview | undefined;
-const history = new EditHistory<{ session: Session; saved: Session[] }>();
+const history = new EditHistory<Session, PresetChange>();
 const visual = setupVisuals((timeline, offsetMs, needCues) => engine.visualFrame(timeline ?? 'output', offsetMs, needCues), () => { session.visual = visual.getState(); session.version = 2; }, () => { experienceRevision++; checkpoint(); }, () => engine.requestVisualCues());
 const controls = setupStudioControls({
   playPause: () => { void playPause().catch(report); }, stop: () => { void stop().catch(report); }, mute: toggleMute,
@@ -60,10 +60,10 @@ const controls = setupStudioControls({
 });
 const immersiveAudio = setupImmersiveAudio({ playPause: () => { void playPause().catch(report); }, stop: () => { void stop().catch(report); }, mute: toggleMute, volume: setMaster });
 const offline = setupOffline({ isPlaying: () => busy || engine.playing || !!preview?.active || !!videoExport?.active() });
-const timeline = setupTimelineEditor({ session: () => snapshot().session, apply: applyTimeline, isBusy: () => busy || engine.playing || musicBusy || backgroundBusy });
+const timeline = setupTimelineEditor({ session: snapshot, apply: applyTimeline, isBusy: () => busy || engine.playing || musicBusy || backgroundBusy });
 $('#scene-mute-tones').addEventListener('click', toggleMute);
-setupAudioExport({ session: () => snapshot().session, music: () => engine.selectedMusicFile, notify: message => notice(message) });
-videoExport = setupVideoExport({ visual, session: () => snapshot().session, remaining: () => engine.remaining,
+setupAudioExport({ session: snapshot, music: () => engine.selectedMusicFile, notify: message => notice(message) });
+videoExport = setupVideoExport({ visual, session: snapshot, remaining: () => engine.remaining,
   ensurePlaying: async () => {
     if (!engine.playing || engine.paused) await playPause();
     if (!engine.playing || engine.paused) throw new Error('Start listening before recording a video.');
@@ -82,7 +82,7 @@ setupExplorer(async (preset, play) => {
 setupSessionGuide({ load: useSession, start: playPause });
 const asmr = setupAsmr({ get: () => session.asmr, beforeEdit: checkpoint, busy: () => busy || musicBusy || backgroundBusy,
   preview: { state: () => preview?.state ?? { phase: 'idle' }, blocked: () => engine.playing || busy || musicBusy || backgroundBusy || !!videoExport?.active(),
-    start: id => { void preview?.start(session, id).catch(report); }, stop: () => { void preview?.stop().catch(report); } },
+    start: (id, bothEars) => { void preview?.start(session, id, bothEars).catch(report); }, stop: () => { void preview?.stop().catch(report); } },
   enabled: () => !!modeGains(listeningMode(session)).asmr,
   enable() { void preview?.stop().catch(report); session.mode = modeForSources(!!modeGains(listeningMode(session)).tones, true); session.version = 2; engine.update(session); modes.refresh(); },
   update(value, light) {
@@ -126,10 +126,17 @@ function notice(message: string, undoable = false): void {
   noticeTimer = setTimeout(() => { $('#notice').hidden = true; }, 6500);
 }
 const report = (error: unknown): void => notice(error instanceof Error ? error.message : 'Something went wrong. Please try again.');
-try { saved = loadPresets(); } catch { notice('Saved presets could not be read. You can still import a JSON backup.'); }
+function refreshSaved(): void {
+  try {
+    const library = loadPresets();
+    saved = library.entries;
+    if (library.damaged) notice('Some saved presets are unreadable. The original entries have been kept.');
+  } catch (error) { report(error); }
+}
+refreshSaved();
 
 function renderSaved(): void {
-  $('#saved').innerHTML = savedView(saved, libraryPreferences(), $<HTMLSelectElement>('#saved-filter').value);
+  $('#saved').innerHTML = savedView(saved.map(entry => entry.session), libraryPreferences(), $<HTMLSelectElement>('#saved-filter').value);
   $('#saved-count').textContent = String(saved.length);
 }
 function renderLayers(): void {
@@ -215,7 +222,7 @@ function setMaster(value: number): void {
   $<HTMLInputElement>('#master').value = String(session.master); $('#master-value').textContent = `${Math.round(session.master * 100)}%`;
   engine.update(session); renderTransport();
 }
-function snapshot(): { session: Session; saved: Session[] } { return structuredClone({ session: { ...session, version: 2 as const, visual: visual.getState() }, saved }); }
+function snapshot(): Session { return structuredClone({ ...session, version: 2, visual: visual.getState() }); }
 $('#volume-boost').addEventListener('change', event => {
   if (busy || musicBusy || backgroundBusy) { $<HTMLInputElement>('#volume-boost').checked = !!session.volumeBoost; return; }
   void preview?.stop().catch(report);
@@ -229,18 +236,58 @@ async function applyTimeline(next: Session): Promise<void> {
   notice('Timeline updated. Start listening when ready.');
 }
 function checkpoint(): void { history.record(snapshot()); }
+function saveLibraryChange(change: PresetChange): boolean {
+  saved = applyPresetChange(change).entries;
+  const revision = (entry?: PresetChange['before']) => entry && { name: entry.name, raw: entry.raw, index: entry.index };
+  const undoable = history.recordEffect({ before: revision(change.before), after: revision(change.after) });
+  renderSaved();
+  renderTransport();
+  return undoable;
+}
 function toggleMute(): void {
   if (busy) return; checkpoint(); session.tonesMuted = !session.tonesMuted;
   engine.update(session); renderTransport();
 }
 async function undoEdit(redo: boolean): Promise<void> {
   if (busy) return;
-  const current = snapshot(); const next = redo ? history.redo(current) : history.undo(current); if (!next) return;
+  let blockedChange: PresetChange | undefined;
   try {
-    if (JSON.stringify(saved) !== JSON.stringify(next.saved)) storePresets(next.saved);
-    const visualsChanged = JSON.stringify(current.session.visual) !== JSON.stringify(next.session.visual);
-    await stop(); session = next.session; saved = next.saved; if (visualsChanged) visual.restore(session.visual); renderSaved(); renderSession(); notice(redo ? 'Edit restored.' : 'Edit undone.');
-  } catch (error) { redo ? history.undo(next) : history.redo(next); report(error); }
+    const move = () => {
+      if (busy) return;
+      const current = snapshot();
+      const next = history.move(current, redo, change => {
+        if (!navigator.locks) throw new Error('This browser cannot safely change saved presets.');
+        blockedChange = change;
+        saved = applyPresetChange(redo ? change : { before: change.after, after: change.before }).entries;
+      });
+      if (!next) return;
+      if (!next.value) return {};
+      const visualsChanged = JSON.stringify(current.visual) !== JSON.stringify(next.value.visual);
+      return { next: next.value, visualsChanged, stopped: stop() };
+    };
+    const result = history.needsEffect(snapshot(), redo) ? await withPresetLock(move) : move();
+    if (!result) { renderTransport(); return; }
+    if (result.next) {
+      await result.stopped;
+      session = result.next;
+      if (result.visualsChanged) visual.restore(session.visual);
+    }
+    renderSaved(); renderSession(); notice(redo ? 'Edit restored.' : 'Edit undone.');
+  } catch (error) {
+    refreshSaved(); renderSaved(); report(error);
+    const change = blockedChange;
+    if (error instanceof PresetConflict && change) {
+      const skip = document.createElement('button');
+      skip.className = 'secondary-button';
+      skip.textContent = redo ? 'Skip blocked redo' : 'Skip blocked undo';
+      skip.onclick = () => {
+        history.skipEffect(snapshot(), redo, change);
+        renderTransport();
+        notice('Skipped the conflicting preset change.');
+      };
+      $('#notice').append(' ', skip);
+    }
+  }
 }
 async function playPause(): Promise<void> {
   if (busy || musicBusy || backgroundBusy) return;
@@ -356,6 +403,9 @@ $('#frequency-detail').addEventListener('click', event => {
   catch (error) { report(error); }
 });
 window.addEventListener('storage', event => {
+  if (event.storageArea === localStorage && (event.key === presetStorageKey || event.key === null)) {
+    refreshSaved(); renderSaved();
+  }
   if (!isFrequencyFavoriteStorage(event.key)) return;
   renderFrequencies();
   const button = document.querySelector<HTMLButtonElement>('[data-favorite-frequency]');
@@ -369,29 +419,31 @@ $('#builtins').addEventListener('click', event => {
   document.querySelectorAll('.preset-card').forEach(item => item.classList.toggle('selected', item === button));
   void useSession(preset.session).catch(report);
 });
-$('#saved').addEventListener('click', event => {
+$('#saved').addEventListener('click', async event => {
   const target = event.target as HTMLElement;
   const load = target.closest<HTMLElement>('[data-saved]');
-  if (load) { void useSession(saved[Number(load.dataset.saved)]).catch(report); return; }
+  if (load) { void useSession(saved[Number(load.dataset.saved)].session).catch(report); return; }
   const favorite = target.closest<HTMLElement>('[data-favorite]');
-  if (favorite) { try { favoritePreset(saved[Number(favorite.dataset.favorite)].name); renderSaved(); } catch (error) { report(error); } return; }
+  if (favorite) { try { favoritePreset(saved[Number(favorite.dataset.favorite)].session.name); renderSaved(); } catch (error) { report(error); } return; }
   const duplicate = target.closest<HTMLElement>('[data-duplicate]');
   if (duplicate) {
     try {
-      const copy = parseSession(saved[Number(duplicate.dataset.duplicate)]); copy.name = copyName(copy.name, saved);
-      const next = [...saved, copy]; storePresets(next); checkpoint(); saved = next; renderSaved(); notice('Preset duplicated.', true);
+      const copy = parseSession(saved[Number(duplicate.dataset.duplicate)].session);
+      const undoable = await withPresetLock(() => {
+        const library = loadPresets();
+        copy.name = copyName(copy.name, library.entries.map(entry => entry.session));
+        return saveLibraryChange({ after: { name: copy.name, raw: copy, index: library.raw.length } });
+      });
+      notice('Preset duplicated.', undoable);
     } catch (error) { report(error); } return;
   }
   const remove = target.closest<HTMLElement>('[data-delete]');
   if (!remove) return;
   try {
-    const next = saved.filter((_, i) => i !== Number(remove.dataset.delete));
-    storePresets(next);
-    checkpoint();
-    saved = next;
-    renderSaved();
-    notice('Preset removed from this browser.', true);
-  } catch (error) { report(error); }
+    const before = saved[Number(remove.dataset.delete)];
+    const undoable = await withPresetLock(() => saveLibraryChange({ before }));
+    notice('Preset removed from this browser.', undoable);
+  } catch (error) { refreshSaved(); renderSaved(); report(error); }
 });
 $('#saved-filter').addEventListener('change', renderSaved);
 document.addEventListener('focusin', event => {
@@ -425,25 +477,23 @@ $('#preset-name').addEventListener('change', event => {
 });
 $('#save-preset').addEventListener('click', async () => {
   try {
-    const value = parseSession(snapshot().session);
-    let index = saved.findIndex(item => item.name === value.name);
-    if (index >= 0) {
-      const action = await chooseSaveAction(value.name); if (!action) return;
-      if (action === 'copy') { value.name = copyName(value.name, saved); index = -1; }
-    }
-    const next = [...saved];
-    if (index < 0) next.push(value); else next[index] = value;
-    storePresets(next);
-    checkpoint();
-    saved = next;
-    renderSaved();
-    notice(index < 0 ? 'Preset saved in this browser.' : 'Preset updated in this browser.', true);
-  } catch (error) { report(error); }
+    const value = parseSession(snapshot());
+    const existing = loadPresets().entries.find(entry => entry.session.name === value.name);
+    const action = existing ? await chooseSaveAction(value.name) : 'new';
+    if (!action) return;
+    const undoable = await withPresetLock(() => {
+      const library = loadPresets();
+      if (action === 'copy') value.name = copyName(value.name, library.entries.map(entry => entry.session));
+      const before = action === 'replace' ? existing : undefined;
+      return saveLibraryChange({ before, after: { name: value.name, raw: value, index: before?.index ?? library.raw.length } });
+    });
+    notice(action === 'replace' ? 'Preset updated in this browser.' : 'Preset saved in this browser.', undoable);
+  } catch (error) { refreshSaved(); renderSaved(); report(error); }
 });
-$('#export').addEventListener('click', () => downloadPreset(snapshot().session));
+$('#export').addEventListener('click', () => downloadPreset(snapshot()));
 $('#share-session').addEventListener('click', () => {
   try {
-    const link = sessionLink(snapshot().session);
+    const link = sessionLink(snapshot());
     const dialog = document.createElement('dialog'); dialog.className = 'explorer-dialog share-dialog'; dialog.setAttribute('aria-label', 'Share session');
     const heading = document.createElement('h2'); heading.textContent = 'Share session';
     const info = document.createElement('p'); info.textContent = 'This link contains tones, ASMR and visual settings. Local audio, photos, videos and flash consent are excluded. Opening it never starts playback.';

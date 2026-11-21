@@ -85,7 +85,9 @@ test('all paired gestures load through the shared explorer with one approval and
     await expect(page.locator('.scene-drawing')).toBeVisible(); await expect(page.locator('#status')).toHaveText('Ready when you are');
     await expect(page.locator('.scene-drawing')).toHaveAttribute('data-cues', '0');
   }
-  await page.locator('#save-preset').click(); await page.reload(); await page.locator('.saved-preset').click();
+  await page.locator('#save-preset').click();
+  await expect(page.locator('#notice')).toContainText('Preset saved in this browser.');
+  await page.reload(); await page.locator('.saved-preset').click();
   await expect(page.locator('#trigger-sync-asmr')).toBeChecked(); await expect(page.locator('#trigger-enable')).not.toBeChecked();
   await page.locator('#share-session').click(); const link = await page.getByLabel('Session link', { exact: true }).inputValue();
   await page.getByRole('button', { name: 'Close share', exact: true }).click();

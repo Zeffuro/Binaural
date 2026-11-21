@@ -16,6 +16,7 @@ test('guided setup loads a complete session silently and remains optional', asyn
   await expect(page.getByLabel('Scene', { exact: true })).toHaveValue('nature:forest-slope');
   await expect(page.locator('#scene-mute-tones')).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: 'Save to my presets' }).click();
+  await expect(page.locator('#notice')).toContainText('Preset saved in this browser.');
   await page.reload(); await page.locator('.saved-preset').click();
   await expect(page.getByLabel('Scene', { exact: true })).toHaveValue('nature:forest-slope');
   await expect(page.locator('#status')).toHaveText('Ready when you are');
@@ -31,7 +32,7 @@ test('all six soundscapes load their complete mix and scene without autoplay', a
   for (const [name, scene, ambient, muted] of recipes) {
     await page.getByRole('button', { name: 'Explore all presets' }).click();
     await page.getByLabel('With visual settings', { exact: true }).check();
-    await expect(page.locator('.explore-card')).toHaveCount(97);
+    await expect(page.locator('.explore-card')).toHaveCount(108);
     await page.getByRole('button', { name: `Load ${name}`, exact: false }).filter({ hasNotText: 'Load and play' }).click();
     await expect(page.locator('#playing-title')).toHaveText(name);
     await expect(page.getByLabel('Scene', { exact: true })).toHaveValue(scene);

@@ -88,6 +88,7 @@ test('custom light colors and geometry survive saved/share sessions while consen
   await page.getByRole('slider', { name: 'Backlight strength', exact: true }).focus(); await page.keyboard.press('End');
   await page.getByLabel('Animate without audio', { exact: true }).check();
   await page.getByRole('button', { name: 'Save to my presets' }).click();
+  await expect(page.locator('#notice')).toContainText('Preset saved in this browser.');
   await page.getByRole('button', { name: 'Share session link', exact: true }).click();
   const link = await page.getByLabel('Session link', { exact: true }).inputValue();
   await page.goto('about:blank'); await page.goto(link);

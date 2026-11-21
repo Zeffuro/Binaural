@@ -34,6 +34,7 @@ test('MilkDrop opt-in is beside quick controls and fullscreen waits for consent'
   await page.keyboard.press('Escape');
   await expect(page.locator('#visual-dock .scene-milkdrop')).toBeVisible();
   await page.getByRole('button', { name: 'Save to my presets' }).click();
+  await expect(page.locator('#notice')).toContainText('Preset saved in this browser.');
   await page.reload(); await page.locator('.saved-preset').click();
   await expect(page.locator('#visual-dock #milkdrop-enable')).not.toBeChecked();
   await expect(page.locator('#visual-dock-fullscreen')).toBeDisabled();

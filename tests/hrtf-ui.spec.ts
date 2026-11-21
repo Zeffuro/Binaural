@@ -47,6 +47,7 @@ test('both headphone profiles round-trip through saved presets, links and JSON w
     await adjust(page); await page.getByLabel('Sound 1 headphone profile', { exact: true }).selectOption(profile);
     const name = `Headphone ${profile}`;
     await page.locator('#preset-name').fill(name); await page.locator('#save-preset').click();
+    await expect(page.locator('#notice')).toContainText('Preset saved in this browser.');
     await page.reload(); await page.locator('.saved-preset').filter({ hasText: name }).click();
     await adjust(page); await expect(page.getByLabel('Sound 1 headphone profile', { exact: true })).toHaveValue(profile);
     const { link, session } = await share(page);

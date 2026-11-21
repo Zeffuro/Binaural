@@ -11,7 +11,7 @@ import { makeBwgFixture } from './helpers/bwg.ts';
 import { setSources } from './helpers/listening-sources.ts';
 
 const root = fileURLToPath(new URL('../dist/', import.meta.url));
-const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.txt': 'text/plain', '.ogg': 'audio/ogg', '.mp3': 'audio/mpeg', '.flac': 'audio/flac' };
+const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.txt': 'text/plain', '.ogg': 'audio/ogg', '.mp3': 'audio/mpeg', '.flac': 'audio/flac', '.wav': 'audio/wav' };
 function expectShortWav(wav) {
   expect(wav.length).toBe(176444);
   expect(wav.toString('ascii', 0, 4)).toBe('RIFF');

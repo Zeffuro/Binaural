@@ -7,6 +7,7 @@ const packs = new Map<string, HrtfPack>(), pendingPacks = new Map<string, Promis
 const prepared = new WeakSet<BaseAudioContext>(), pendingModules = new WeakMap<BaseAudioContext, Promise<void>>();
 const contextPacks = new WeakMap<BaseAudioContext, Map<HrtfProfile, HrtfPack>>();
 const selected = (settings?: AsmrSettings): HrtfProfile[] => [...new Set(settings?.layers.flatMap(layer => layer.spatial?.profile ? [layer.spatial.profile] : []) ?? [])];
+const adjustable = (settings?: AsmrSettings) => settings?.layers.some(layer => layer.spatial?.motion === 'quiet-return' && layer.spatial.quietReturn);
 const key = (profile: HrtfProfile, rate: number) => `${profile}-${rate}`;
 
 function ensureOpen(context: BaseAudioContext): void {
@@ -45,7 +46,8 @@ async function loadPack(profile: HrtfProfile, rate: number): Promise<HrtfPack> {
 
 export function hrtfAudioReady(context: BaseAudioContext, settings?: AsmrSettings): boolean {
   const profiles = selected(settings);
-  return !profiles.length || context.state !== 'closed' && prepared.has(context) && profiles.every(profile => contextPacks.get(context)?.has(profile));
+  return (!profiles.length && !adjustable(settings)) ||
+    context.state !== 'closed' && prepared.has(context) && profiles.every(profile => contextPacks.get(context)?.has(profile));
 }
 
 async function ratePack(profile: HrtfProfile, rate: number): Promise<HrtfPack> {
@@ -70,9 +72,9 @@ async function ratePack(profile: HrtfProfile, rate: number): Promise<HrtfPack> {
 
 export async function prepareHrtfAudio(context: BaseAudioContext, settings?: AsmrSettings): Promise<void> {
   const profiles = selected(settings);
-  if (!profiles.length) return;
+  if (!profiles.length && !adjustable(settings)) return;
   ensureOpen(context);
-  if (!Number.isInteger(context.sampleRate) || context.sampleRate < 22050 || context.sampleRate > 96000) {
+  if (profiles.length && (!Number.isInteger(context.sampleRate) || context.sampleRate < 22050 || context.sampleRate > 96000)) {
     throw new Error('HRTF profiles support audio sample rates from 22050 to 96000 Hz.');
   }
   let available = contextPacks.get(context);

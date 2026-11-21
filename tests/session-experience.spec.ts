@@ -1,5 +1,11 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
+
+const presetStorageKey = 'binaural.presets.v1';
+
+async function expectSavedPresets(page: Page, names: string[]) {
+  await expect.poll(async () => (await page.locator('.saved-preset').allTextContents()).sort()).toEqual([...names].sort());
+}
 
 test('tone mute is reversible and preserves the audible mix settings', async ({ page }) => {
   await page.goto('/');
@@ -35,6 +41,7 @@ test('experience presets and links preserve visuals without autoplay or flash co
   await page.getByRole('switch', { name: 'Ambient light' }).check();
   await page.getByLabel('Scene', { exact: true }).selectOption('aurora');
   await page.getByRole('button', { name: 'Save to my presets' }).click();
+  await expect(page.locator('.saved-preset')).toHaveCount(1);
   const downloadPromise = page.waitForEvent('download'); await page.locator('#export').click();
   const download = await downloadPromise;
   const json = JSON.parse(await readFile((await download.path())!, 'utf8'));
@@ -67,6 +74,7 @@ test('layer and preset edits are undoable and same-name saving offers a copy', a
   await page.locator('#undo-edit').click(); await expect(page.locator('.tone-layer')).toHaveCount(2);
   await page.locator('#redo-edit').click(); await expect(page.locator('.tone-layer')).toHaveCount(1);
   await page.getByRole('button', { name: 'Save to my presets' }).click();
+  await expect(page.locator('.saved-preset')).toHaveCount(1);
   await page.getByRole('button', { name: 'Save to my presets' }).click();
   await expect(page.getByRole('dialog', { name: 'Save preset', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Save copy', exact: true }).click();
@@ -160,6 +168,7 @@ test('visual keyboard edits can be undone and saturated colors can be saved', as
 
 test('failed library writes preserve presets and leave undo recovery available', async ({ page }) => {
   await page.goto('/'); await page.getByRole('button', { name: 'Save to my presets' }).click();
+  await expect(page.locator('.saved-preset')).toHaveCount(1);
   await page.evaluate(() => {
     const write = Storage.prototype.setItem;
     Storage.prototype.setItem = function(key, value) {
@@ -180,6 +189,176 @@ test('failed library writes preserve presets and leave undo recovery available',
   await page.evaluate(() => { document.documentElement.dataset.blockStorage = 'false'; });
   await page.locator('#undo-edit').click(); await expect(page.locator('.saved-preset')).toHaveCount(1);
   await page.reload(); await expect(page.locator('.saved-preset')).toHaveCount(1);
+});
+
+test('concurrent saves in two tabs survive preset undo, redo and a separate session undo', async ({ page, context }) => {
+  const other = await context.newPage();
+  await Promise.all([page.goto('/'), other.goto('/')]);
+  await page.getByLabel('Preset name', { exact: true }).fill('Morning in tab A');
+  await other.getByLabel('Preset name', { exact: true }).fill('Evening in tab B');
+
+  await page.evaluate(key => new Promise<void>(locked => {
+    void navigator.locks.request(key, () => new Promise<void>(release => {
+      window.addEventListener('release-test-preset-lock', () => release(), { once: true });
+      locked();
+    }));
+  }), presetStorageKey);
+  try {
+    await page.getByRole('button', { name: 'Save to my presets' }).click();
+    await other.getByRole('button', { name: 'Save to my presets' }).click();
+    await expect.poll(() => page.evaluate(async key => {
+      const { pending } = await navigator.locks.query();
+      return pending?.filter(lock => lock.name === key).length;
+    }, presetStorageKey)).toBe(2);
+  } finally {
+    await page.evaluate(() => window.dispatchEvent(new Event('release-test-preset-lock')));
+  }
+
+  const both = ['Morning in tab A', 'Evening in tab B'];
+  await expectSavedPresets(page, both);
+  await expectSavedPresets(other, both);
+  await page.locator('#undo-edit').click();
+  await expectSavedPresets(page, ['Evening in tab B']);
+  await expectSavedPresets(other, ['Evening in tab B']);
+  await page.locator('#redo-edit').click();
+  await expectSavedPresets(page, both);
+  await expectSavedPresets(other, both);
+
+  await page.getByRole('button', { name: 'Add layer' }).click();
+  await expect(page.locator('.tone-layer')).toHaveCount(2);
+  await other.getByLabel('Preset name', { exact: true }).fill('Later save in tab B');
+  await other.getByRole('button', { name: 'Save to my presets' }).click();
+  const all = [...both, 'Later save in tab B'];
+  await expectSavedPresets(page, all);
+  await page.locator('#undo-edit').click();
+  await expect(page.locator('.tone-layer')).toHaveCount(1);
+  await expectSavedPresets(page, all);
+  await other.reload();
+  await expectSavedPresets(other, all);
+});
+
+test('a same-name replace dialog cannot overwrite a newer save from another tab', async ({ page, context }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Save to my presets' }).click();
+  await expectSavedPresets(page, ['Quiet morning']);
+  const other = await context.newPage();
+  await other.goto('/');
+
+  await page.getByLabel('Session length', { exact: true }).fill('31');
+  await page.getByRole('button', { name: 'Save to my presets' }).click();
+  const staleDialog = page.getByRole('dialog', { name: 'Save preset', exact: true });
+  await expect(staleDialog).toBeVisible();
+
+  await other.getByLabel('Session length', { exact: true }).fill('47');
+  await other.getByRole('button', { name: 'Save to my presets' }).click();
+  await other.getByRole('button', { name: 'Replace preset', exact: true }).click();
+  await expect(other.locator('#notice')).toContainText('Preset updated in this browser.');
+  const newer = await other.evaluate(key => localStorage.getItem(key), presetStorageKey);
+  expect(JSON.parse(newer!)).toEqual([expect.objectContaining({ name: 'Quiet morning', minutes: 47 })]);
+
+  await staleDialog.getByRole('button', { name: 'Replace preset', exact: true }).click();
+  await expect(page.locator('#notice')).toContainText('This preset changed in another tab.');
+  expect(await page.evaluate(key => localStorage.getItem(key), presetStorageKey)).toBe(newer);
+  await expect(page.getByLabel('Session length', { exact: true })).toHaveValue('31');
+  await page.locator('#saved').getByRole('button', { name: 'Quiet morning', exact: true }).click();
+  await expect(page.getByLabel('Session length', { exact: true })).toHaveValue('47');
+});
+
+test('undo cannot remove a saved preset whose original stored entry has changed', async ({ page, context }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Save to my presets' }).click();
+  await expectSavedPresets(page, ['Quiet morning']);
+  const other = await context.newPage();
+  await other.goto('/');
+  const original = await other.evaluate(key => localStorage.getItem(key), presetStorageKey);
+  const revised = await other.evaluate(key => {
+    const raw = JSON.parse(localStorage.getItem(key)!);
+    raw[0].recoveryMetadata = { source: 'other tab' };
+    const updated = JSON.stringify(raw);
+    localStorage.setItem(key, updated);
+    return updated;
+  }, presetStorageKey);
+
+  await page.locator('#undo-edit').click();
+  await expect(page.locator('#notice')).toContainText('This preset changed in another tab.');
+  await expectSavedPresets(page, ['Quiet morning']);
+  expect(await page.evaluate(key => localStorage.getItem(key), presetStorageKey)).toBe(revised);
+
+  await other.evaluate(({ key, value }) => localStorage.setItem(key, value), { key: presetStorageKey, value: original! });
+  await page.locator('#undo-edit').click();
+  await expectSavedPresets(page, []);
+  await expectSavedPresets(other, []);
+});
+
+test('skipping a conflicting preset undo leaves other tabs’ changes and earlier session edits usable', async ({ page, context }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Add layer' }).click();
+  await expect(page.locator('.tone-layer')).toHaveCount(2);
+  await page.getByRole('button', { name: 'Save to my presets' }).click();
+  await expectSavedPresets(page, ['Quiet morning']);
+  const other = await context.newPage();
+  await other.goto('/');
+  const changed = await other.evaluate(key => {
+    const raw = JSON.parse(localStorage.getItem(key)!);
+    raw[0].minutes = 46;
+    const updated = JSON.stringify(raw);
+    localStorage.setItem(key, updated);
+    return updated;
+  }, presetStorageKey);
+
+  await page.locator('#undo-edit').click();
+  await page.getByRole('button', { name: 'Skip blocked undo' }).click();
+  await expect(page.locator('#notice')).toContainText('Skipped the conflicting preset change.');
+  await page.locator('#undo-edit').click();
+  await expect(page.locator('.tone-layer')).toHaveCount(1);
+  expect(await page.evaluate(key => localStorage.getItem(key), presetStorageKey)).toBe(changed);
+});
+
+test('usable presets can be edited without rewriting malformed or untouched entries', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Save to my presets' }).click();
+  await expectSavedPresets(page, ['Quiet morning']);
+  const malformed = { name: 'Damaged preset', layers: null, recoveryMetadata: ['keep this', { channel: 2 }] };
+  const legacy = await page.evaluate(({ key, malformed }) => {
+    const [valid] = JSON.parse(localStorage.getItem(key)!);
+    const legacy = { ...valid, recoveryMetadata: { source: 'original' } };
+    localStorage.setItem(key, JSON.stringify([malformed, legacy]));
+    return legacy;
+  }, { key: presetStorageKey, malformed });
+  await page.reload();
+  await expect(page.locator('#notice')).toContainText(/unreadable.*kept/i);
+  await expectSavedPresets(page, ['Quiet morning']);
+
+  await page.getByLabel('Preset name', { exact: true }).fill('Recovered library addition');
+  await page.getByRole('button', { name: 'Save to my presets' }).click();
+  await expectSavedPresets(page, ['Quiet morning', 'Recovered library addition']);
+  const readLibrary = () => page.evaluate(key => JSON.parse(localStorage.getItem(key)!), presetStorageKey);
+  const saved = await readLibrary();
+  expect(saved).toEqual([malformed, legacy, expect.objectContaining({ name: 'Recovered library addition' })]);
+
+  await page.getByRole('button', { name: 'Delete preset Quiet morning', exact: true }).click();
+  await expectSavedPresets(page, ['Recovered library addition']);
+  expect(await readLibrary()).toEqual([malformed, saved[2]]);
+  await page.locator('#undo-edit').click();
+  await expectSavedPresets(page, ['Quiet morning', 'Recovered library addition']);
+  expect(await readLibrary()).toEqual(saved);
+});
+
+test('saving cannot erase a wholly unreadable preset library', async ({ page }) => {
+  await page.goto('/');
+  const raw = '[{"name":"Recoverable from a backup"},';
+  await page.evaluate(({ key, raw }) => localStorage.setItem(key, raw), { key: presetStorageKey, raw });
+  await page.reload();
+  const readError = 'Saved presets could not be read. The original library has been kept.';
+  await expect(page.locator('#notice')).toHaveText(readError);
+  await expectSavedPresets(page, []);
+
+  await page.locator('#notice').evaluate(element => element.setAttribute('hidden', ''));
+  await page.getByRole('button', { name: 'Save to my presets' }).click();
+  await expect(page.locator('#notice')).toBeVisible();
+  await expect(page.locator('#notice')).toHaveText(readError);
+  await expectSavedPresets(page, []);
+  expect(await page.evaluate(key => localStorage.getItem(key), presetStorageKey)).toBe(raw);
 });
 
 test('version one sessions still load and sharing enforces bounds and canonical fields', async ({ page }) => {

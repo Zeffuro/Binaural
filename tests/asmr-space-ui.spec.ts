@@ -26,6 +26,7 @@ test('listening spaces are opt-in and roundtrip complete mixes through save, sha
   expect(layers(session)).toEqual(layers(original));
   for (const field of ['mode', 'master', 'ambient', 'ambientLevel', 'musicLevel']) expect(session[field]).toEqual(original[field]);
   await page.locator('#preset-name').fill('My quiet room'); await page.locator('#save-preset').click();
+  await expect(page.locator('#notice')).toContainText('Preset saved in this browser.');
   await page.reload(); await page.locator('.saved-preset').filter({ hasText: 'My quiet room' }).click();
   await expect(choice).toHaveValue('close');
   await choice.focus(); await choice.selectOption('soft');

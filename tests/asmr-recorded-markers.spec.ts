@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { recordedAsmrSounds } from '../src/asmr-recordings';
 import type { AsmrMarkerPose, AsmrMarkerSample } from '../src/audio/asmr-markers';
 
 test('recorded actions follow stereo energy, real gaps and sustained contact without changing source samples', async ({ page }) => {
@@ -67,6 +68,33 @@ test('recorded actions follow stereo energy, real gaps and sustained contact wit
   expect(result.bounded).toBe(true); expect(result.cache).toBe(true); expect(result.separate).toBe(true);
 });
 
+test('click selection pads attacks and decays without splicing unrelated sounds together', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const path = '/src/audio/quiet-click-clips.ts', { extractQuietClicks } = await import(path);
+    const rate = 48000, left = new Float32Array(rate), right = new Float32Array(rate);
+    for (const [at, strength] of [[.12, .8], [.62, .5]]) {
+      const start = Math.round(at * rate);
+      for (let i = 0; i < .10 * rate; i++) {
+        left[start + i] = strength * Math.exp(-i / (rate * .028)) * Math.cos(i * .21);
+        right[start + i] = left[start + i] * .6;
+      }
+    }
+    const { clips } = extractQuietClicks([left, right], rate) as { clips: Float32Array[] };
+    return { peaks: clips.map(clip => Math.max(...clip)), pads: clips.every(clip => clip[0] === 0 && clip.at(-1) === 0),
+      tails: clips.map(clip => {
+        const peak = clip.indexOf(Math.max(...clip)), tail = clip.slice(peak + 3400, peak + 4000);
+        return { lead: peak, energy: tail.reduce((sum, sample) => sum + sample ** 2, 0) };
+      }) };
+  });
+  expect(result.peaks).toHaveLength(2); expect(result.peaks[0]).toBeCloseTo(.64, 5); expect(result.peaks[1]).toBeCloseTo(.4, 5);
+  expect(result.pads).toBe(true);
+  for (const tail of result.tails) {
+    expect(tail.lead).toBeGreaterThan(450);
+    expect(tail.energy).toBeGreaterThan(.02);
+  }
+});
+
 test('@live recorded contacts reach engine visual cues with measured ears, midpoint timing and transport cleanup', async ({ page }) => {
   test.setTimeout(90_000); await page.goto('/'); await page.locator('h1').click();
   const result = await page.evaluate(async () => {
@@ -133,7 +161,7 @@ test('@live recorded contacts reach engine visual cues with measured ears, midpo
   expect(result.zero).toBe(0); expect(result.replaced).toBe(true); expect(result.disposedMarker).toBeUndefined();
 });
 
-test('all fifteen actual recordings have bounded native-frame action envelopes and retain exact paired PCM', async ({ page }, testInfo) => {
+test('all bundled recordings have bounded native-frame action envelopes and retain exact paired PCM', async ({ page }, testInfo) => {
   test.setTimeout(120_000); await page.goto('/');
   const results = await page.evaluate(async () => {
     const assetsPath = '/src/audio/asmr-assets.ts', statePath = '/src/asmr-state.ts', recordedPath = '/src/audio/asmr-recorded-markers.ts';
@@ -159,7 +187,7 @@ test('all fifteen actual recordings have bounded native-frame action envelopes a
         if (!contact) return false;
         for (let item = 0; item < contact.values.length; item++) envelopeError = Math.max(envelopeError,
           Math.abs(contact.values[item] - Math.min(.85, rms[event.start / stride + item] / peak * .85)));
-        return Number.isInteger(event.start) && event.start % stride === 0 && event.length >= buffer.sampleRate * .04 &&
+        return Number.isInteger(event.start) && event.start % stride === 0 && event.length >= buffer.sampleRate * (buffer.duration < 2 ? .01 : .04) &&
           event.start + event.length <= buffer.length && event.length > 0 && contact.stride === stride &&
           contact.values.length === Math.ceil(event.length / stride) && (!index || events[index - 1].start + events[index - 1].length < event.start) &&
           contact.values.every(value => Number.isFinite(value) && value >= 0 && value <= .850001);
@@ -171,12 +199,13 @@ test('all fifteen actual recordings have bounded native-frame action envelopes a
     return results;
   });
   await testInfo.attach('recorded-action-coverage.json', { body: JSON.stringify(results, null, 2), contentType: 'application/json' });
-  expect(results).toHaveLength(15); expect(new Set(results.map(item => item.id)).size).toBe(15);
+  expect(results.map(item => item.id)).toEqual(recordedAsmrSounds.map(sound => sound.id));
   for (const item of results) {
     const diagnostic = JSON.stringify(item);
     expect(item.channels, diagnostic).toBeGreaterThanOrEqual(1); expect(item.channels).toBeLessThanOrEqual(2); expect(item.rate).toBe(44100);
     expect(item.frames).toBeGreaterThan(0); expect(item.duration).toBeLessThanOrEqual(60);
-    expect(item.events, diagnostic).toBeGreaterThan(0); expect(item.events).toBeLessThanOrEqual(Math.floor(item.duration / .04));
+    expect(item.events, diagnostic).toBeGreaterThan(0);
+    expect(item.events).toBeLessThanOrEqual(Math.floor(item.duration / (item.duration < 2 ? .01 : .04)));
     expect(item.bounded, diagnostic).toBe(true); expect(item.finite).toBe(true); expect(item.unchanged).toBe(true);
     expect(item.envelopeError, diagnostic).toBeLessThan(1e-7); expect(item.cached).toBe(true);
   }
@@ -247,7 +276,7 @@ test('actual recorded markers follow independent source positions through fracti
     return results;
   });
   await testInfo.attach('recorded-source-position-parity.json', { body: JSON.stringify(results, null, 2), contentType: 'application/json' });
-  expect(results).toHaveLength(15);
+  expect(results.map(item => item.id)).toEqual(recordedAsmrSounds.map(sound => sound.id));
   for (const item of results) {
     const diagnostic = JSON.stringify(item);
     expect(item.error, diagnostic).toBeLessThan(1e-6); expect(item.poseError, diagnostic).toBeLessThan(1e-7);

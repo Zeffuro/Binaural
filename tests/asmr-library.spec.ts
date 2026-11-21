@@ -5,9 +5,9 @@ import { loadAsmrExperience } from './helpers/asmr-discovery';
 test('one explorer opens all families by default and ASMR browse resets stale filters', async ({ page }) => {
   await page.goto('/');
   await page.locator('#explore-presets').click();
-  await expect(page.locator('.explore-card')).toHaveCount(121);
+  await expect(page.locator('.explore-card')).toHaveCount(132);
   await page.locator('#preset-category').selectOption('ASMR');
-  await expect(page.locator('.explore-card')).toHaveCount(91);
+  await expect(page.locator('.explore-card')).toHaveCount(102);
   await expect(page.locator('#preset-results')).not.toContainText('Hz');
   await page.locator('#preset-search').fill('temple');
   await page.locator('#preset-with-visuals').check();
@@ -18,13 +18,13 @@ test('one explorer opens all families by default and ASMR browse resets stale fi
   await expect(page.locator('#preset-search')).toHaveValue('');
   await expect(page.locator('#preset-with-visuals')).not.toBeChecked();
   await expect(page.locator('#preset-favorites')).not.toBeChecked();
-  await expect(page.locator('.explore-card')).toHaveCount(121);
+  await expect(page.locator('.explore-card')).toHaveCount(132);
   await page.locator('#preset-search').fill('missing');
   await page.locator('#close-explorer').click();
   await page.locator('#asmr-browse').click();
   await expect(page.locator('#preset-category')).toHaveValue('ASMR');
   await expect(page.locator('#preset-search')).toHaveValue('');
-  await expect(page.locator('.explore-card')).toHaveCount(91);
+  await expect(page.locator('.explore-card')).toHaveCount(102);
   await expect(page.locator('#preset-explorer')).toHaveCount(1);
   await expect(page.locator('#asmr-preset, #asmr-search, #asmr-library-list')).toHaveCount(0);
   await expect(page.locator('#status')).toHaveText('Ready when you are');
@@ -120,7 +120,9 @@ test('main explorer retains complete ASMR duration and settings through save and
   await page.getByRole('dialog', { name: 'Moving visual trigger', exact: true }).getByRole('button', { name: 'Not now', exact: true }).click();
   await expect(page.locator('#playing-title')).toHaveText('Temple brushing');
   await expect(page.locator('.asmr-layer')).toHaveCount(2);
-  await page.locator('#save-preset').click(); await page.reload(); await page.locator('.saved-preset').click();
+  await page.locator('#save-preset').click();
+  await expect(page.locator('#notice')).toContainText('Preset saved in this browser.');
+  await page.reload(); await page.locator('.saved-preset').click();
   await page.locator('.asmr-advanced').first().locator('summary').click();
   await expect(page.getByLabel('Sound 1 direction', { exact: true })).toHaveValue('-65');
   await expect(page.getByLabel('Sound 1 height', { exact: true })).toHaveValue('35');
@@ -178,8 +180,8 @@ test('every ASMR recipe adapts to a complete validated shared experience with it
         soft: entry.session.visual.triggers.brightness === .3 && entry.session.visual.triggers.speed <= .015 && entry.session.visual.triggers.drift <= .06 && entry.session.visual.triggers.lightSpeed <= .05 && entry.session.visual.triggers.reaction <= .2 };
     });
   });
-  expect(result).toHaveLength(91);
-  expect(new Set(result.map((entry: { id: string }) => entry.id)).size).toBe(91);
+  expect(result).toHaveLength(102);
+  expect(new Set(result.map((entry: { id: string }) => entry.id)).size).toBe(102);
   expect(result.every((entry: { duration: boolean; mix: boolean; hasVisual: boolean; soft: boolean }) => entry.duration && entry.mix && entry.hasVisual && entry.soft)).toBe(true);
 });
 
@@ -218,7 +220,9 @@ test('all eight spatial paired experiences load silently and preserve complete s
     await expect(page.locator('#status')).toHaveText('Ready when you are');
     await expect(page.getByLabel('Enable light triggers', { exact: true })).not.toBeChecked();
     await page.locator('#preset-name').fill(recipe.name);
-    await page.locator('#save-preset').click(); await page.reload();
+    await page.locator('#save-preset').click();
+    await expect(page.locator('#notice')).toContainText('Preset saved in this browser.');
+    await page.reload();
     await page.locator('.saved-preset').filter({ hasText: recipe.name }).click();
     await expect(page.locator('#minutes')).toHaveValue(String(recipe.minutes));
     await expect(page.getByLabel('Enable light triggers', { exact: true })).not.toBeChecked();
@@ -267,6 +271,7 @@ test('all six small detail experiences retain favorites and complete mixes acros
     await page.getByRole('dialog', { name: 'Moving visual trigger', exact: true }).getByRole('button', { name: 'Start visual', exact: true }).click();
     await expect(page.locator('#trigger-enable')).toBeChecked();
     await page.locator('#preset-name').fill(recipe.name); await page.locator('#save-preset').click();
+    await expect(page.locator('#notice')).toContainText('Preset saved in this browser.');
     await page.reload(); await page.locator('#asmr-browse').click();
     await expect(page.getByRole('button', { name: `Favorite: ${recipe.name}`, exact: true })).toHaveAttribute('aria-pressed', 'true');
     await page.locator('#close-explorer').click();
@@ -339,6 +344,7 @@ test('all six quiet rooms preserve complete space mixes through favorites, save,
     await page.getByRole('dialog', { name: 'Moving visual trigger', exact: true }).getByRole('button', { name: 'Start visual', exact: true }).click();
     await expect(page.locator('#trigger-enable')).toBeChecked();
     await page.locator('#preset-name').fill(recipe.name); await page.locator('#save-preset').click();
+    await expect(page.locator('#notice')).toContainText('Preset saved in this browser.');
     const json = await page.evaluate(name => JSON.parse(localStorage.getItem('binaural.presets.v1')!).find((saved: { name: string }) => saved.name === name), recipe.name);
     expect(canonical(json.asmr), recipe.id).toEqual(canonical(recipe.settings));
     await page.reload(); await page.locator('#asmr-browse').click();

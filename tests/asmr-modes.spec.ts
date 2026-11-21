@@ -23,7 +23,7 @@ test('source switches preserve the mix, keep controls discoverable and never aut
   await expect(page.getByLabel('Sound 1 ear cupping', { exact: true })).toHaveValue('0.85');
   await expect(page.locator('#asmr-browse')).toBeVisible();
   await expect(page.locator('#asmr-preset')).toHaveCount(0);
-  await expect(page.getByLabel('Sound 1 trigger', { exact: true }).locator('option')).toHaveCount(30);
+  await expect(page.getByLabel('Sound 1 trigger', { exact: true }).locator('option')).toHaveCount(35);
   for (const selected of ['mixed', 'binaural', 'ambient', 'asmr'] as const) {
     await setSources(page, selected);
     await expect(tones).toHaveAttribute('aria-pressed', String(selected === 'mixed' || selected === 'binaural'));
@@ -137,7 +137,9 @@ test('all bundled recordings retain their channel layout, bounded PCM and actual
       // Starting a source may detach getChannelData views; inspect them before export.
       const edges = channels.every(data => data[0] === 0 && data.at(-1) === 0);
       const session = initialSession(); session.mode = 'asmr'; session.master = 1; session.ambient = 'none'; session.asmr = { level: 1, layers: [layer] };
-      const view = new DataView(await (await renderWav(session, 3)).arrayBuffer()), energy = [0, 0];
+      const extended = sound.id === 'recorded-sketching-long' || sound.id.startsWith('recorded-plastic-');
+      const seconds = extended ? Math.max(3, Math.ceil(buffer.duration)) : 3;
+      const view = new DataView(await (await renderWav(session, seconds)).arrayBuffer()), energy = [0, 0];
       for (let i = 44 + 22050 * 4; i < view.byteLength; i += 4) for (let ear = 0; ear < 2; ear++) energy[ear] += Math.abs(view.getInt16(i + ear * 2, true));
       results.push({ id: sound.id, file: sound.file, channels: channels.length, duration: buffer.duration, peak, finite, difference, energy, edges });
     }
@@ -175,37 +177,94 @@ test('recorded mono and distinct stereo fixtures keep their channels through dec
     wav.writeUInt32LE(48000, 24); wav.writeUInt32LE(48000 * channels * 2, 28);
     wav.writeUInt16LE(channels * 2, 32); wav.writeUInt16LE(16, 34); wav.write('data', 36); wav.writeUInt32LE(bytes, 40);
     for (let frame = 0; frame < frames; frame++) for (let ear = 0; ear < channels; ear++) {
-      wav.writeInt16LE(Math.round((ear ? .25 : .5) * Math.sin(2 * Math.PI * (ear ? 880 : 440) * frame / 48000) * 32767), 44 + (frame * channels + ear) * 2);
+      const sine = (frequency: number) => Math.sin(2 * Math.PI * frequency * frame / 48000);
+      const base = (ear ? .25 : .5) * sine(ear ? 880 : 440);
+      const detail = channels === 2 ? .18 * (sine(ear ? 8000 : 6000) + sine(8)) : 0;
+      wav.writeInt16LE(Math.round((base + detail) * 32767), 44 + (frame * channels + ear) * 2);
     }
     const file = channels === 1 ? 'hand-rubbing.ogg' : 'metal-tapping.ogg';
     await page.route(`**/audio/asmr/${file}`, route => route.fulfill({ contentType: 'audio/wav', body: wav }));
   }
   await page.goto('/');
-  const results = await page.evaluate(async () => {
+  const { results, clear } = await page.evaluate(async () => {
     const assets = '/src/audio/asmr-assets.ts', mixerPath = '/src/audio/asmr-mixer.ts', state = '/src/asmr-state.ts';
     const { prepareAsmrRecordings, recordedAsmrBuffer } = await import(assets), { AsmrMixer } = await import(mixerPath), { makeAsmrLayer } = await import(state);
-    const results = [];
-    for (const sound of ['recorded-hands', 'recorded-metal']) {
-      const settings = { level: 1, layers: [{ ...makeAsmrLayer(sound), level: 1, pan: 0, motion: 'still', tone: 1 }] };
+    const render = async (sound: string, tone: number, clearTone?: boolean) => {
+      const settings = { level: 1, layers: [{ ...makeAsmrLayer(sound), level: 1, pan: 0, motion: 'still', tone,
+        ...(clearTone === undefined ? {} : { clearTone }) }] };
       await prepareAsmrRecordings(settings);
       const channels = recordedAsmrBuffer(sound).numberOfChannels, context = new OfflineAudioContext(2, 44100, 44100);
       new AsmrMixer(context, context.destination).update(settings);
       const buffer = await context.startRendering(), left = buffer.getChannelData(0), right = buffer.getChannelData(1);
-      const magnitude = (data: Float32Array, frequency: number) => {
-        let real = 0, imaginary = 0;
-        for (let i = 11025; i < 33075; i++) { const phase = 2 * Math.PI * frequency * i / 44100; real += data[i] * Math.cos(phase); imaginary += data[i] * Math.sin(phase); }
-        return Math.hypot(real, imaginary) / 22050;
-      };
+      return { channels, left, right };
+    };
+    const magnitude = (data: Float32Array, frequency: number) => {
+      let real = 0, imaginary = 0;
+      for (let i = 11025; i < 33075; i++) { const phase = 2 * Math.PI * frequency * i / 44100; real += data[i] * Math.cos(phase); imaginary += data[i] * Math.sin(phase); }
+      return Math.hypot(real, imaginary) / 22050;
+    };
+    const results = [];
+    for (const sound of ['recorded-hands', 'recorded-metal']) {
+      const { channels, left, right } = await render(sound, 1);
       let difference = 0;
       for (let i = 11025; i < 33075; i++) difference = Math.max(difference, Math.abs(left[i] - right[i]));
       results.push({ channels, difference, left: [magnitude(left, 440), magnitude(left, 880)], right: [magnitude(right, 440), magnitude(right, 880)] });
     }
-    return results;
+    const defaultTone = await render('recorded-metal', .4), disabled = await render('recorded-metal', .4, false);
+    const enabled = await render('recorded-metal', .4, true);
+    const clear = (['left', 'right'] as const).map((ear, index) => {
+      const low = index ? 880 : 440, high = index ? 8000 : 6000, otherHigh = index ? 6000 : 8000;
+      const pcm = enabled[ear];
+      return { exactDefault: defaultTone[ear].every((sample, frame) => sample === disabled[ear][frame]),
+        lowRatio: magnitude(pcm, low) / magnitude(defaultTone[ear], low),
+        high: magnitude(pcm, high), warmHigh: magnitude(defaultTone[ear], high),
+        leak: magnitude(pcm, otherHigh), rumble: magnitude(pcm, 8) };
+    });
+    return { results, clear };
   });
   expect(results.map(result => result.channels)).toEqual([1, 2]);
   expect(results[0].difference).toBeLessThan(.000001);
   for (const ear of [results[0].left, results[0].right, results[1].left]) { expect(ear[0]).toBeGreaterThan(.001); expect(ear[0]).toBeGreaterThan(ear[1] * 100); }
   expect(results[1].right[1]).toBeGreaterThan(.001); expect(results[1].right[1]).toBeGreaterThan(results[1].right[0] * 100);
+  for (const ear of clear) {
+    expect(ear.exactDefault).toBe(true);
+    expect(ear.lowRatio).toBeGreaterThan(.85); expect(ear.lowRatio).toBeLessThan(1.15);
+    expect(ear.high).toBeGreaterThan(.006); expect(ear.high).toBeGreaterThan(ear.warmHigh * 7);
+    expect(ear.leak).toBeLessThan(ear.high / 100);
+    expect(ear.rumble).toBeLessThan(ear.high * .15);
+  }
+});
+
+test('clear recording is recording-only and survives exported JSON and shared sessions', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('[data-asmr-sound=brush]').click();
+  const clear = page.getByLabel('Sound 1 clear recording', { exact: true });
+  const tone = page.getByLabel('Sound 1 tone', { exact: true });
+  const trigger = page.getByLabel('Sound 1 trigger', { exact: true });
+  await expect(clear).toHaveCount(0);
+  await trigger.selectOption('recorded-metal');
+  await page.locator('.asmr-advanced summary').click();
+  await expect(tone).toBeVisible();
+  await expect(clear).not.toBeChecked();
+  await clear.click();
+  await expect(clear).toBeChecked();
+  await expect(tone).toHaveCount(0);
+
+  const downloadPromise = page.waitForEvent('download');
+  await page.locator('#export').click();
+  const download = await downloadPromise;
+  const session = JSON.parse(await readFile((await download.path())!, 'utf8'));
+  expect(session.asmr.layers[0]).toMatchObject({ sound: 'recorded-metal', clearTone: true });
+  await page.locator('#share-session').click();
+  const url = await page.getByLabel('Session link', { exact: true }).inputValue();
+  await page.goto('about:blank');
+  await page.goto(url);
+  await expect(page.locator('#notice')).toContainText('Shared session loaded');
+  await expect(clear).toBeChecked();
+  await trigger.selectOption('brush');
+  await expect(clear).toHaveCount(0);
+  await trigger.selectOption('recorded-metal');
+  await expect(clear).not.toBeChecked();
 });
 
 test('opposite cupping phases alternate warmth independently and ear-focus recipes stay in their own ear', async ({ page }) => {

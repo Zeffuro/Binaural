@@ -84,6 +84,7 @@ test('all 3D path choices share complete settings and saved figure eight reloads
   const movement = page.getByLabel('Sound 1 3D movement', { exact: true });
   await expect(movement.locator('option')).toHaveText([
     'Stay in place', 'Orbit around your head', 'Side to side', 'Near and far', 'Up and down', 'Figure eight',
+    'Behind each ear to front', 'Approach with quiet return',
   ]);
   await expect(page.locator('.asmr-position .fine-print').filter({ hasText: 'Distance limits' })).toHaveCount(1);
   await range(page.getByLabel('Sound 1 direction', { exact: true }), '65');
@@ -106,6 +107,57 @@ test('all 3D path choices share complete settings and saved figure eight reloads
   await expect(page.getByLabel('Sound 1 height', { exact: true })).toHaveValue('-25');
   await expect(page.getByLabel('Sound 1 distance', { exact: true })).toHaveValue('0.8');
   await expect(page.locator('#status')).toHaveText('Ready when you are');
+});
+
+test('quiet return sliders and optional click timing stay independent through shared and saved sessions', async ({ page }) => {
+  await page.goto('/'); await setSources(page, 'asmr');
+  await loadAsmrExperience(page, 'plastic-quiet-approach');
+  await page.getByRole('dialog', { name: 'Moving visual trigger', exact: true })
+    .getByRole('button', { name: 'Not now', exact: true }).click();
+  await adjust(page);
+  const movement = page.getByLabel('Sound 1 3D movement', { exact: true });
+  const closest = page.getByLabel('Sound 1 closest distance', { exact: true });
+  const approach = page.getByLabel('Sound 1 approach time', { exact: true });
+  const gap = page.getByLabel('Sound 1 quiet gap', { exact: true });
+  const clickTiming = page.getByRole('checkbox', { name: 'Sound 1 time clicks to the closest point', exact: true });
+  const clearRecording = page.getByRole('checkbox', { name: 'Sound 1 clear recording', exact: true });
+  const sound = page.getByLabel('Sound 1 trigger', { exact: true });
+  await expect(page.getByRole('button', { name: 'Preview both ears for sound 1', exact: true })).toBeVisible();
+  await expect(clickTiming).not.toBeChecked();
+  await clickTiming.click();
+  await expect(clickTiming).toBeChecked();
+  await expect(clearRecording).toBeChecked();
+  await range(closest, '0.34'); await range(approach, '6.5'); await range(gap, '2.75');
+  const { link, session } = await sharedMix(page);
+  expect(session.asmr.layers[0].spatial).toMatchObject({
+    motion: 'quiet-return', distance: .85, quietReturn: { closest: .34, approach: 6.5, gap: 2.75, syncClicks: true },
+  });
+  await page.goto(link); await adjust(page);
+  await expect(clickTiming).toBeChecked();
+  await expect(closest).toHaveJSProperty('valueAsNumber', .34);
+  await expect(approach).toHaveJSProperty('valueAsNumber', 6.5);
+  await expect(gap).toHaveJSProperty('valueAsNumber', 2.75);
+  await page.locator('#save-preset').click(); await expect(page.locator('#notice')).toContainText('saved');
+  await page.goto('/'); await page.locator('[data-saved]').click(); await adjust(page);
+  await expect(clickTiming).toBeChecked();
+  expect((await sharedMix(page)).session.asmr.layers[0].spatial).toEqual(session.asmr.layers[0].spatial);
+  await clickTiming.click();
+  await expect(clickTiming).not.toBeChecked();
+  expect((await sharedMix(page)).session.asmr.layers[0].spatial.quietReturn).toEqual({ closest: .34, approach: 6.5, gap: 2.75 });
+  await clickTiming.click();
+  await expect(clickTiming).toBeChecked();
+  await sound.selectOption('recorded-hair');
+  await expect(clickTiming).toHaveCount(0);
+  await expect(clearRecording).toBeChecked();
+  expect((await sharedMix(page)).session.asmr.layers[0].spatial.quietReturn).toEqual({ closest: .34, approach: 6.5, gap: 2.75 });
+  await movement.selectOption('orbit');
+  await expect(closest).toHaveCount(0);
+  expect((await sharedMix(page)).session.asmr.layers[0].spatial).not.toHaveProperty('quietReturn');
+  await sound.selectOption('recorded-plastic-toy');
+  await movement.selectOption('quiet-return');
+  await expect(clickTiming).not.toBeChecked();
+  await clickTiming.click();
+  expect((await sharedMix(page)).session.asmr.layers[0].spatial.quietReturn).toEqual({ closest: .21, approach: 3.5, gap: 3.5, syncClicks: true });
 });
 
 test('3D controls fit 320px screens and remain accessible in both themes', async ({ page }) => {

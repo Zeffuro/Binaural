@@ -17,6 +17,7 @@ test('headphone timing is a strict local preference and survives preset changes,
   await expect(page.locator('#trigger-enable')).not.toBeChecked();
   await page.locator('#trigger-preset').selectOption('gesture-tap'); await expect(input).toHaveValue('120');
   await page.locator('#save-preset').click();
+  await expect(page.locator('#notice')).toContainText('Preset saved in this browser.');
   const stored = await page.evaluate(() => ({ offset: localStorage.getItem('binaural.light-timing.v1'),
     presets: JSON.parse(localStorage.getItem('binaural.presets.v1')!) }));
   expect(stored.offset).toBe('120'); expect(JSON.stringify(stored.presets)).not.toMatch(/lightTiming|timingOffset|light-timing/);

@@ -74,6 +74,7 @@ test('generated alternatives are selectable normally and source preferences pers
   await expect(page.locator('#ambient option')).toHaveCount(22);
   await page.locator('#ambient').selectOption('wind');
   await page.locator('#save-preset').click();
+  await expect(page.locator('#notice')).toContainText('Preset saved in this browser.');
   await page.reload(); await page.locator('[data-saved="0"]').click();
   await expect(page.locator('#ambient')).toHaveValue('wind');
   await page.locator('#import-file').setInputFiles({ name: 'background.bwg', mimeType: 'application/octet-stream', buffer: Buffer.from(preset()) });
@@ -85,6 +86,7 @@ test('generated alternatives are selectable normally and source preferences pers
   await page.locator('#bwg-background-source').selectOption('generated');
   await expect(page.locator('#bwg-background-status')).toContainText('Built-in: Night noises');
   await page.locator('#save-preset').click();
+  await expect(page.locator('#notice')).toContainText('Preset saved in this browser.');
   await page.reload(); await page.locator('[data-saved="1"]').click();
   await expect(page.locator('#bwg-background-source')).toHaveValue('generated');
   await expect(page.locator('#status')).toHaveText('Ready when you are');

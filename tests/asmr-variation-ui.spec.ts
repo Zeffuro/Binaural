@@ -68,7 +68,9 @@ test('all six long routines load their complete duration and repeatable flow fro
     expect(session.asmr.layers.length).toBeGreaterThan(0); expect(session.asmr.layers.length).toBeLessThanOrEqual(3);
     expect(session.asmr.layers.some((layer: { sound: string }) => /^recorded-(pages|hair|spray|writing)$/.test(layer.sound))).toBe(true);
   }
-  await page.locator('#save-preset').click(); await page.reload(); await page.locator('.saved-preset').click();
+  await page.locator('#save-preset').click();
+  await expect(page.locator('#notice')).toContainText('Preset saved in this browser.');
+  await page.reload(); await page.locator('.saved-preset').click();
   await expect(page.locator('#minutes')).toHaveValue('60');
   await expect(page.locator('#asmr-flow')).toHaveValue('turns');
   const { session } = await shared(page);
@@ -86,7 +88,9 @@ test('cleared and invalid seed edits preserve the last valid serializable sessio
     expect(session.asmr.variation.seed).toBe(9281);
     await expect(seed).toHaveValue('9281');
   }
-  await page.locator('#save-preset').click(); await page.reload(); await page.locator('.saved-preset').click();
+  await page.locator('#save-preset').click();
+  await expect(page.locator('#notice')).toContainText('Preset saved in this browser.');
+  await page.reload(); await page.locator('.saved-preset').click();
   const { session } = await shared(page); expect(session.asmr.variation.seed).toBe(9281);
 });
 

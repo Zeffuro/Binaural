@@ -23,8 +23,8 @@ async function controlled(page: Page): Promise<void> {
     h.preview = new AsmrPreview((state: any) => h.states.push(state), () => {
       const index = h.engines.length, start = deferred(), stop = deferred();
       const engine: any = { remaining: 5, startGate: start, stopGate: stop,
-        async start(session: any) {
-          engine.session = session; h.events.push(`start${index}`);
+        async start(session: any, envelope: any) {
+          engine.session = session; engine.envelope = envelope; h.events.push(`start${index}`);
           if (h.blockStart) await start.promise;
         },
         async stop() {
@@ -65,6 +65,78 @@ test('preview snapshots only one steady sound, current levels and space without 
   expect(result.asmrKeys).toEqual(['layers', 'level', 'space']); expect(result.levels).toEqual([1.4, true, .72, 5, 0]);
   expect(result.muted).toBe(true); expect(result.mode).toBe('asmr'); expect(result.ambient).toBe('none'); expect(result.background).toEqual([0, 0]);
   expect(result.phases).toEqual(['loading', 'playing', 'stopping', 'idle']); expect(result.active).toBe(false);
+});
+
+test('quiet return preview starts with the approach and can include both ears', async ({ page }) => {
+  await controlled(page);
+  const result = await page.evaluate(async () => {
+    const h = (window as any).previewHarness, layer = h.session.asmr.layers[0];
+    layer.spatial.motion = 'quiet-return'; layer.period = 48;
+    await h.preview.start(h.session, h.id);
+    const short = h.engines[0].session, stillLegacy = !layer.spatial.quietReturn;
+    layer.spatial.quietReturn = { closest: .25, approach: 7, gap: 9 };
+    await h.preview.start(h.session, h.id, true);
+    const both = h.engines[1].session, state = h.preview.state;
+    await h.preview.stop();
+    return { short: short.timelineDuration, legacyTiming: short.asmr.layers[0].spatial.quietReturn,
+      stillLegacy, full: both.timelineDuration, fullTiming: both.asmr.layers[0].spatial.quietReturn, state, idle: h.preview.state.phase };
+  });
+  expect(result.short).toBe(5);
+  expect(result.legacyTiming).toEqual({ closest: .18, approach: 12, gap: 12 });
+  expect(result.stillLegacy).toBe(true);
+  expect(result.full).toBe(23.25);
+  expect(result.fullTiming).toEqual({ closest: .25, approach: 7, gap: 9 });
+  expect(result.state).toMatchObject({ phase: 'playing', bothEars: true });
+  expect(result.idle).toBe('idle');
+});
+
+test('timed click previews reserve the whole tail with one pass or both original passes', async ({ page }) => {
+  await controlled(page);
+  const result = await page.evaluate(async () => {
+    const h = (window as any).previewHarness, layer = h.session.asmr.layers[0];
+    layer.sound = 'recorded-plastic-toy'; layer.rate = .5;
+    layer.spatial.motion = 'quiet-return';
+    layer.spatial.quietReturn = { closest: .23, approach: 9, gap: .25, syncClicks: true };
+    await h.preview.start(h.session, h.id);
+    const short = h.engines[0].session;
+    await h.preview.start(h.session, h.id, true);
+    const full = h.engines[1].session;
+    await h.preview.stop();
+    return { short: short.timelineDuration, shortTiming: short.asmr.layers[0].spatial.quietReturn,
+      full: full.timelineDuration, fullTiming: full.asmr.layers[0].spatial.quietReturn, original: layer.spatial.quietReturn,
+      envelopes: h.engines.map((engine: any) => engine.envelope) };
+  });
+  expect(result.short).toBe(5);
+  expect(result.shortTiming).toEqual({ closest: .23, approach: 4, gap: 5, syncClicks: true });
+  expect(result.full).toBeCloseTo(19.7);
+  expect(result.fullTiming).toEqual({ closest: .23, approach: 9, gap: .25, syncClicks: true });
+  expect(result.original).toEqual(result.fullTiming);
+  expect(result.envelopes).toEqual([{ fadeIn: .05, fadeOut: .12 }, { fadeIn: .05, fadeOut: .12 }]);
+});
+
+test('varied quiet return uses the first actual pause for its two-ear preview', async ({ page }) => {
+  await controlled(page);
+  const result = await page.evaluate(async () => {
+    const sequencePath = '/src/audio/quiet-click-sequence.ts', { quietClickTurns } = await import(sequencePath);
+    const h = (window as any).previewHarness, layer = h.session.asmr.layers[0];
+    layer.sound = 'recorded-plastic-toy'; layer.rate = 1;
+    layer.spatial.motion = 'quiet-return';
+    const timing = { closest: .2, approach: 3.2, gap: 5.2, syncClicks: true,
+      sequence: { recordings: ['recorded-plastic-switch', 'recorded-plastic-pen', 'recorded-plastic-button'],
+        gapSpread: 3, seed: 26913 } };
+    layer.spatial.quietReturn = timing;
+    await h.preview.start(h.session, h.id);
+    const quick = h.engines[0].session.asmr.layers[0].spatial.quietReturn;
+    await h.preview.start(h.session, h.id, true);
+    const full = h.engines[1].session;
+    await h.preview.stop();
+    return { quick, full: full.asmr.layers[0].spatial.quietReturn, duration: full.timelineDuration,
+      firstGap: quietClickTurns(timing)[0].gap, original: timing };
+  });
+  expect(result.quick).not.toHaveProperty('sequence');
+  expect(result.original.sequence.gapSpread).toBe(3);
+  expect(result.full).toEqual(result.original);
+  expect(result.duration).toBeCloseTo(7.25 + result.firstGap, 8);
 });
 
 test('cancelled blocked starts cannot adopt late and rapid replacements wait for owned closure', async ({ page }) => {

@@ -1,7 +1,7 @@
 import { defaultAsmr, recordedAsmrSounds, type AsmrLayer, type AsmrSettings } from '../asmr-state';
 import { ASMR_RATE, asmrSample } from './asmr-synthesis';
 import { smooth } from './graph';
-import { recordedAsmrBuffer } from './asmr-assets';
+import { recordedAsmrBuffer, recordedQuietClickBanks } from './asmr-assets';
 import { cuppingParameters, cuppingWave } from './ear-cupping';
 import { AsmrPosition } from './asmr-position';
 import { phaseCycles, setSinePhase } from './render-timing';
@@ -9,9 +9,10 @@ import { createAsmrPhraseSource, phraseConfig, type AsmrSource } from './asmr-ph
 import type { AsmrPhraseConfig } from './asmr-phrases';
 import { AsmrCueDetector, earRms, type AsmrCue } from './asmr-cues';
 import { AsmrSpace } from './asmr-space';
+import { quietClickRecordings } from '../asmr-spatial';
 
 class AsmrVoice {
-  private source: AsmrSource;
+  private source?: AsmrSource;
   private filter: BiquadFilterNode;
   private level: GainNode;
   private panner: StereoPannerNode;
@@ -31,18 +32,23 @@ class AsmrVoice {
   private cueTap?: { output: AudioNode; splitter: ChannelSplitterNode; ears: AnalyserNode[]; samples: Float32Array<ArrayBuffer>[] };
   readonly sound: AsmrLayer['sound'];
   readonly spatial: boolean;
+  readonly adjustable: boolean;
+  readonly clickKey: string;
   readonly phrases: boolean;
   constructor(private context: BaseAudioContext, layer: AsmrLayer, output: AudioNode, endAt?: number, audible = true,
     private offsetSeconds = 0, config?: AsmrPhraseConfig, onFailure?: () => void, originSeconds = context.currentTime - offsetSeconds) {
     this.sound = layer.sound;
     this.cue = new AsmrCueDetector(layer.id, layer.sound);
     this.spatial = !!layer.spatial;
+    this.adjustable = !!layer.spatial?.quietReturn;
+    const clickSources = quietClickRecordings(layer.sound, layer.spatial?.quietReturn);
+    this.clickKey = clickSources.join(',');
     this.phrases = !!config;
     if (config) {
       this.source = createAsmrPhraseSource(context, layer, config, offsetSeconds, endAt, onFailure, originSeconds);
       this.offsetSeconds = offsetSeconds = context.currentTime - originSeconds;
     }
-    else {
+    else if (!this.clickKey) {
       const source = context.createBufferSource();
       if (recordedAsmrSounds.some(sound => sound.id === layer.sound)) {
         const buffer = recordedAsmrBuffer(layer.sound);
@@ -66,8 +72,9 @@ class AsmrVoice {
       setSinePhase(context, this.motion, phaseCycles(1 / layer.period, offsetSeconds));
       setSinePhase(context, this.drift, phaseCycles(1 / (layer.period * 2.71), offsetSeconds));
     }
-    this.filter.frequency.value = 500 * 24 ** layer.tone;
-    this.source.playbackRate.value = layer.rate; this.panner.pan.value = layer.pan;
+    this.filter.frequency.value = layer.clearTone ? context.sampleRate / 2 : 500 * 24 ** layer.tone;
+    if (this.source) this.source.playbackRate.value = layer.rate;
+    this.panner.pan.value = layer.pan;
     this.width = context.createGain(); this.wander = context.createGain();
     this.pressure = context.createOscillator(); this.pressure.frequency.value = 1 / layer.period;
     this.pressureTone = context.createGain(); this.pressureLevel = context.createGain();
@@ -78,20 +85,23 @@ class AsmrVoice {
     this.width.gain.value = this.wander.gain.value = 0;
     this.motion.connect(this.width).connect(this.panner.pan);
     this.drift.connect(this.wander).connect(this.panner.pan);
-    this.source.connect(this.highpass).connect(this.filter).connect(this.level);
-    if (layer.spatial) this.position = new AsmrPosition(context, this.level, output, layer.spatial, layer.period, endAt, offsetSeconds, onFailure);
+    this.source?.connect(this.highpass);
+    this.highpass.connect(this.filter).connect(this.level);
+    if (layer.spatial) this.position = new AsmrPosition(context, this.level, output, layer.spatial, layer.period, endAt, offsetSeconds, onFailure,
+      this.clickKey ? { banks: recordedQuietClickBanks(clickSources), speed: layer.rate, destination: this.highpass } : undefined);
     else this.level.connect(this.panner).connect(output);
     this.update(layer, audible);
-    this.source.start();
+    this.source?.start();
     this.motion.start(); this.drift.start(); this.pressure.start();
-    if (endAt !== undefined && endAt > context.currentTime) for (const source of [this.source, this.motion, this.drift, this.pressure]) source.stop(endAt);
+    if (endAt !== undefined && endAt > context.currentTime) for (const source of [this.source, this.motion, this.drift, this.pressure]) source?.stop(endAt);
   }
   update(layer: AsmrLayer, audible: boolean, config?: AsmrPhraseConfig, spatialReady = true): void {
     this.cueAudible = audible && layer.level > 0;
     if (!this.cueAudible) this.clearCue();
-    if (config) this.source.configure?.(config);
+    if (config) this.source?.configure?.(config);
     const time = this.context.currentTime;
-    const pressure = cuppingParameters(audible ? layer.level : 0, layer.tone, layer.pressure ?? 0);
+    const pressure = cuppingParameters(audible ? layer.level : 0, layer.tone, layer.pressure ?? 0,
+      layer.clearTone ? this.context.sampleRate / 2 : undefined);
     smooth(this.level.gain, pressure.gain, time);
     smooth(this.pressureLevel.gain, pressure.gainDepth, time);
     smooth(this.pressureTone.gain, pressure.frequencyDepth, time);
@@ -101,7 +111,7 @@ class AsmrVoice {
       const wave = cuppingWave(this.phase + 360 * phaseCycles(1 / layer.period, this.offsetSeconds));
       this.pressure.setPeriodicWave(this.context.createPeriodicWave(wave.real, wave.imaginary, { disableNormalization: true }));
     }
-    smooth(this.source.playbackRate, layer.rate, time);
+    if (this.source) smooth(this.source.playbackRate, layer.rate, time);
     smooth(this.filter.frequency, pressure.frequency, time);
     smooth(this.panner.pan, layer.pan, time);
     const width = layer.motion === 'still' ? 0 : layer.width * (1 - Math.abs(layer.pan));
@@ -109,7 +119,7 @@ class AsmrVoice {
     smooth(this.wander.gain, layer.motion === 'wander' ? width * .3 : 0, time);
     smooth(this.motion.frequency, 1 / layer.period, time);
     smooth(this.drift.frequency, 1 / (layer.period * 2.71), time);
-    if (layer.spatial && spatialReady) this.position?.update(layer.spatial, layer.period);
+    if (layer.spatial && spatialReady) this.position?.update(layer.spatial, layer.period, this.clickKey ? layer.rate : undefined);
   }
   readCue(gain: number, time: number): AsmrCue | undefined {
     if (this.disposed || !this.cueAudible || gain <= 0) { this.clearCue(); return; }
@@ -122,10 +132,10 @@ class AsmrVoice {
     }
     const { ears, samples } = this.cueTap;
     ears.forEach((ear, index) => ear.getFloatTimeDomainData(samples[index]));
-    const marker = this.source.readMarker?.(time - 512 / this.context.sampleRate);
+    const marker = this.source?.readMarker?.(time - 512 / this.context.sampleRate);
     return this.cue.read(time, earRms(samples[0]) * gain, earRms(samples[1]) * gain, marker);
   }
-  clearCue(): void { this.cue.reset(); this.source.clearMarkers?.(); }
+  clearCue(): void { this.cue.reset(); this.source?.clearMarkers?.(); }
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
@@ -138,10 +148,10 @@ class AsmrVoice {
     const stopAt = this.context.currentTime + .15;
     smooth(this.level.gain, 0, this.context.currentTime);
     smooth(this.pressureLevel.gain, 0, this.context.currentTime);
-    for (const source of [this.source, this.motion, this.drift, this.pressure]) source.stop(stopAt);
+    for (const source of [this.source, this.motion, this.drift, this.pressure]) source?.stop(stopAt);
     setTimeout(() => {
       this.position?.dispose();
-      for (const node of [this.source, this.motion, this.drift, this.filter, this.level, this.panner, this.width, this.wander, this.pressure, this.pressureTone, this.pressureLevel, this.highpass]) node.disconnect();
+      for (const node of [this.source, this.motion, this.drift, this.filter, this.level, this.panner, this.width, this.wander, this.pressure, this.pressureTone, this.pressureLevel, this.highpass]) node?.disconnect();
     }, 200);
   }
 }
@@ -170,14 +180,18 @@ export class AsmrMixer {
     const phrases = !!settings.variation && settings.variation.mode !== 'steady';
     for (const [id, voice] of this.voices) {
       const layer = settings.layers.find(item => item.id === id);
-      if (!layer || layer.sound !== voice.sound || !!layer.spatial !== voice.spatial || voice.phrases !== phrases || expired) { voice.dispose(); this.voices.delete(id); }
+      const clickKey = layer ? quietClickRecordings(layer.sound, layer.spatial?.quietReturn).join(',') : '';
+      if (!layer || layer.sound !== voice.sound || !!layer.spatial !== voice.spatial ||
+          !!layer.spatial?.quietReturn !== voice.adjustable || voice.clickKey !== clickKey || voice.phrases !== (phrases && !clickKey) || expired) {
+        voice.dispose(); this.voices.delete(id);
+      }
     }
     if (expired) return;
     for (const [ordinal, layer] of settings.layers.entries()) {
       const audible = !layer.muted && (!solo || layer.solo);
       let voice = this.voices.get(layer.id);
       if (!voice && !enabled) continue;
-      const config = phrases ? phraseConfig(settings, ordinal) : undefined;
+      const config = phrases && !layer.spatial?.quietReturn?.syncClicks ? phraseConfig(settings, ordinal) : undefined;
       if (!voice) { voice = new AsmrVoice(this.context, layer, this.bus, this.endAt, audible,
         this.offsetSeconds + this.context.currentTime - this.origin, config, this.onFailure,
         this.origin - this.offsetSeconds); this.voices.set(layer.id, voice); }

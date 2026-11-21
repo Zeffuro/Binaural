@@ -67,7 +67,7 @@ test('legacy ASMR layers migrate to zero cupping while new parameters stay bound
     assert.throws(() => parseAsmr({ level: .6, layers: [{ ...value, [field]: invalid }] }));
   }
   assert.equal(parseAsmr({ level: 1, layers: [{ ...value, pressure: 1, pressurePhase: 360 }] }).layers[0].pressure, 1);
-  assert.equal(generatedAsmrSounds.length, 15); assert.equal(recordedAsmrSounds.length, 15);
+  assert.equal(generatedAsmrSounds.length, 15); assert.equal(recordedAsmrSounds.length, 23);
 });
 
 test('cupping never creates negative gain or cutoff, boosts volume, or adds oscillator DC', () => {
@@ -122,26 +122,36 @@ test('recording preparation rejects malformed or excessive decoded audio', () =>
 
 test('all bundled recordings match verified CC0 provenance and the size budget', async () => {
   const manifest = JSON.parse(await readFile(new URL('../public/audio/asmr/credits.json', import.meta.url), 'utf8'));
-  assert.equal(manifest.clips.length, 15); let bytes = 0;
+  assert.deepEqual(manifest.clips.map(clip => clip.file).sort(), recordedAsmrSounds.map(sound => sound.file).sort());
+  let bytes = 0;
   for (const sound of recordedAsmrSounds) {
     const clip = manifest.clips.find(clip => clip.file === sound.file); assert.ok(clip);
     assert.equal(clip.license, 'CC0-1.0');
-    if (clip.format === 'FLAC') {
+    if (clip.format === 'FLAC' || clip.format === 'WAV') {
       assert.equal(clip.sourceUrl, 'https://opengameart.org/content/sound-effects-pack');
       assert.equal(clip.author, 'OwlishMedia');
       assert.equal(clip.originalMetadata.format, 'WAV');
       assert.match(clip.archiveSha256, /^[a-f0-9]{64}$/);
       assert.match(clip.originalSha256, /^[a-f0-9]{64}$/);
-      assert.ok(clip.bytes < 2 * 1024 * 1024);
+      if (clip.format === 'FLAC') assert.ok(clip.bytes < 2 * 1024 * 1024);
+      else {
+        assert.equal(clip.originalSha256, clip.sha256);
+        assert.equal(clip.bytes, sound.maxBytes);
+        assert.ok(clip.durationSeconds >= 39 && clip.durationSeconds < 40);
+      }
     } else assert.match(clip.sourceUrl, /^https:\/\/freesound.org\/people\//);
     const data = await readFile(new URL(`../public/audio/asmr/${sound.file}`, import.meta.url));
     assert.equal(createHash('sha256').update(data).digest('hex'), clip.sha256); assert.equal(data.length, clip.bytes); bytes += data.length;
     if (clip.format === 'MP3') {
       assert.ok(data.toString('ascii', 0, 3) === 'ID3' || (data[0] === 255 && (data[1] & 224) === 224));
       assert.equal(clip.downloadSha256, clip.sha256); assert.equal(clip.downloadBytes, clip.bytes);
-      assert.equal(clip.originalMetadata.format, 'WAV'); assert.equal(clip.verifiedAt, '2026-10-21');
+      assert.equal(clip.originalMetadata.format, 'WAV');
+      assert.equal(clip.verifiedAt, sound.id.startsWith('recorded-plastic-') ? '2026-11-21' : '2026-10-21');
       assert.ok(clip.originalMetadata.durationSeconds < 60); assert.match(clip.changes, /Unchanged public MP3 preview/);
+    } else if (clip.format === 'WAV') {
+      assert.equal(data.toString('ascii', 0, 4), 'RIFF');
+      assert.equal(data.toString('ascii', 8, 12), 'WAVE');
     } else assert.equal(data.toString('ascii', 0, 4), clip.format === 'FLAC' ? 'fLaC' : 'OggS');
   }
-  assert.ok(bytes < 10 * 1024 * 1024);
+  assert.ok(bytes < 18 * 1024 * 1024);
 });

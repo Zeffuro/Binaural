@@ -22,7 +22,8 @@ test('six recorded gesture recipes retain explicit sources, slow contrasting tur
   await page.goto('/');
   const recipes = await page.evaluate(async () => {
     const path = '/src/asmr-recorded-gesture-presets.ts', { asmrRecordedGesturePresets } = await import(path);
-    return asmrRecordedGesturePresets.map((recipe: AsmrPreset) => ({ id: recipe.id, light: recipe.light, settings: recipe.make() }));
+    return asmrRecordedGesturePresets.filter((recipe: AsmrPreset) => recipe.group === 'Recorded gestures')
+      .map((recipe: AsmrPreset) => ({ id: recipe.id, light: recipe.light, settings: recipe.make() }));
   });
   expect(recipes.map((recipe: { id: string }) => recipe.id)).toEqual(ids);
   expect(recipes.map((recipe: { light: string }) => recipe.light)).toEqual([
@@ -51,7 +52,7 @@ test('every recorded gesture is discoverable and preserves duration, flow and li
   test.setTimeout(120000); await page.goto('/');
   const recipes = await page.evaluate(async () => {
     const path = '/src/asmr-recorded-gesture-presets.ts', { asmrRecordedGesturePresets } = await import(path);
-    return asmrRecordedGesturePresets.map((recipe: AsmrPreset) => ({ id: recipe.id, name: recipe.name,
+    return asmrRecordedGesturePresets.filter((recipe: AsmrPreset) => recipe.group === 'Recorded gestures').map((recipe: AsmrPreset) => ({ id: recipe.id, name: recipe.name,
       minutes: recipe.minutes, group: recipe.group, settings: recipe.make() }));
   });
   expect(recipes.map((recipe: { minutes: number }) => recipe.minutes)).toEqual([20, 30, 30, 60, 20, 45]);
@@ -72,6 +73,7 @@ test('every recorded gesture is discoverable and preserves duration, flow and li
     expect(session.visual.triggers.syncAsmr).toBe(true);
     expect(session.visual.triggers).not.toHaveProperty('enabled');
     await page.locator('#preset-name').fill(recipe.name); await page.locator('#save-preset').click();
+    await expect(page.locator('#notice')).toContainText('Preset saved in this browser.');
     const saved = await page.evaluate(name => JSON.parse(localStorage.getItem('binaural.presets.v1')!)
       .find((entry: { name: string }) => entry.name === name), recipe.name);
     expect(canonical(saved.asmr)).toEqual(canonical(recipe.settings));

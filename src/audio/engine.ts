@@ -19,6 +19,8 @@ export interface AudioCaptureLease {
   dispose(): void;
 }
 
+export interface PlaybackEnvelope { fadeIn: number; fadeOut: number }
+
 export class AudioEngine {
   private context?: AudioContext;
   private master?: GainNode;
@@ -50,6 +52,7 @@ export class AudioEngine {
   private asmrPending = false;
   private visualGain = 0;
   private visualFadeIn = .5;
+  private visualFadeOut = 2;
   private captures = new Set<AudioCaptureLease>();
   private cueTimeline = new AsmrCueTimeline();
   private cueSignature = '';
@@ -80,7 +83,7 @@ export class AudioEngine {
     if (!audible) { this.asmr?.clearCues(); this.cueTimeline.clear(); frame.asmr = []; }
     else {
       const fadeIn = Math.min(1, (context.currentTime - this.origin) / this.visualFadeIn);
-      const fadeOut = this.endAt === undefined ? 1 : Math.min(1, (this.endAt - context.currentTime) / Math.min(2, (this.endAt - this.origin) / 2));
+      const fadeOut = this.endAt === undefined ? 1 : Math.min(1, (this.endAt - context.currentTime) / this.visualFadeOut);
       frame.asmr = this.asmr?.readCues(this.visualGain * Math.max(0, Math.min(fadeIn, fadeOut)), frame.time) ?? [];
       this.cueTimeline.push(frame.time, frame.asmr);
     }
@@ -119,7 +122,7 @@ export class AudioEngine {
     return this.sequenceEnd === undefined ? undefined : Math.max(0, this.sequenceEnd - (this.context?.currentTime ?? 0));
   }
 
-  async start(session: Session): Promise<void> {
+  async start(session: Session, envelope: PlaybackEnvelope = { fadeIn: .5, fadeOut: 2 }): Promise<void> {
     if (this.context) return;
     const context = new AudioContext({ latencyHint: 'playback' });
     this.context = context;
@@ -138,16 +141,17 @@ export class AudioEngine {
       const bwg = session.bwg ? decodeBwg(session.bwg).preset : undefined;
       this.continues = !!bwg && bwgContinues(bwg);
       const duration = session.timelineDuration ?? session.minutes * 60;
-      this.visualFadeIn = duration > 0 ? Math.min(.5, duration / 4) : .5;
+      this.visualFadeIn = duration > 0 ? Math.min(envelope.fadeIn, duration / 4) : envelope.fadeIn;
+      this.visualFadeOut = Math.min(envelope.fadeOut, duration / 2);
       if (duration > 0) this.sequenceEnd = context.currentTime + duration;
       this.gate.gain.setValueAtTime(0, context.currentTime);
-      this.gate.gain.linearRampToValueAtTime(1, context.currentTime + (duration > 0 ? Math.min(0.5, duration / 4) : 0.5));
+      this.gate.gain.linearRampToValueAtTime(1, context.currentTime + this.visualFadeIn);
       this.dynamics = new OutputDynamics(context, session.dynamics);
       this.analysis = new VisualAnalysis(context);
       this.master.connect(this.dynamics.node).connect(this.gate).connect(this.transport).connect(this.analysis.node).connect(context.destination);
       if (duration > 0 && !this.continues) {
         this.endAt = context.currentTime + duration;
-        this.gate.gain.setValueAtTime(1, this.endAt - Math.min(2, duration / 2));
+        this.gate.gain.setValueAtTime(1, this.endAt - this.visualFadeOut);
         this.gate.gain.linearRampToValueAtTime(0, this.endAt);
       }
       this.musicGain = context.createGain();
@@ -189,7 +193,8 @@ export class AudioEngine {
     const gains = modeGains(listeningMode(session));
     const cueSignature = JSON.stringify([!!gains.asmr, session.master > 0, (session.asmr?.level ?? 0) > 0,
       session.asmr?.variation?.mode !== 'steady' && !!session.asmr?.variation,
-      session.asmr?.layers.map(layer => [layer.id, layer.sound, !!layer.spatial, layer.spatial?.profile, layer.muted, layer.solo, layer.level > 0])]);
+      session.asmr?.layers.map(layer => [layer.id, layer.sound, !!layer.spatial, layer.spatial?.profile,
+        !!layer.spatial?.quietReturn?.syncClicks, layer.muted, layer.solo, layer.level > 0])]);
     if (cueSignature !== this.cueSignature) { this.cueTimeline.clear(); this.cueSignature = cueSignature; }
     smooth(this.master.gain, session.master, context.currentTime);
     this.dynamics?.update(session.dynamics);

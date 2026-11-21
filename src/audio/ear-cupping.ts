@@ -1,5 +1,5 @@
-export function cuppingParameters(level: number, tone: number, amount: number) {
-  const frequency = 500 * 24 ** tone;
+export function cuppingParameters(level: number, tone: number, amount: number, clearCutoff?: number) {
+  const frequency = clearCutoff ?? 500 * 24 ** tone;
   return { frequency: frequency * (1 - amount * .42), frequencyDepth: frequency * amount * .4,
     gain: level * .16 * (1 - amount * .22), gainDepth: level * .16 * amount * .18 };
 }
