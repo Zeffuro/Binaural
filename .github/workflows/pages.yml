@@ -61,6 +61,8 @@ jobs:
         run: npm run build
         env:
           VITE_SOURCE_URL: https://github.com/${{ github.repository }}/tree/${{ github.sha }}
+      - name: Check offline playback and safe app updates
+        run: xvfb-run -a npm run check:offline
       - name: Check headphone profiles and spatial rendering
         run: xvfb-run -a node scripts/test-browser.mjs --full tests/hrtf-audio.spec.ts tests/hrtf-integration.spec.ts tests/hrtf-ui.spec.ts --forbid-only --workers=1 --reporter=list,html
         env:
@@ -71,8 +73,6 @@ jobs:
           PLAYWRIGHT_HTML_OPEN: never
       - name: Check the production Pages artifact
         run: xvfb-run -a npm run check:pages
-      - name: Check offline playback and safe app updates
-        run: xvfb-run -a npm run check:offline
       - name: Check video codecs and live audio clocks
         run: xvfb-run -a node scripts/test-browser.mjs --full tests/video-recording.spec.ts tests/generated-background-ui.spec.ts tests/audio-export.spec.ts --grep "recorded canvas and stereo engine mix independently decode|recording includes native BWGen, stereo local music and ASMR|normal ambience uses the generated PCM and retains pause and audio-clock stop|boost doubles quiet" --forbid-only --workers=1 --reporter=list,html
         env:

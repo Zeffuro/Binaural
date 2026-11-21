@@ -25,6 +25,26 @@ function expectShortWav(wav) {
   expect(wav.readUInt32LE(40)).toBe(wav.length - 44);
   expect(wav.subarray(44).some(value => value !== 0)).toBe(true);
 }
+async function observeUpdate(page) {
+  await page.evaluate(async () => {
+    const worker = (await navigator.serviceWorker.getRegistration()).waiting;
+    const events = window.offlineUpdateEvents = [worker.state];
+    worker.addEventListener('statechange', () => events.push(worker.state));
+    navigator.serviceWorker.addEventListener('controllerchange', () => events.push('controllerchange'));
+    navigator.serviceWorker.addEventListener('message', ({ data }) => events.push(data?.type));
+  });
+}
+async function updateState(page) {
+  return page?.evaluate(async () => {
+    const registration = await navigator.serviceWorker.getRegistration();
+    return { status: document.querySelector('#status')?.textContent,
+      notice: document.querySelector('#notice')?.textContent, clock: document.querySelector('#clock')?.textContent,
+      export: document.querySelector('#audio-export-status')?.textContent, workers: window.offlineExportWorkers,
+      startDisabled: document.querySelector('#play')?.disabled, offline: document.querySelector('#offline-status')?.textContent,
+      updateDisabled: document.querySelector('#app-update')?.disabled, updateEvents: window.offlineUpdateEvents,
+      controller: navigator.serviceWorker.controller?.state, active: registration?.active?.state, waiting: registration?.waiting?.state };
+  }).catch(() => undefined);
+}
 let mount = '/', revision = '', failAsset = false, disconnected = false;
 const server = createServer(async (request, response) => {
   if (disconnected) { request.socket.destroy(); return; }
@@ -56,13 +76,17 @@ try {
     for (const [name, launcher] of [['chromium', chromium], ['firefox', firefox]]) {
       mount = prefix; revision = ''; failAsset = false; disconnected = false;
       const browser = await launcher.launch(browserLaunchOptions(name));
-      let page;
-      const errors = [], failedRequests = [];
+      let page, other;
+      const errors = [], failedRequests = [], navigation = [];
       try {
         const context = await browser.newContext();
         page = await context.newPage();
         page.on('pageerror', error => errors.push(error.message));
         page.on('requestfailed', request => failedRequests.push({ url: request.url(), error: request.failure()?.errorText }));
+        page.on('request', request => { if (request.isNavigationRequest()) navigation.push({ request: request.url() }); });
+        page.on('response', response => {
+          if (response.request().isNavigationRequest()) navigation.push({ response: response.url(), status: response.status() });
+        });
         await page.goto(origin + prefix);
         await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true);
         await page.locator('.offline-tools summary').click();
@@ -238,7 +262,7 @@ try {
         await expect(page.locator('#status')).toHaveText('Ready when you are');
         disconnected = false; await context.setOffline(false);
 
-        const other = await context.newPage();
+        other = await context.newPage();
         await other.goto(origin + prefix);
         await other.evaluate(() => { window.offlineTabMarker = 'preserve'; });
         await page.getByRole('button', { name: 'Start listening' }).click();
@@ -247,6 +271,7 @@ try {
         await expect.poll(() => page.evaluate(async () => !!(await navigator.serviceWorker.getRegistration()).waiting)).toBe(true);
         await other.reload();
         await expect(other.locator('#offline-status')).toContainText('An update is ready');
+        await Promise.all([observeUpdate(page), observeUpdate(other)]);
         await other.evaluate(async () => (await navigator.serviceWorker.getRegistration()).active.postMessage({ type: 'RELEASE_UNUSED_CACHES' }));
         const waitingAssets = await other.evaluate(async key => {
           const name = (await caches.keys()).find(name => name.startsWith(key) && name.endsWith('-update'));
@@ -321,13 +346,8 @@ try {
         expect(errors).toEqual([]);
         console.log(`${name} ${prefix}: complete offline assets/scenes/worklet/share, native BWGen WAV/export worker, recorded Ogg playback, playback-safe intertab update, waiting old-tab retention, failed/successful rollback and cache isolation passed`);
       } catch (error) {
-        const state = await page?.evaluate(() => ({ status: document.querySelector('#status')?.textContent,
-          notice: document.querySelector('#notice')?.textContent, clock: document.querySelector('#clock')?.textContent,
-          export: document.querySelector('#audio-export-status')?.textContent, workers: window.offlineExportWorkers,
-          startDisabled: document.querySelector('#play')?.disabled,
-          offline: document.querySelector('#offline-status')?.textContent,
-          updateDisabled: document.querySelector('#app-update')?.disabled })).catch(() => undefined);
-        console.error(`${name} ${prefix}: ${JSON.stringify({ state, errors, failedRequests: failedRequests.slice(-20) })}`);
+        const [state, otherTab] = await Promise.all([updateState(page), updateState(other)]);
+        console.error(`${name} ${prefix}: ${JSON.stringify({ state, otherTab, navigation, errors, failedRequests: failedRequests.slice(-20) })}`);
         throw error;
       } finally { await browser.close(); }
     }

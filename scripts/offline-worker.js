@@ -46,9 +46,14 @@ self.addEventListener('message', event => {
   const source = new URL(event.source.url);
   if (source.origin !== base.origin || ![base.pathname, new URL(index).pathname].includes(source.pathname)) return;
   event.waitUntil((async () => {
-    const replies = await inspectClients();
-    if (replies.length && replies.every(reply => reply.safe === true)) await self.skipWaiting();
-    else event.source.postMessage({ type: 'UPDATE_BLOCKED' });
+    try {
+      const replies = await inspectClients();
+      if (replies.length && replies.every(reply => reply.safe === true)) {
+        await self.skipWaiting();
+        return;
+      }
+    } catch { /* An unresponsive or closing tab cannot approve an update. */ }
+    event.source.postMessage({ type: 'UPDATE_BLOCKED' });
   })());
 });
 

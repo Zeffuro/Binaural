@@ -28,14 +28,15 @@ export function setupOffline(options: { isPlaying: () => boolean }): { update: (
   const bannerButton = banner.querySelector<HTMLButtonElement>('button')!;
   let registration: ServiceWorkerRegistration | undefined;
   let prompt: InstallPrompt | undefined;
-  let applying = false;
+  let applying: ServiceWorker | undefined;
+  let updateTimer: number | undefined;
   let reloadReady = false;
   let ready = false;
   let failure = '';
   function update(): void {
     const waiting = !!registration?.waiting;
     updateButton.hidden = !waiting && !reloadReady;
-    updateButton.disabled = options.isPlaying() || applying;
+    updateButton.disabled = options.isPlaying() || !!applying;
     updateButton.textContent = options.isPlaying() ? 'Update after listening' : reloadReady ? 'Reload updated app' : 'Update and reload';
     banner.hidden = !waiting && !reloadReady;
     bannerButton.disabled = updateButton.disabled;
@@ -58,12 +59,36 @@ export function setupOffline(options: { isPlaying: () => boolean }): { update: (
       status.textContent = 'Use your browser menu to install or bookmark this app.';
     });
   });
+  function finishUpdate(error = ''): void {
+    applying?.removeEventListener('statechange', checkActivation);
+    applying = undefined;
+    window.clearTimeout(updateTimer);
+    updateTimer = undefined;
+    failure = error;
+    if (!error) {
+      reloadReady = true;
+      if (!options.isPlaying()) { location.reload(); return; }
+    }
+    update();
+  }
+  function checkActivation(): void {
+    // The requested worker's state is also available when controllerchange is delayed.
+    if (applying?.state === 'activated') finishUpdate();
+    else if (applying?.state === 'redundant') finishUpdate('The update could not be activated. Try checking for updates again.');
+  }
   updateButton.addEventListener('click', () => {
     if (options.isPlaying() || applying) return;
     if (reloadReady) { location.reload(); return; }
-    if (!registration?.waiting) return;
-    applying = true; update();
-    registration.waiting.postMessage({ type: 'ACTIVATE_UPDATE' });
+    const worker = registration?.waiting;
+    if (!worker) return;
+    applying = worker; failure = ''; update();
+    worker.addEventListener('statechange', checkActivation);
+    updateTimer = window.setTimeout(() => {
+      checkActivation();
+      if (applying === worker) finishUpdate('The app update did not finish. Try the update again.');
+    }, 12000);
+    try { worker.postMessage({ type: 'ACTIVATE_UPDATE' }); }
+    catch { finishUpdate('The app update could not start. Try the update again.'); }
   });
   bannerButton.addEventListener('click', () => updateButton.click());
   if (!('serviceWorker' in navigator) || !window.isSecureContext) {
@@ -72,18 +97,15 @@ export function setupOffline(options: { isPlaying: () => boolean }): { update: (
   }
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     ready = !!navigator.serviceWorker.controller;
-    if (applying) {
-      applying = false; reloadReady = true;
-      if (!options.isPlaying()) { location.reload(); return; }
-    }
-    update();
+    if (applying && (navigator.serviceWorker.controller === applying || applying.state === 'activated')) finishUpdate();
+    else update();
   });
   navigator.serviceWorker.addEventListener('message', event => {
     if (event.data?.type === 'CHECK_UPDATE_SAFETY') event.ports[0]?.postMessage({
       safe: !options.isPlaying(),
     });
-    if (event.data?.type === 'UPDATE_BLOCKED') {
-      applying = false; failure = 'Finish listening in all open Binaural tabs, then try the update again.'; update();
+    if (event.data?.type === 'UPDATE_BLOCKED' && applying && event.source === applying) {
+      finishUpdate('Finish listening in all open Binaural tabs, then try the update again.');
     }
   });
   checkButton.addEventListener('click', () => {
